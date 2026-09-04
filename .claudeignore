@@ -1,0 +1,56 @@
+# .claudeignore — files/dirs agents should NOT read by default (advisory).
+# gitignore-style globs; a rule to follow, not a hard sandbox. Read anything here only
+# when a task explicitly needs it, and then only targeted line ranges.
+# See CLAUDE.md "Token & context frugality".
+
+# Vendored third-party source / fetched deps
+Release-NMS-Server/submodules/
+Release-NMS-Server/vcpkg/
+Release-NMS-Server/dependencies/
+Release-NMS-Server/libs/
+
+# Build output / IDE caches
+Build/
+build/
+bin/
+out/
+.vs/
+*.obj
+*.pdb
+*.ilk
+*.tlog
+*.map
+*.lastbuildstate
+*.idb
+*.ipch
+Release-NMS-Client/eqgame_dll/Release/
+
+# Database dumps and bulk SQL
+*.zip
+Release-NMS-Server/database/
+Release-NMS-Server/utils/sql/
+
+# Bulk data files and client art
+Release-NMS-Client/SpellIcons/
+Release-NMS-Client/ClientFiles/uifiles/
+*.dds
+*.tga
+*.png
+*.jpg
+*.wav
+*.dll
+*.exe
+*.lib
+
+# Huge changelogs / logs
+Release-NMS-Server/changelog.txt
+.logs/
+*.log
+logs/
+
+# Secrets (never read, never commit)
+credentials.txt
+Release-NMS-Server/eqemu_config.json
+Release-NMS-Server/login.json
+.env
+.env.*

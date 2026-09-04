@@ -1,0 +1,14 @@
+---
+description: Point agents at the canonical NMS-Release docs — do not duplicate CODEBASE.md content here.
+alwaysApply: true
+---
+
+# NMS-Release — read order
+
+1. `README.md` — folder map, quick start, requirements
+2. `Release-NMS-Deploy/CODEBASE.md` — thesis (stock EQEmu + `Custom` rule layer), migration system, client contract, gotchas
+3. The per-folder README for Server / Client / Quests / Plugins
+
+First question for odd behavior: which `Custom` rule governs it and what is it set to in `rule_values`?
+
+Never commit `credentials.txt` or the server-root `eqemu_config.json` / `login.json`. Do not bypass the secret hooks.
