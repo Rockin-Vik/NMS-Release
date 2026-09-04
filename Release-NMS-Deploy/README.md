@@ -5,7 +5,6 @@ Build and install automation for the NMS server on a fresh Windows box.
 | File | What it is |
 | --- | --- |
 | [`CODEBASE.md`](CODEBASE.md) | **Read this first.** Working understanding of the codebase — architecture, what is custom vs stock EQEmu, the migration system, and a gotchas index. |
-| [`build-scripts/0-Reset-Perl.ps1`](build-scripts/0-Reset-Perl.ps1) | Removes a wrong-version Perl and DBD build residue. Only needed if the box already has Perl 5.40+. |
 | [`build-scripts/1-Install-Prerequisites.ps1`](build-scripts/1-Install-Prerequisites.ps1) | Audits the box and installs what is missing. |
 | [`build-scripts/2-Setup-NMSServer.ps1`](build-scripts/2-Setup-NMSServer.ps1) | Clone → database → build → configure → run. |
 
@@ -28,7 +27,9 @@ take all their paths from parameters, so they work from any location.
 >   internal `__pioinfo` — it compiles, then dies at link with
 >   `undefined reference to __imp___pioinfo`.
 >
-> If the box already has a newer Perl, run `0-Reset-Perl.ps1` first. Decide this **before
+> On a fresh box this is handled for you. If the machine already has Perl 5.40 or newer,
+> uninstall it first (Programs and Features → Strawberry Perl) — stage 1 detects an
+> out-of-range Perl and stops rather than building against it. Decide this **before
 > building**: changing Perl afterwards means rebuilding the server.
 
 ---
@@ -38,10 +39,6 @@ take all their paths from parameters, so they work from any location.
 From an **elevated** PowerShell prompt, inside `build-scripts\`:
 
 ```powershell
-# 0. ONLY if the box already has Perl 5.40 or newer (see the Perl note above)
-.\0-Reset-Perl.ps1 -WhatIf      # dry run, changes nothing
-.\0-Reset-Perl.ps1
-
 # 1. See where the box stands (changes nothing)
 .\1-Install-Prerequisites.ps1 -CheckOnly
 
@@ -163,7 +160,7 @@ instead, which runs `shared_memory` first and sequences the rest with real delay
 - **Stage 1 has been run on a real Windows Server 2025 box; stage 2 has not.** Treat the
   first stage-2 run as supervised. Full transcripts land in `C:\NMS\logs\`.
 - **Perl 5.40+ will not work**, for two independent reasons — see the Perl note at the top.
-  Use `0-Reset-Perl.ps1`, then let stage 1 install the pinned 5.32.1.1.
+  Uninstall it via Programs and Features and let stage 1 install the pinned 5.32.1.1.
 - **The first CMake configure needs internet.** The repo commits a *partial* vcpkg tree —
   `.gitignore` has a bare `bin/`, which excluded every runtime DLL — so the ~132 MB
   download is not optional despite appearances.

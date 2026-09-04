@@ -344,8 +344,9 @@ Two independent things break on a newer Perl:
    msvcrt-era internal `__pioinfo`, so it compiles and then dies at link with
    `undefined reference to __imp___pioinfo`. Observed on Strawberry 5.42.2.
 
-Changing Perl after building means rebuilding the server, so settle this first.
-`Release-NMS-Deploy/build-scripts/0-Reset-Perl.ps1` removes a wrong-version install cleanly.
+Changing Perl after building means rebuilding the server, so settle this first. If the box
+already carries a newer Perl, uninstall it before running the deploy scripts — stage 1
+refuses to proceed against an out-of-range version rather than failing later in the build.
 
 ### 6.1 Structure
 
