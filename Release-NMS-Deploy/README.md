@@ -5,9 +5,12 @@ Build and install automation for the NMS server on a fresh Windows box.
 | File | What it is |
 | --- | --- |
 | [`CODEBASE.md`](CODEBASE.md) | **Read this first.** Working understanding of the codebase — architecture, what is custom vs stock EQEmu, the migration system, and a gotchas index. |
-| `0-Reset-Perl.ps1` | Removes a wrong-version Perl and DBD build residue. Only needed if the box already has Perl 5.40+. |
-| `1-Install-Prerequisites.ps1` | Audits the box and installs what is missing. |
-| `2-Setup-NMSServer.ps1` | Clone → database → build → configure → run. |
+| [`build-scripts/0-Reset-Perl.ps1`](build-scripts/0-Reset-Perl.ps1) | Removes a wrong-version Perl and DBD build residue. Only needed if the box already has Perl 5.40+. |
+| [`build-scripts/1-Install-Prerequisites.ps1`](build-scripts/1-Install-Prerequisites.ps1) | Audits the box and installs what is missing. |
+| [`build-scripts/2-Setup-NMSServer.ps1`](build-scripts/2-Setup-NMSServer.ps1) | Clone → database → build → configure → run. |
+
+Copy the whole `build-scripts/` folder to the server and run from inside it — the scripts
+take all their paths from parameters, so they work from any location.
 
 > ### The Perl version is not a free choice
 >
@@ -32,7 +35,7 @@ Build and install automation for the NMS server on a fresh Windows box.
 
 ## Quick start
 
-From an **elevated** PowerShell prompt:
+From an **elevated** PowerShell prompt, inside `build-scripts\`:
 
 ```powershell
 # 0. ONLY if the box already has Perl 5.40 or newer (see the Perl note above)

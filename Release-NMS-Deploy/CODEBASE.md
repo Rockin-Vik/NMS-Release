@@ -345,7 +345,7 @@ Two independent things break on a newer Perl:
    `undefined reference to __imp___pioinfo`. Observed on Strawberry 5.42.2.
 
 Changing Perl after building means rebuilding the server, so settle this first.
-`Release-NMS-Deploy/0-Reset-Perl.ps1` removes a wrong-version install cleanly.
+`Release-NMS-Deploy/build-scripts/0-Reset-Perl.ps1` removes a wrong-version install cleanly.
 
 ### 6.1 Structure
 
@@ -423,7 +423,7 @@ Quick reference. Each links to the section above.
 
 ## 8. Deployment summary
 
-The full sequence, which `2-Setup-NMSServer.ps1` automates:
+The full sequence, which `build-scripts/2-Setup-NMSServer.ps1` automates:
 
 1. Install prerequisites (MariaDB, VS Build Tools, CMake, Git, 7-Zip, and **Strawberry Perl
    5.32.1.1** plus its CPAN modules — the Perl version is not a free choice, see §6.0)

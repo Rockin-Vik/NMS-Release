@@ -49,7 +49,8 @@
 .NOTES
     Target:  Windows Server 2025 (also fine on 2019/2022 and Windows 10/11)
     Needs:   Administrator, internet access
-    Author:  Generated for the NMS-Release deployment. See CODEBASE.md for context.
+    Context: CODEBASE.md, one level up in Release-NMS-Deploy/. Read it before changing
+             anything here - several steps exist only to work around documented quirks.
 
     UNTESTED ON A REAL VPS. Treat the first run as supervised. A full transcript is written
     next to the credentials file so any failure can be diagnosed after the fact.
@@ -1133,7 +1134,8 @@ function Write-DsnNotice {
     Write-Warn ''
     Write-Warn 'Until that DSN also offers a MariaDB form, plugin::LoadMysql() returns'
     Write-Warn 'undef and item upgrade tiers plus expansion progression fail silently.'
-    Write-Warn 'The deploy folder ships a patch for this - see README.md, "MySQL.pl DSN".'
+    Write-Warn 'This fork already patches MySQL.pl to try both drivers, so no action is'
+    Write-Warn 'needed if your quests came from this repo. See CODEBASE.md section 6.1.'
 }
 
 function Invoke-CheckDiskSpace {

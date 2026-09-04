@@ -82,7 +82,8 @@
     UNTESTED ON A REAL VPS. Treat the first run as a supervised dry run. A full transcript
     is written to <InstallRoot>\logs\.
 
-    Read CODEBASE.md before debugging anything here. Several stages exist only to work
+    Read CODEBASE.md (one level up, in Release-NMS-Deploy/) before debugging anything
+    here. Several stages exist only to work
     around documented traps in the codebase, and the comments reference it by section.
 #>
 
