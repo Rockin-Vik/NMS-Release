@@ -111,6 +111,15 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# PowerShell 7.4+ defaults $PSNativeCommandUseErrorActionPreference to $true, which turns
+# ANY non-zero exit from a native command into a terminating error - before our own
+# exit-code checks can run. That is fatal here: robocopy returns 1 on SUCCESS ("files
+# copied"), so the Runtime stage would die on the first quest copy, and `git rev-list`
+# with no upstream returns non-zero too. Native exit codes are checked explicitly
+# throughout (robocopy >= 8, cmake, git); we do not want them thrown.
+# On PowerShell 5.1 this variable does not exist and the assignment is a harmless no-op.
+$PSNativeCommandUseErrorActionPreference = $false
+
 # ---------------------------------------------------------------------------
 # Paths and constants
 # ---------------------------------------------------------------------------
@@ -191,6 +200,54 @@ function Write-Head {
     Write-Host ('=' * 74) -ForegroundColor DarkCyan
 }
 
+function Invoke-Native {
+    <#
+    .SYNOPSIS
+        Runs a native command safely and returns its exit code. Never throws.
+
+    .DESCRIPTION
+        $ErrorActionPreference = 'Stop' is right for cmdlets and actively wrong for native
+        commands, in two separate ways:
+
+          * PowerShell 5.1 converts anything a native command writes to STDERR into
+            ErrorRecords, and 'Stop' escalates those to terminating - even when the command
+            SUCCEEDED, and even when the stream is redirected to $null. This is not an edge
+            case here: git writes clone/fetch progress to stderr on every single run, and
+            cmake, robocopy and winget all do the same.
+          * PowerShell 7.4+ escalates any non-zero exit code the same way - which would kill
+            the Runtime stage outright, since robocopy returns 1 to mean "files copied".
+
+        Every native exit code in this script is checked explicitly (robocopy >= 8, cmake,
+        git), so relax the preference for the duration of the call and hand the code back
+        for the caller to judge.
+
+    .EXAMPLE
+        $code = Invoke-Native -Show { git clone --depth 1 $url $dest }
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [scriptblock] $Command,
+        [switch] $Show,          # stream merged output to the console
+        [switch] $Capture        # collect merged output into $script:NativeOutput
+    )
+
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $script:NativeOutput = @()
+    try {
+        if ($Capture) {
+            $script:NativeOutput = @(& $Command 2>&1)
+        } elseif ($Show) {
+            & $Command 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        } else {
+            & $Command 2>&1 | Out-Null
+        }
+        return $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+}
+
 function Write-Step { param([string] $Text) Write-Host "  -> $Text" -ForegroundColor Gray }
 function Write-Ok   { param([string] $Text) Write-Host "  [ OK ] $Text" -ForegroundColor Green }
 function Write-Warn { param([string] $Text) Write-Host "  [WARN] $Text" -ForegroundColor Yellow }
@@ -263,7 +320,9 @@ function Set-StoredCredential {
     $existing = Get-Content $script:CredentialFile | Where-Object {
         $_ -notmatch "^\s*$([regex]::Escape($Label))\s*="
     }
-    ($existing + "$Label = $Value") | Set-Content -Path $script:CredentialFile -Encoding UTF8
+    # @() so a single remaining line stays an array - bare + on a scalar string is
+    # concatenation, not append, and would collapse the file to one mangled line.
+    (@($existing) + "$Label = $Value") | Set-Content -Path $script:CredentialFile -Encoding UTF8
 }
 
 # ---------------------------------------------------------------------------
@@ -314,8 +373,15 @@ function Invoke-Sql {
     $old = $env:MYSQL_PWD
     $env:MYSQL_PWD = $Password
     try {
-        $out = $Query | & $client @cliArgs 2>&1
-        $code = $LASTEXITCODE
+        # EAP relaxed for the same reason as Invoke-Native: the client writes warnings to
+        # stderr, and under 'Stop' PowerShell 5.1 turns those into a terminating error even
+        # when the query succeeded. Exit code is checked explicitly below.
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $out = $Query | & $client @cliArgs 2>&1
+            $code = $LASTEXITCODE
+        } finally { $ErrorActionPreference = $prevEap }
     } finally {
         if ($null -eq $old) { Remove-Item Env:\MYSQL_PWD -ErrorAction SilentlyContinue }
         else { $env:MYSQL_PWD = $old }
@@ -343,10 +409,13 @@ function Invoke-SqlFile {
     try {
         # cmd.exe redirection streams the file. Get-Content | pipe would pull a 540 MB
         # dump through PowerShell's object pipeline and take an eternity.
-        & cmd.exe /c "`"$client`" $($cliArgs -join ' ') < `"$Path`"" 2>&1 | ForEach-Object {
+        # Invoke-Native because the client writes warnings to stderr on a large import,
+        # and under 'Stop' those would abort a perfectly good restore.
+        $cmdLine = "`"$client`" $($cliArgs -join ' ') < `"$Path`""
+        $code = Invoke-Native -Capture { cmd.exe /c $cmdLine }
+        $script:NativeOutput | ForEach-Object {
             if ($_ -match 'ERROR') { Write-Warn $_ }
         }
-        $code = $LASTEXITCODE
     } finally {
         if ($null -eq $old) { Remove-Item Env:\MYSQL_PWD -ErrorAction SilentlyContinue }
         else { $env:MYSQL_PWD = $old }
@@ -385,11 +454,18 @@ function Invoke-StageClone {
         Write-Step 'Repo already present; fetching updates...'
         Push-Location $script:SrcRoot
         try {
-            & git fetch --all --quiet
-            $behind = (& git rev-list --count 'HEAD..@{u}' 2>$null)
+            $null = Invoke-Native { git fetch --all --quiet }
+
+            # No upstream configured is a normal state, not an error - it just means we
+            # cannot tell how far behind we are, so skip the pull.
+            $behind = $null
+            if ((Invoke-Native -Capture { git rev-list --count 'HEAD..@{u}' }) -eq 0) {
+                $behind = $script:NativeOutput | Select-Object -First 1
+            }
+
             if ($behind -and [int]$behind -gt 0) {
                 Write-Step "$behind commit(s) behind; pulling..."
-                & git pull --ff-only --quiet
+                $null = Invoke-Native -Show { git pull --ff-only --quiet }
                 Write-Ok 'Updated.'
             } else {
                 Write-Ok 'Already up to date.'
@@ -402,8 +478,10 @@ function Invoke-StageClone {
         }
         Write-Step "Cloning $RepoUrl ..."
         Write-Step 'This pulls ~700 MB including the database dump. Give it a few minutes.'
-        & git clone --depth 1 $RepoUrl $script:SrcRoot
-        if ($LASTEXITCODE -ne 0) { throw "git clone failed with exit code $LASTEXITCODE" }
+        # git narrates clone progress on stderr even on success - Invoke-Native keeps that
+        # from being escalated into a terminating error.
+        $code = Invoke-Native -Show { git clone --depth 1 $RepoUrl $script:SrcRoot }
+        if ($code -ne 0) { throw "git clone failed with exit code $code" }
         Write-Ok 'Cloned.'
     }
 
@@ -464,9 +542,9 @@ FLUSH PRIVILEGES;
         return
     }
 
-    $tableCount = [int](Invoke-Sql -Password $rootPw -Query @"
+    $tableCount = [int](@(Invoke-Sql -Password $rootPw -Query @"
 SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DbName';
-"@)
+"@) | Select-Object -Last 1)
 
     if ($tableCount -gt 100) {
         Write-Ok "Database already has $tableCount tables; skipping import."
@@ -493,10 +571,10 @@ SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DbName';
             Select-Object -First 1
 
         if ($sevenZip) {
-            & $sevenZip x $zip "-o$extractDir" -y | Out-Null
+            $null = Invoke-Native { & $sevenZip x $zip "-o$extractDir" -y }
         } elseif (Get-Command tar -ErrorAction SilentlyContinue) {
             Push-Location $extractDir
-            try { & tar -xf $zip } finally { Pop-Location }
+            try { $null = Invoke-Native { tar -xf $zip } } finally { Pop-Location }
         } else {
             Expand-Archive -Path $zip -DestinationPath $extractDir -Force
         }
@@ -513,9 +591,9 @@ SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DbName';
     Invoke-SqlFile -Path $sqlFile.FullName -Password $rootPw -Database $DbName
     $sw.Stop()
 
-    $tableCount = [int](Invoke-Sql -Password $rootPw -Query @"
+    $tableCount = [int](@(Invoke-Sql -Password $rootPw -Query @"
 SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DbName';
-"@)
+"@) | Select-Object -Last 1)
     Write-Ok "Imported $tableCount tables in $([math]::Round($sw.Elapsed.TotalMinutes,1)) minutes."
 
     if ($tableCount -lt 100) { throw "Only $tableCount tables after import - something went wrong." }
@@ -523,13 +601,13 @@ SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DbName';
     # Verify the two things migrations do NOT create. See CODEBASE.md 4.4.
     Write-Step 'Checking for content the migrations cannot supply...'
 
-    $wp = [int](Invoke-Sql -Password $rootPw -Database $DbName -Quiet -Query @"
+    $wp = [int](@(Invoke-Sql -Password $rootPw -Database $DbName -Quiet -Query @"
 SELECT COUNT(*) FROM information_schema.tables
  WHERE table_schema='$DbName' AND table_name='nms_waypoints';
-"@)
+"@) | Select-Object -Last 1)
     if ($wp -gt 0) {
-        $rows = [int](Invoke-Sql -Password $rootPw -Database $DbName -Quiet `
-            -Query 'SELECT COUNT(*) FROM nms_waypoints;')
+        $rows = [int](@(Invoke-Sql -Password $rootPw -Database $DbName -Quiet `
+            -Query 'SELECT COUNT(*) FROM nms_waypoints;') | Select-Object -Last 1)
         if ($rows -gt 0) { Write-Ok "nms_waypoints has $rows rows." }
         else {
             Write-Warn 'nms_waypoints exists but is EMPTY. Waypoints will silently do nothing.'
@@ -539,10 +617,10 @@ SELECT COUNT(*) FROM information_schema.tables
         Write-Step 'nms_waypoints not in the dump; the custom manifest will create it (empty).'
     }
 
-    $cs = [int](Invoke-Sql -Password $rootPw -Database $DbName -Quiet -Query @"
+    $cs = [int](@(Invoke-Sql -Password $rootPw -Database $DbName -Quiet -Query @"
 SELECT COUNT(*) FROM information_schema.tables
  WHERE table_schema='$DbName' AND table_name LIKE 'account_character_set%';
-"@)
+"@) | Select-Object -Last 1)
     if ($cs -gt 0) { Write-Ok "account_character_set* tables present ($cs)." }
     else {
         Write-Warn 'account_character_set* tables are MISSING and have no migration'
@@ -599,7 +677,8 @@ function Resolve-CMake {
 
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (Test-Path $vswhere) {
-        $vsPath = & $vswhere -latest -products '*' -property installationPath 2>$null
+        $null = Invoke-Native -Capture { & $vswhere -latest -products '*' -property installationPath }
+        $vsPath = $script:NativeOutput | Select-Object -First 1
         if ($vsPath) {
             $bundled = Join-Path $vsPath 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
             if (Test-Path $bundled) { return $bundled }
@@ -638,10 +717,10 @@ function Invoke-StageBuild {
     Write-Step 'Configuring...'
     Push-Location $script:RepoServer
     try {
-        & $cmake -S . -B Build -G 'Visual Studio 17 2022' -A x64 -DEQEMU_BUILD_LOGIN=ON
-        if ($LASTEXITCODE -ne 0) {
+        $code = Invoke-Native -Show { & $cmake -S . -B Build -G 'Visual Studio 17 2022' -A x64 -DEQEMU_BUILD_LOGIN=ON }
+        if ($code -ne 0) {
             throw @"
-CMake configure failed (exit $LASTEXITCODE).
+CMake configure failed (exit $code).
 
 Usual causes:
   * Visual Studio Build Tools installed without the native x64 C++ toolset
@@ -656,8 +735,8 @@ Usual causes:
         Write-Step "Building Release/x64 with $jobs parallel jobs. Expect 20-45 minutes."
 
         $sw = [Diagnostics.Stopwatch]::StartNew()
-        & $cmake --build Build --config Release --parallel $jobs
-        $code = $LASTEXITCODE
+        # MSVC writes warnings to stderr constantly; a compiler warning must not abort us.
+        $code = Invoke-Native -Show { & $cmake --build Build --config Release --parallel $jobs }
         $sw.Stop()
 
         if ($code -ne 0) { throw "Build failed with exit code $code after $([math]::Round($sw.Elapsed.TotalMinutes,1)) minutes." }
@@ -707,7 +786,7 @@ function Invoke-StageRuntime {
     Write-Step 'Copying binaries and their DLLs...'
     Copy-Item -Path (Join-Path $script:BinDir '*') -Destination $script:ServerRoot `
         -Include '*.exe', '*.dll' -Force
-    $n = (Get-ChildItem $script:ServerRoot -Filter '*.exe').Count
+    $n = @(Get-ChildItem $script:ServerRoot -Filter '*.exe').Count
     Write-Ok "$n executables in place."
 
     # patch_*.conf and the opcode files. The config points at assets/patches/.
@@ -734,17 +813,17 @@ function Invoke-StageRuntime {
     # than Copy-Item, which chokes on trees this wide.
     Write-Step 'Copying quests (8,000+ files - takes a minute)...'
     $questDst = Join-Path $script:ServerRoot 'quests'
-    & robocopy $script:RepoQuests $questDst /E /NFL /NDL /NJH /NJS /NC /NS /NP /XD '.git' | Out-Null
-    # Robocopy exit codes < 8 are success. 8+ means at least one file failed.
-    if ($LASTEXITCODE -ge 8) { throw "robocopy failed copying quests (exit $LASTEXITCODE)" }
-    $qCount = (Get-ChildItem $questDst -Recurse -File -Include '*.pl','*.lua').Count
+    # Robocopy exit codes < 8 are SUCCESS (1 = files copied). Only 8+ is a real failure.
+    $rc = Invoke-Native { robocopy $script:RepoQuests $questDst /E /NFL /NDL /NJH /NJS /NC /NS /NP /XD '.git' }
+    if ($rc -ge 8) { throw "robocopy failed copying quests (exit $rc)" }
+    $qCount = @(Get-ChildItem $questDst -Recurse -File -Include '*.pl','*.lua').Count
     Write-Ok "$qCount quest scripts in quests\"
 
     Write-Step 'Copying plugins...'
     $pluginDst = Join-Path $script:ServerRoot 'quests\plugins'
-    & robocopy $script:RepoPlugins $pluginDst /E /NFL /NDL /NJH /NJS /NC /NS /NP /XD '.git' | Out-Null
-    if ($LASTEXITCODE -ge 8) { throw "robocopy failed copying plugins (exit $LASTEXITCODE)" }
-    $pCount = (Get-ChildItem $pluginDst -File -Filter '*.pl').Count
+    $rc = Invoke-Native { robocopy $script:RepoPlugins $pluginDst /E /NFL /NDL /NJH /NJS /NC /NS /NP /XD '.git' }
+    if ($rc -ge 8) { throw "robocopy failed copying plugins (exit $rc)" }
+    $pCount = @(Get-ChildItem $pluginDst -File -Filter '*.pl').Count
     Write-Ok "$pCount plugins in quests\plugins\"
 
     if ($pCount -lt 40) { Write-Warn "Expected ~52 plugins, found $pCount." }
@@ -776,8 +855,8 @@ function Invoke-StageMaps {
 
     Write-Step "Cloning maps from $($script:MapsRepo) (~1-2 GB)..."
     try {
-        & git clone --depth 1 $script:MapsRepo $tmp
-        if ($LASTEXITCODE -ne 0) { throw "git clone returned $LASTEXITCODE" }
+        $code = Invoke-Native -Show { git clone --depth 1 $script:MapsRepo $tmp }
+        if ($code -ne 0) { throw "git clone returned $code" }
     } catch {
         Write-Bad "Map download failed: $($_.Exception.Message)"
         Write-Warn 'The server will still boot, but pathing and LOS will misbehave.'
@@ -805,8 +884,8 @@ function Invoke-StageMaps {
     }
 
     Write-Step 'Copying maps into the runtime directory...'
-    & robocopy $source $mapDir /E /NFL /NDL /NJH /NJS /NC /NS /NP /XD '.git' | Out-Null
-    if ($LASTEXITCODE -ge 8) { throw "robocopy failed copying maps (exit $LASTEXITCODE)" }
+    $rc = Invoke-Native { robocopy $source $mapDir /E /NFL /NDL /NJH /NJS /NC /NS /NP /XD '.git' }
+    if ($rc -ge 8) { throw "robocopy failed copying maps (exit $rc)" }
 
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 
@@ -830,15 +909,17 @@ function Get-PublicAddress {
         try {
             $ip = (Invoke-RestMethod -Uri $svc -TimeoutSec 10).ToString().Trim()
             if ($ip -match '^\d{1,3}(\.\d{1,3}){3}$') {
-                Write-Ok "Detected $ip (via $([uri]$svc).Host)"
+                Write-Ok "Detected $ip (via $(([uri]$svc).Host))"
                 return $ip
             }
         } catch { continue }
     }
 
-    $local = (Get-NetIPAddress -AddressFamily IPv4 |
-        Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' } |
-        Select-Object -First 1).IPAddress
+    # @() so an empty result is an empty array rather than $null - reading .IPAddress off
+    # $null is a hard error under Set-StrictMode -Version Latest.
+    $candidates = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' })
+    $local = if ($candidates.Count -gt 0) { $candidates[0].IPAddress } else { $null }
 
     if ($local) {
         Write-Warn "Could not reach any detection service; falling back to local IP $local"
@@ -1012,6 +1093,11 @@ function Invoke-StageConfig {
 function Invoke-StageMigrate {
     Write-Head 'Stage 7/12 - Shared memory and migrations'
 
+    # Initialised out here, not inside the try: it is read after the try/finally, and a
+    # future edit adding a catch would otherwise turn that into an uninitialised read
+    # under Set-StrictMode.
+    $settled = $false
+
     Push-Location $script:ServerRoot
     try {
         # shared_memory must run to completion BEFORE world starts, every time item or
@@ -1068,7 +1154,6 @@ function Invoke-StageMigrate {
             -WorkingDirectory $script:ServerRoot -NoNewWindow -PassThru
 
         $deadline = (Get-Date).AddMinutes(20)
-        $settled = $false
         $last = $null
         $consecutiveErrors = 0
         $lastError = ''
@@ -1162,7 +1247,12 @@ function Invoke-StageHealth {
     $old = $env:MYSQL_PWD
     $env:MYSQL_PWD = $rootPw
     try {
-        $result = & cmd.exe /c "`"$client`" --host=127.0.0.1 --user=root --database=$DbName --table --force < `"$sqlPath`"" 2>&1
+        # --force makes the client keep going past errors, so it WILL write to stderr on
+        # exactly the broken databases this audit exists to diagnose. Invoke-Native keeps
+        # that from aborting the stage before we can report it.
+        $cmdLine = "`"$client`" --host=127.0.0.1 --user=root --database=$DbName --table --force < `"$sqlPath`""
+        $null = Invoke-Native -Capture { cmd.exe /c $cmdLine }
+        $result = $script:NativeOutput
     } finally {
         if ($null -eq $old) { Remove-Item Env:\MYSQL_PWD -ErrorAction SilentlyContinue }
         else { $env:MYSQL_PWD = $old }
@@ -1237,8 +1327,8 @@ function Invoke-StageExport {
     $overlay = Join-Path $script:RepoClient 'ClientFiles'
     if (Test-Path $overlay) {
         $dst = Join-Path $script:ClientOut 'ClientFiles'
-        & robocopy $overlay $dst /E /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
-        if ($LASTEXITCODE -lt 8) { Write-Ok 'Staged the client overlay (dinput8.dll + UI XML).' }
+        $rc = Invoke-Native { robocopy $overlay $dst /E /NFL /NDL /NJH /NJS /NC /NS /NP }
+        if ($rc -lt 8) { Write-Ok 'Staged the client overlay (dinput8.dll + UI XML).' }
     }
 
     # Falls back to live detection so -OnlyStage Export (with no prior Config run in this
@@ -1307,8 +1397,8 @@ function Invoke-StageServices {
     if (-not $nssm) {
         Write-Step 'NSSM not found; installing via winget...'
         try {
-            & winget install --id NSSM.NSSM --exact --silent `
-                --accept-package-agreements --accept-source-agreements --disable-interactivity
+            $null = Invoke-Native -Show { winget install --id NSSM.NSSM --exact --silent `
+                --accept-package-agreements --accept-source-agreements --disable-interactivity }
             $machine = [Environment]::GetEnvironmentVariable('Path','Machine')
             $user    = [Environment]::GetEnvironmentVariable('Path','User')
             $env:Path = (@($machine,$user) | Where-Object { $_ }) -join ';'
@@ -1338,23 +1428,23 @@ function Invoke-StageServices {
             Write-Step "$($svc.Name) already registered; reconfiguring..."
             if ($existing.Status -eq 'Running') { Stop-Service -Name $svc.Name -Force }
         } else {
-            & $nssm.Source install $svc.Name $exe 2>&1 | Out-Null
+            $null = Invoke-Native { & $nssm.Source install $svc.Name $exe }
         }
 
-        & $nssm.Source set $svc.Name Application       $exe                    2>&1 | Out-Null
-        & $nssm.Source set $svc.Name AppDirectory      $script:ServerRoot      2>&1 | Out-Null
-        & $nssm.Source set $svc.Name DisplayName       $svc.Display            2>&1 | Out-Null
-        if ($svc.Args) { & $nssm.Source set $svc.Name AppParameters $svc.Args  2>&1 | Out-Null }
+        $null = Invoke-Native { & $nssm.Source set $svc.Name Application       $exe                    }
+        $null = Invoke-Native { & $nssm.Source set $svc.Name AppDirectory      $script:ServerRoot      }
+        $null = Invoke-Native { & $nssm.Source set $svc.Name DisplayName       $svc.Display            }
+        if ($svc.Args) { $null = Invoke-Native { & $nssm.Source set $svc.Name AppParameters $svc.Args  } }
 
         # Manual start. These must come up in order (world before zone), and Windows
         # service dependencies do not express "wait until world is actually serving".
         # start-server.ps1 sequences them properly.
-        & $nssm.Source set $svc.Name Start SERVICE_DEMAND_START 2>&1 | Out-Null
+        $null = Invoke-Native { & $nssm.Source set $svc.Name Start SERVICE_DEMAND_START }
 
-        & $nssm.Source set $svc.Name AppStdout (Join-Path $script:ServerRoot "logs\$($svc.Name).out.log") 2>&1 | Out-Null
-        & $nssm.Source set $svc.Name AppStderr (Join-Path $script:ServerRoot "logs\$($svc.Name).err.log") 2>&1 | Out-Null
-        & $nssm.Source set $svc.Name AppRotateFiles 1        2>&1 | Out-Null
-        & $nssm.Source set $svc.Name AppRotateBytes 10485760 2>&1 | Out-Null
+        $null = Invoke-Native { & $nssm.Source set $svc.Name AppStdout (Join-Path $script:ServerRoot "logs\$($svc.Name).out.log") }
+        $null = Invoke-Native { & $nssm.Source set $svc.Name AppStderr (Join-Path $script:ServerRoot "logs\$($svc.Name).err.log") }
+        $null = Invoke-Native { & $nssm.Source set $svc.Name AppRotateFiles 1        }
+        $null = Invoke-Native { & $nssm.Source set $svc.Name AppRotateBytes 10485760 }
 
         Write-Ok "$($svc.Name) -> $($svc.Exe)"
         $registered++
@@ -1603,7 +1693,9 @@ try {
     $script:Summary | Format-Table -AutoSize | Out-String -Width 100 | Write-Host
     Write-Host "  Total time: $([math]::Round($overall.Elapsed.TotalMinutes,1)) minutes"
 
-    $failed = $script:Summary | Where-Object { $_.State -eq 'Failed' }
+    # @() - a single matching row would otherwise be a scalar, and .Count on a scalar
+    # throws under Set-StrictMode -Version Latest.
+    $failed = @($script:Summary | Where-Object { $_.State -eq 'Failed' })
     if ($failed) {
         Write-Bad "$($failed.Count) stage(s) failed:"
         $failed | ForEach-Object { Write-Host "         - $($_.Stage): $($_.Detail)" -ForegroundColor Red }

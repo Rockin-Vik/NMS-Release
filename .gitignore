@@ -1,3 +1,7 @@
+# FUSE mount artefacts - left behind when a file is edited while still open over a
+# network/virtual mount. Never real content.
+.fuse_hidden*
+
 # Visual Studio & IDE caches
 .vs/
 *.user

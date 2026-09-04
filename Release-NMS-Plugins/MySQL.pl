@@ -44,12 +44,41 @@ sub try_connect {
     
     # Use the port if it's specified in the config; otherwise, use the default port 3306
     my $port = $db_config->{port} // 3306;
-    
-    my $dsn = "dbi:mysql:dbname=$db_config->{db};host=$db_config->{host};port=$port";
-    my $connect = DBI->connect($dsn, $db_config->{username}, $db_config->{password}, { RaiseError => 0, PrintError => 0 });
-    
-    return $connect if $connect;
-    warn "Connection attempt failed for $label: $DBI::errstr";
+
+    # Try whichever DBD driver this box actually has.
+    #
+    # The original code hardcoded "dbi:mysql:", which only DBD::mysql serves. That is a
+    # problem on a MariaDB server: DBD::mysql 5.x removed MariaDB support outright
+    # (upstream says "use DBD::MariaDB instead") and will not build against MariaDB's
+    # client libraries, while DBD::mysql 4.050 - the last version that could - no longer
+    # builds on modern Perl. So on MariaDB the only installable driver is DBD::MariaDB,
+    # which answers to "dbi:MariaDB:" and not to "dbi:mysql:".
+    #
+    # Order matters only for speed, not correctness: we ask DBI which drivers are actually
+    # present and try those, so a real MySQL box still takes the DBD::mysql path exactly
+    # as before. Behaviour is unchanged where DBD::mysql exists.
+    my %available = map { $_ => 1 } DBI->available_drivers;
+    my @attempts;
+    push @attempts, "dbi:mysql:dbname=$db_config->{db};host=$db_config->{host};port=$port"
+        if $available{mysql};
+    push @attempts, "dbi:MariaDB:database=$db_config->{db};host=$db_config->{host};port=$port"
+        if $available{MariaDB};
+
+    unless (@attempts) {
+        warn "No Perl DBD driver installed (need DBD::mysql or DBD::MariaDB) - "
+           . "item upgrade tiers and progression will not work";
+        return;
+    }
+
+    my $last_error;
+    for my $dsn (@attempts) {
+        my $connect = DBI->connect($dsn, $db_config->{username}, $db_config->{password},
+            { RaiseError => 0, PrintError => 0 });
+        return $connect if $connect;
+        $last_error = $DBI::errstr;
+    }
+
+    warn "Connection attempt failed for $label: $last_error";
     return;
 }
 

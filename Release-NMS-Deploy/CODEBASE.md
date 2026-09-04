@@ -312,6 +312,43 @@ inventory icon sheets `dragitem179`–`222.dds` (base client stops at 178).
 
 ## 6. Quests and plugins
 
+### 6.0 ⚠️ The embedded Perl — pin it before you build
+
+`zone.exe` does not shell out to Perl; it **embeds an interpreter**, and the quest scripts
+run inside it. That has a consequence people miss: the CPAN modules and DBD driver the
+plugins need must be installed in *that* Perl, not whichever one happens to be on `PATH`.
+
+Which Perl gets embedded is decided at configure time by
+`cmake/DependencyHelperMSVC.cmake`:
+
+```cmake
+#Try to find perl first, (so you can use your active install first)
+FIND_PACKAGE(PerlLibs)
+IF(NOT PerlLibs_FOUND)      # else download portable Strawberry 5.24.4.1
+```
+
+So it silently adopts your system Perl if there is one. **The version is not a free
+choice:**
+
+| Evidence | Version |
+| --- | --- |
+| `DependencyHelperMSVC.cmake` portable fallback (Windows) | 5.24.4.1 |
+| `CMakeLists.txt:28` static-build pin (Linux) | 5.32.1 |
+| **What these deploy scripts pin** | **5.32.1.1** |
+
+Two independent things break on a newer Perl:
+
+1. **EQEmu's embedded-Perl C code predates the API churn** in modern Perls. Its own
+   fallback is 5.24; 5.32 is the newest version the project demonstrably builds against.
+2. **Strawberry 5.40+ switched to UCRT.** `DBD::MariaDB`'s `dbdimp.c` still references the
+   msvcrt-era internal `__pioinfo`, so it compiles and then dies at link with
+   `undefined reference to __imp___pioinfo`. Observed on Strawberry 5.42.2.
+
+Changing Perl after building means rebuilding the server, so settle this first.
+`Release-NMS-Deploy/0-Reset-Perl.ps1` removes a wrong-version install cleanly.
+
+### 6.1 Structure
+
 - **8,054 files: 4,033 Perl + 3,994 Lua**, roughly 1:1. **Both engines must be enabled.**
 - 220 zone-named directories, plus `global/` and `lua_modules/`
 - Entry points into the custom layer: `global/global_player.pl` and `global/global_npc.pl`
@@ -334,10 +371,22 @@ The 11 `NMS_*` plugins in `Release-NMS-Plugins/`:
 
 ### ⚠️ Perl dependencies
 
-- **`MySQL.pl` needs `DBI`, `DBD::mysql` and `JSON`.** It opens its *own* DB connection by
+- **`MySQL.pl` needs `DBI`, `JSON`, and a DBD driver.** It opens its *own* DB connection by
   reading `eqemu_config.json` from the working directory. `NMS_item_utils.pl` and
   `NMS_progression_utils.pl` both call `plugin::LoadMysql()` — so **item tiers and progression
   are broken without these CPAN modules**, with no obvious error.
+
+  ⚠️ **The DBD driver is the one genuine blocker on a MariaDB box.** Upstream `MySQL.pl`
+  hardcoded a `dbi:mysql:` DSN, which only `DBD::mysql` serves — but **DBD::mysql 5.x
+  removed MariaDB support outright** (upstream's own advice: "use DBD::MariaDB instead")
+  and will not configure against MariaDB's client libraries. `DBD::mysql` 4.050 could, but
+  no longer builds on modern Perl (5.42+). So on MariaDB the only installable driver is
+  `DBD::MariaDB`, which answers to `dbi:MariaDB:` and *not* to `dbi:mysql:`.
+
+  This fork patches `try_connect` to ask `DBI->available_drivers` and try whichever is
+  actually present. A real MySQL box still takes the `dbi:mysql:` path exactly as before;
+  a MariaDB box now works at all. If neither driver is installed it warns explicitly
+  rather than returning `undef` silently.
 - **`illusion_tools.pl:36` has `use Switch;`** — removed from core Perl in 5.14. Install
   `Switch` from CPAN or that file fails to compile on modern Strawberry Perl.
 - `MP3.pl` needs a `cust_sound_files` table that is **not part of stock PEQ**. Missing → sound
@@ -364,7 +413,9 @@ Quick reference. Each links to the section above.
 | 11 | v1 creates a junk `new_table` on every fresh DB — harmless | 4.2 |
 | 12 | `CAuth` disconnects clients without the DLL when `ServerAuthStats` is on | 5 |
 | 13 | The four exported client files go in **both** client root and `Resources/` | 5 |
-| 14 | Perl needs `DBI`/`DBD::mysql`/`JSON`/`Switch` or tiers + progression silently break | 6 |
+| 14 | Perl needs `DBI`/`JSON`/`Switch` + a DBD driver, or tiers + progression silently break | 6.1 |
+| 14b | On MariaDB the driver **must** be `DBD::MariaDB` — DBD::mysql 5.x refuses to build | 6.1 |
+| 14c | `zone.exe` **embeds** Perl — pin 5.32.1.1; 5.40+ breaks the build *and* the driver | 6.0 |
 | 15 | `utils/defaults/Maps/` is **empty** — zone pathing/LOS files must be fetched separately | — |
 | 16 | `shared_memory` must run and exit before `world` starts | 2 |
 
@@ -374,7 +425,8 @@ Quick reference. Each links to the section above.
 
 The full sequence, which `2-Setup-NMSServer.ps1` automates:
 
-1. Install prerequisites (MariaDB, Perl + CPAN modules, VS Build Tools, CMake, Git, 7-Zip)
+1. Install prerequisites (MariaDB, VS Build Tools, CMake, Git, 7-Zip, and **Strawberry Perl
+   5.32.1.1** plus its CPAN modules — the Perl version is not a free choice, see §6.0)
 2. Clone the repo
 3. Create schema + user; import `database/release-peq.zip` (~540 MB unpacked)
 4. `cmake -S . -B Build -G "Visual Studio 17 2022" -A x64 -DEQEMU_BUILD_LOGIN=ON` then build

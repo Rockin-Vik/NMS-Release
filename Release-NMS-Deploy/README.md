@@ -5,8 +5,28 @@ Build and install automation for the NMS server on a fresh Windows box.
 | File | What it is |
 | --- | --- |
 | [`CODEBASE.md`](CODEBASE.md) | **Read this first.** Working understanding of the codebase — architecture, what is custom vs stock EQEmu, the migration system, and a gotchas index. |
+| `0-Reset-Perl.ps1` | Removes a wrong-version Perl and DBD build residue. Only needed if the box already has Perl 5.40+. |
 | `1-Install-Prerequisites.ps1` | Audits the box and installs what is missing. |
 | `2-Setup-NMSServer.ps1` | Clone → database → build → configure → run. |
+
+> ### The Perl version is not a free choice
+>
+> `zone.exe` **embeds** whichever Perl CMake finds (`cmake/DependencyHelperMSVC.cmake`
+> calls `FIND_PACKAGE(PerlLibs)` and falls back to downloading portable Strawberry
+> **5.24.4.1**; `CMakeLists.txt:28` pins **5.32.1** for Linux static builds). The quest
+> plugins run inside *that* interpreter, so its CPAN modules and DBD driver are the ones
+> that matter — not some other Perl on `PATH`.
+>
+> These scripts pin **Strawberry Perl 5.32.1.1**, installed from the vendor MSI rather
+> than winget, for two independent reasons:
+>
+> - EQEmu's embedded-Perl code predates the API changes in newer Perls.
+> - Strawberry 5.40+ moved to UCRT, and `DBD::MariaDB` still references the msvcrt-era
+>   internal `__pioinfo` — it compiles, then dies at link with
+>   `undefined reference to __imp___pioinfo`.
+>
+> If the box already has a newer Perl, run `0-Reset-Perl.ps1` first. Decide this **before
+> building**: changing Perl afterwards means rebuilding the server.
 
 ---
 
@@ -15,6 +35,10 @@ Build and install automation for the NMS server on a fresh Windows box.
 From an **elevated** PowerShell prompt:
 
 ```powershell
+# 0. ONLY if the box already has Perl 5.40 or newer (see the Perl note above)
+.\0-Reset-Perl.ps1 -WhatIf      # dry run, changes nothing
+.\0-Reset-Perl.ps1
+
 # 1. See where the box stands (changes nothing)
 .\1-Install-Prerequisites.ps1 -CheckOnly
 
@@ -24,6 +48,12 @@ From an **elevated** PowerShell prompt:
 # 3. Open a NEW PowerShell window so it picks up the updated PATH, then:
 .\2-Setup-NMSServer.ps1
 ```
+
+> Re-run stage 1 until the summary shows **no Failed rows**. It is idempotent — everything
+> already present is skipped — and some steps only become reachable once an earlier one has
+> landed. In particular, if Perl reports `PATH refresh pending`, the CPAN and DB-driver
+> rows will be absent entirely rather than failing; a second run in a fresh shell picks
+> them up.
 
 Total: **2–4 hours** on a fresh box. The build (~30 min) and the database import (~20 min)
 dominate.
@@ -41,8 +71,18 @@ cd C:\NMS\server
 ## What gets installed
 
 **Stage 1** — VS 2022 Build Tools (C++ workload), CMake, Git, 7-Zip, MariaDB 11
-(loopback-only), Strawberry Perl, and the CPAN modules `DBI`, `DBD::mysql`, `JSON`,
-`Switch`. Every check is skip-if-present, so re-running is safe.
+(loopback-only), Strawberry Perl, and the CPAN modules `DBI`, `JSON`, `Switch`, plus a
+database driver. Every check is skip-if-present, so re-running is safe.
+
+> **On the DBD driver.** `DBD::mysql` 5.x removed MariaDB support and will not build
+> against MariaDB's client libraries; 4.050 could, but no longer builds on Perl 5.42+.
+> So on a MariaDB box the script installs **`DBD::MariaDB`** and accepts an existing
+> `DBD::mysql` only if you happen to run real MySQL.
+>
+> `Release-NMS-Plugins/MySQL.pl` originally hardcoded a `dbi:mysql:` DSN, which only
+> `DBD::mysql` serves. This fork patches `try_connect` to ask `DBI->available_drivers`
+> and use whichever is present — MySQL boxes behave exactly as before, MariaDB boxes now
+> work. Without that patch, item upgrade tiers and expansion progression fail silently.
 
 **Stage 2** — twelve stages, each independently re-runnable:
 
@@ -93,9 +133,10 @@ is behind NAT), `-InstallRoot <path>`.
 
 ## Design decisions
 
-**Build on the VPS, not elsewhere.** The server binaries link against a specific Perl
-version. Building on the box that runs them removes a whole class of "zone.exe won't
-start" problems.
+**Build on the VPS, not elsewhere.** `zone.exe` links against — and embeds — a specific
+Perl. Building on the box that runs it removes a whole class of "zone.exe won't start"
+problems, and guarantees the quest plugins' CPAN modules live in the interpreter the
+server actually uses.
 
 **Local loginserver, not Project EQ.** Players point at your IP on 5998. Nothing depends
 on anyone else's infrastructure. To go public later: register with PEQ, then fill in
@@ -116,8 +157,10 @@ instead, which runs `shared_memory` first and sequences the rest with real delay
 
 ## Known caveats
 
-- **These scripts have not been run against a real VPS.** Treat the first run as
-  supervised. Full transcripts land in `C:\NMS\logs\`.
+- **Stage 1 has been run on a real Windows Server 2025 box; stage 2 has not.** Treat the
+  first stage-2 run as supervised. Full transcripts land in `C:\NMS\logs\`.
+- **Perl 5.40+ will not work**, for two independent reasons — see the Perl note at the top.
+  Use `0-Reset-Perl.ps1`, then let stage 1 install the pinned 5.32.1.1.
 - **The first CMake configure needs internet.** The repo commits a *partial* vcpkg tree —
   `.gitignore` has a bare `bin/`, which excluded every runtime DLL — so the ~132 MB
   download is not optional despite appearances.
