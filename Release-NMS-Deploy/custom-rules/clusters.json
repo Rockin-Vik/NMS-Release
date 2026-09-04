@@ -1,0 +1,286 @@
+{
+  "clusters": [
+    {
+      "title": "Multiclass / client contract",
+      "blurb": "Turning one of these off often looks like a C++ or client bug. `MulticlassingEnabled` wants `ServerAuthStats` and `UseDynamicAATimers` for full behavior; `CAuth` disconnects clients without the DLL when `ServerAuthStats` is on. See CODEBASE.md §3.1 and §5.",
+      "rules": [
+        "ServerAuthStats",
+        "MulticlassingEnabled",
+        "UseDynamicAATimers",
+        "BypassMulticlassStackConflict",
+        "ServerAuthKey"
+      ]
+    },
+    {
+      "title": "Pets",
+      "blurb": "Cap, window, bags, swarm AA, and pet combat ceilings. Pet window refresh is the dirty flag, not a raw `OP_PetList` send. See CODEBASE.md §3.2.",
+      "rules": [
+        "AbsolutePetLimit",
+        "PetPlacementAdjustment",
+        "PetPlacementDistance",
+        "TauntTogglesPetTanking",
+        "EnablePetBags",
+        "ExcludeTempPetsFromProcChanceSPA",
+        "ApplyPetAAToSwarm",
+        "PetWeaponTuningMult",
+        "PetProcRateCap",
+        "PetFlurryAACap",
+        "PetCriticalAACap",
+        "PetMaximumSpellCritRatio",
+        "PetMaximumSpellCritChance",
+        "DisablePetGroupSpells",
+        "ConditionalPetRampageImmunity",
+        "PetAssistRateLimit"
+      ]
+    },
+    {
+      "title": "Echo of Memory / character sets",
+      "blurb": "Account-wide alt currency (id 6) and the EoM unlocks for character sets/slots. `#award` does not write `account_alt_currency`. See CODEBASE.md §3.3 and §3.6.",
+      "rules": [
+        "EnableAccountAltCurrency",
+        "EventEOMDropChance",
+        "BaseCharacterSets",
+        "EoMUnlockCharacterSets",
+        "EoMUnlockCharacterSetCost",
+        "BaseCharacterSlots",
+        "EoMUnlockCharacterSlots",
+        "EoMUnlockCharacterSlotCost"
+      ]
+    },
+    {
+      "title": "Item tiers / Power Source / mutations",
+      "blurb": "Tier is arithmetic on item id (`+1e6` / `+2e6`). Item-stat mutations apply at shared-memory load — re-run `shared_memory` after changes. See CODEBASE.md §3.4.",
+      "rules": [
+        "UseNMSItemMutations",
+        "DoItemUpgrades",
+        "Tier1ItemDropRate",
+        "Tier2ItemDropRate",
+        "PowerSourceItemUpgrade",
+        "PowerSourceItemUpgradeRateScale",
+        "PowerSourceItemTier1RateFloor",
+        "PowerSourceItemTier2RateFloor",
+        "UseDynamicItemDiscoveryTags"
+      ]
+    },
+    {
+      "title": "Combat / spells",
+      "blurb": "Long-tail combat and spell tunables. Most of these are fully described by the header note; this cluster exists so they are findable.",
+      "rules": [
+        "SuspendGroupBuffs",
+        "SuspendGroupBuffsExtra",
+        "FadeNPCDebuffsOutofCombat",
+        "ClearRestingDetrimentalEffectsEnabled",
+        "ItemExtraSpellAmtMaximumPercentage",
+        "NonDaggerBackstabMultiplier1H",
+        "NonDaggerBackstabMultiplier2H",
+        "MonkSkillAttacksAreH2HForProcs",
+        "MultipleTwoHandedProcs",
+        "DevastatingFrenzyRateModifier",
+        "DevastatingFrenzyDamageMultiplier",
+        "FrenzyScaleOnWeaponAmount",
+        "MonkScaleOnWeaponAmount",
+        "MonkScaleOnHandFeetQuality",
+        "DoubleAttackSkillRanged",
+        "TemporaryStunImmunity",
+        "ForceNPCFearPathing",
+        "CastedSpellCritBonusRatio",
+        "ProcSpellCritBonusRatio",
+        "AA339Whitelist",
+        "ProcReflectPercentage",
+        "UseHasteForMeleeSkills",
+        "AdditiveBackstabDamage",
+        "SE_DamageModifierMaxCumulativeValue",
+        "StunImmunityTimerMultiplier",
+        "SilenceImmunityTimerMultiplier",
+        "PlayerDispelCures",
+        "DontInterruptHealsByMelee",
+        "AlternateMobFDBehavior",
+        "ScaleAutoAttackByHStr",
+        "ScaleAutoAttackHStrSoftCap",
+        "ScaleAutoAttackHStrScaleFloor",
+        "ScaleAutoAttackHStrScaleFactor",
+        "ScaleBowByHDex",
+        "ScaleBowByHDexDivide",
+        "ScaleBowHDexSoftCap",
+        "ScaleBowHDexScaleFloor",
+        "ScaleBowHDexScaleFactor",
+        "ScaleBowMinimumDamageMultiplier",
+        "ScaleBowMinimumDamageDivisor",
+        "CascadeOfDecaySpellId",
+        "CascadeOfDecayTapPercent",
+        "DoppelgangerBuffBacklist",
+        "NecroDotCritLevel",
+        "SuppressDispels",
+        "SuppressDispelsTime",
+        "SuppressDebuffSpellID"
+      ]
+    },
+    {
+      "title": "Instances",
+      "blurb": "Static (no respawn) and farming (long-respawn disabled) instance versions, plus `#zoneshard` hub list. See CODEBASE.md §3.7.",
+      "rules": [
+        "StaticInstanceVersion",
+        "StaticInstanceTemplateVersion",
+        "FarmingInstanceVersion",
+        "FarmingInstanceTemplateVersion",
+        "HubZones"
+      ]
+    },
+    {
+      "title": "Economy / bags",
+      "blurb": "Plat unattune/combine and bag item-id lists. Unattune is off by default.",
+      "rules": [
+        "UseCustomUnattuneCombine",
+        "UnattuneCostMultiplier",
+        "CombineCostMultiplier",
+        "AutoSellBagIDs",
+        "StackOnlyBags"
+      ]
+    },
+    {
+      "title": "Seasonal / ops / GM",
+      "blurb": "Season-wide toggles, GM audit, and command behavior. These are the levers you flip for an event, not combat math.",
+      "rules": [
+        "EnableSeasonalCharacters",
+        "EnableGlobalLoot",
+        "PermanentServerBuffsEnabled",
+        "GuideAudit",
+        "EnableFabledMobs",
+        "CorpseFixSummonsCorpses",
+        "GroupIncentiveProgram",
+        "UseAAEXPVeterancy",
+        "AAConsumeBaseValue"
+      ]
+    }
+  ],
+  "related_groups": [
+    [
+      "ServerAuthStats",
+      "MulticlassingEnabled",
+      "UseDynamicAATimers",
+      "BypassMulticlassStackConflict"
+    ],
+    [
+      "SuspendGroupBuffs",
+      "SuspendGroupBuffsExtra"
+    ],
+    [
+      "PetPlacementAdjustment",
+      "PetPlacementDistance"
+    ],
+    [
+      "AbsolutePetLimit",
+      "EnablePetBags",
+      "PetAssistRateLimit"
+    ],
+    [
+      "TauntTogglesPetTanking",
+      "ConditionalPetRampageImmunity"
+    ],
+    [
+      "ApplyPetAAToSwarm",
+      "DisablePetGroupSpells"
+    ],
+    [
+      "PetProcRateCap",
+      "PetFlurryAACap",
+      "PetCriticalAACap",
+      "PetMaximumSpellCritRatio",
+      "PetMaximumSpellCritChance"
+    ],
+    [
+      "PetWeaponTuningMult",
+      "ExcludeTempPetsFromProcChanceSPA"
+    ],
+    [
+      "BaseCharacterSets",
+      "EoMUnlockCharacterSets",
+      "EoMUnlockCharacterSetCost"
+    ],
+    [
+      "BaseCharacterSlots",
+      "EoMUnlockCharacterSlots",
+      "EoMUnlockCharacterSlotCost"
+    ],
+    [
+      "EnableAccountAltCurrency",
+      "EventEOMDropChance"
+    ],
+    [
+      "DoItemUpgrades",
+      "Tier1ItemDropRate",
+      "Tier2ItemDropRate"
+    ],
+    [
+      "PowerSourceItemUpgrade",
+      "PowerSourceItemUpgradeRateScale",
+      "PowerSourceItemTier1RateFloor",
+      "PowerSourceItemTier2RateFloor"
+    ],
+    [
+      "NonDaggerBackstabMultiplier1H",
+      "NonDaggerBackstabMultiplier2H",
+      "AdditiveBackstabDamage"
+    ],
+    [
+      "DevastatingFrenzyRateModifier",
+      "DevastatingFrenzyDamageMultiplier",
+      "FrenzyScaleOnWeaponAmount"
+    ],
+    [
+      "MonkScaleOnWeaponAmount",
+      "MonkScaleOnHandFeetQuality",
+      "MonkSkillAttacksAreH2HForProcs"
+    ],
+    [
+      "StaticInstanceVersion",
+      "StaticInstanceTemplateVersion"
+    ],
+    [
+      "FarmingInstanceVersion",
+      "FarmingInstanceTemplateVersion"
+    ],
+    [
+      "UseCustomUnattuneCombine",
+      "UnattuneCostMultiplier",
+      "CombineCostMultiplier"
+    ],
+    [
+      "AutoSellBagIDs",
+      "StackOnlyBags"
+    ],
+    [
+      "TemporaryStunImmunity",
+      "StunImmunityTimerMultiplier",
+      "SilenceImmunityTimerMultiplier"
+    ],
+    [
+      "SuppressDispels",
+      "SuppressDispelsTime",
+      "SuppressDebuffSpellID"
+    ],
+    [
+      "ScaleAutoAttackByHStr",
+      "ScaleAutoAttackHStrSoftCap",
+      "ScaleAutoAttackHStrScaleFloor",
+      "ScaleAutoAttackHStrScaleFactor"
+    ],
+    [
+      "ScaleBowByHDex",
+      "ScaleBowByHDexDivide",
+      "ScaleBowHDexSoftCap",
+      "ScaleBowHDexScaleFloor",
+      "ScaleBowHDexScaleFactor",
+      "ScaleBowMinimumDamageMultiplier",
+      "ScaleBowMinimumDamageDivisor"
+    ],
+    [
+      "CascadeOfDecaySpellId",
+      "CascadeOfDecayTapPercent"
+    ],
+    [
+      "CastedSpellCritBonusRatio",
+      "ProcSpellCritBonusRatio"
+    ]
+  ]
+}

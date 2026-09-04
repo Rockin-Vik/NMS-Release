@@ -62,6 +62,8 @@ The build produces seven binaries into `Build/bin/Release/`:
 Everything below is gated behind a `Custom:` rule unless stated otherwise. All rules live in
 `common/ruletypes.h` and are overridable per-ruleset in the `rule_values` table.
 
+Lookup index for every `Custom` rule (type, default, related rules, note): [`custom-rules/README.md`](custom-rules/README.md) — generated, regenerate with `python Release-NMS-Deploy/custom-rules/generate.py`.
+
 ### 3.1 Multiclassing — a bitmask, not extra columns
 
 The single most important design decision in the codebase, and the one most likely to surprise.

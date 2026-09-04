@@ -1244,7 +1244,7 @@ RULE_BOOL(Custom, 	ApplyPetAAToSwarm, 						true, "Apply 'Pet AAs' to Swarm Pets
 RULE_INT(Custom, 	StaticInstanceVersion,					255, "Instances with the version will load as StaticInstanceTemplateVersion and have respawns disabled")
 RULE_INT(Custom, 	StaticInstanceTemplateVersion,			0, "Template version for non-respawning instances")
 RULE_INT(Custom, 	FarmingInstanceVersion,					254, "Instances with the version will load as FarmingInstanceTemplateVersion and have long-respawn mobs disabled")
-RULE_INT(Custom, 	FarmingInstanceTemplateVersion,			0, "Template version for non-respawning instances")
+RULE_INT(Custom, 	FarmingInstanceTemplateVersion,			0, "Template version for farming instances (long-respawn mobs disabled)")
 RULE_BOOL(Custom, 	DoubleAttackSkillRanged, 				true, "Use Double & Triple Attack skills for ranged attacks")
 RULE_BOOL(Custom, 	TemporaryStunImmunity, 					true, "Clients become immune to Stun for a duration after being stunned")
 RULE_BOOL(Custom,   ForceNPCFearPathing, 					true, "Forces NPCs to Fear path even if Combat:EnableFearPathing is disabled.")
