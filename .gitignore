@@ -17,5 +17,11 @@ build/
 bin/
 out/
 
-# Large vcpkg build archives (>100MB limit on GitHub)
-Release-NMS-Server/vcpkg/vcpkg-export-x64.zip
+# vcpkg dependencies (~132 MB, plus a >100MB archive that GitHub would reject).
+#
+# Not committed, and deliberately so: CMake fetches these on the first configure
+# via cmake/DependencyHelperMSVC.cmake. A partial copy used to be tracked here,
+# but the bare 'bin/' rule above applies at every depth and silently excluded
+# every runtime DLL from it - so the committed tree looked vendored while being
+# unusable offline. Better to fetch it honestly than to half-ship it.
+Release-NMS-Server/vcpkg/

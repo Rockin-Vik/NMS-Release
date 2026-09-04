@@ -1,6 +1,0 @@
-/* #undef ENABLE_PTHREAD */
-
-#ifdef ENABLE_PTHREAD
-#define MBEDTLS_THREADING_C
-#define MBEDTLS_THREADING_PTHREAD
-#endif
