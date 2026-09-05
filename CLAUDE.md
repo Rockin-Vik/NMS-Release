@@ -42,7 +42,25 @@ assets, a live DB), say so and why.
 - Guards: `.githooks/pre-commit` (secret scan, wired via `core.hooksPath`) applies to every commit,
   including ones Claude makes. The `.cursor/hooks` write/prompt guards apply only inside Cursor.
 - **Never** paste DB passwords or connection strings into chat or tracked files.
-- **Never** use `git commit --no-verify` — it skips the pre-commit secret scan.
+- **Never** use `git commit --no-verify` or `git push --no-verify` — they skip the secret and PII scans.
+
+## Push hygiene — no identifiable information leaves this machine
+
+This is a public community repo. Nothing pushed here — file contents, commit messages, PR titles
+and bodies, issue comments, branch names — may carry: personal first/last names, personal email
+addresses, user-profile paths (`C:\Users\<name>`, `/home/<name>`), machine names, or the names of
+the maintainers' other private projects or clients. Attribute tooling generically ("the sibling
+repo", "a local install", "the reviewer") and use `users.noreply.github.com` addresses.
+
+- Enforced by `.githooks/`: the pre-commit scan checks staged content, `commit-msg` checks the
+  message, `pre-push` checks every commit message and changed file in the push range. Generic
+  patterns are in the hooks; the personal terms live **only** in the developer's global git config
+  (`git config --global --add pii.term <term>`) and must never be written into a tracked file.
+- Before `gh pr create` / `gh pr edit` / `gh issue comment`, run the body through
+  `node .githooks/pii-scan.mjs --file <body.md>` (or `--text "..."`) and fix any hit. PR bodies do
+  not pass through git hooks, so this step is on the agent.
+- After cloning on a new machine: `git config core.hooksPath .githooks` and re-add the `pii.term`
+  entries, or the guards are not active.
 
 ## Lessons (self-maintained)
 
@@ -53,6 +71,11 @@ newest at the bottom. These apply to Cursor too.
 - The bare `bin/` rule in `.gitignore` matches at every depth — it silently dropped every runtime
   DLL from the vendored vcpkg tree, so the tree looked shipped but was unusable. Check what a
   broad ignore rule actually excludes (`git check-ignore -v`) before trusting a "vendored" folder.
+- A commit message and a PR body on this public repo named a private sibling project, and CLAUDE.md
+  carried a first name and a private toolkit path — nobody was checking prose, only secrets. Push
+  hygiene is now a hook plus a pre-PR scan; run the scan on anything that bypasses git hooks.
+- A delegated worker committed a `__pycache__/*.pyc` because it ran the generator before staging the
+  folder. Review `git diff --cached --stat` for build artifacts before every commit, not just secrets.
 
 ## Project skills
 
@@ -64,12 +87,10 @@ here: `prompt-review`, `verify-before-claim`, `grilling`.
 
 Goal: never dump noisy output or whole files into context.
 
-- **Never dump raw command output.** If the clarity-agent-toolkit is installed locally, wrap noisy
-  builds/imports/tests with `clarity-compact.sh run --label X -- <any cmd>` (Aaron's install:
-  `C:\Projects\clarity-agent-toolkit\scripts\clarity-compact.sh`); it captures full output to
-  `.logs/` and prints only a compact summary (real exit code preserved). Otherwise capture full
-  output to a file under `.logs/` and read only the tail or a grep of it. The
-  `check|test|lint|build` subcommands are pnpm-shaped and do **not** apply here — use `run`.
+- **Never dump raw command output.** If a compact-output wrapper is installed locally, wrap noisy
+  builds/imports/tests with it so full output goes to a log file and only a summary prints (real
+  exit code preserved). Otherwise capture full output to a file under `.logs/` and read only the
+  tail or a grep of it.
 - **Locate before reading:** `rg`/`git grep` first, then read only the relevant line ranges.
   Size-check big files first (`changelog.txt` is 635 KB; the DB dump zip is 55 MB).
 - **Don't read** vendored/generated/binary trees — see `.claudeignore` (`submodules/`, `vcpkg/`,

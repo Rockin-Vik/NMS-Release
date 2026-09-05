@@ -12,3 +12,5 @@ alwaysApply: true
 First question for odd behavior: which `Custom` rule governs it and what is it set to in `rule_values`?
 
 Never commit `credentials.txt` or the server-root `eqemu_config.json` / `login.json`. Do not bypass the secret hooks.
+
+Push hygiene: this is a public repo. No personal names, personal emails, user-profile paths, machine names, or names of the maintainers' other private projects in file contents, commit messages, branch names, or PR/issue text. Attribute tooling generically. Git hooks scan commits and pushes; PR bodies must be run through `node .githooks/pii-scan.mjs --file <body.md>` before `gh pr create` / `gh pr edit`. Never use `--no-verify`.
