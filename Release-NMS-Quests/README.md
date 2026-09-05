@@ -12,5 +12,10 @@ modified and extended for this server. The original MIT notice is kept in `LICEN
 
 ## References
 
-- [EQEmu Quest API](https://eqemu.gitbook.io/quest-api/)
+- [`QUEST-API.md`](QUEST-API.md) — the script API for **this** server. §0 covers what NMS adds
+  (multiclass, multi-pet, item tiers, waypoints) and the four rules that break quests here.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — style conventions
+- [EQEmu Quest API](https://eqemu.gitbook.io/quest-api/) — upstream, maintained
 - [EQEmu Database Schema](https://eqemu.gitbook.io/database-schema/)
+
+Extension hooks live in `../Release-NMS-Plugins/NMS_custom_events.pl`.

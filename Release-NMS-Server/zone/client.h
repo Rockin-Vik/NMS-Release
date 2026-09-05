@@ -2448,6 +2448,7 @@ private:
 	bool bZoning;
 	bool tgb;
 	bool instalog;
+	bool fast_camp; // set by Handle_OP_Camp when the server must close the stream itself at camp_timer expiry
 	int32 last_reported_mana;
 	int32 last_reported_endurance;
 

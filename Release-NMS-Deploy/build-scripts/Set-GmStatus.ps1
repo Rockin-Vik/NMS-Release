@@ -10,15 +10,21 @@
     Reads the database credentials from the credentials file written by the setup script,
     so there is nothing to type in.
 
-    EQEmu status levels (common ones):
+    EQEmu status levels (common ones; full table and per-command defaults in
+    Release-NMS-Server/GM-COMMANDS.md):
 
-        250   GM-Impossible   everything, including the dangerous commands
-        200   GM-Mgmt
-        150   GM-Lead
-        100   GM              the usual "game master" level
+        250   GMImpossible    everything, including the dangerous commands
+        200   GMMgmt
+        150   GMLeadAdmin
+        100   GMAdmin         the usual "game master" level
          80   QuestTroupe
-         20   Steward
+         50   Guide
+         20   ApprenticeGuide
+         10   Steward
           0   Player          the default
+
+    Note: the command_settings table overrides the compiled defaults, so a
+    status may not unlock what GM-COMMANDS.md says until that table agrees.
 
 .PARAMETER Account
     The account name to modify. This is the LOGIN name, not the character name.

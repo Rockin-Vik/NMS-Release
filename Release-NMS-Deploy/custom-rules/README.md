@@ -8,8 +8,8 @@
 >
 > Narrative and gotchas stay in [CODEBASE.md](../CODEBASE.md). This file is the lookup index.
 
-- Custom rules parsed: **104**
-- With an inline note: **104**
+- Custom rules parsed: **106**
+- With an inline note: **106**
 - Unclustered: **0**
 
 Regenerate:
@@ -27,7 +27,7 @@ python Release-NMS-Deploy/custom-rules/generate.py
 - [Combat / spells](#combat--spells) — 47 rules
 - [Instances](#instances) — 5 rules
 - [Economy / bags](#economy--bags) — 5 rules
-- [Seasonal / ops / GM](#seasonal--ops--gm) — 9 rules
+- [Seasonal / ops / GM](#seasonal--ops--gm) — 11 rules
 
 ## Multiclass / client contract
 
@@ -183,6 +183,8 @@ Season-wide toggles, GM audit, and command behavior. These are the levers you fl
 | `UseAAEXPVeterancy` | BOOL | `true` | — | Use max AA on any character in account for value of AA:ModernAAScalingAALimit if it is higher |
 | `AAConsumeBaseValue` | INT | `50` | — | Base value for AA consumption |
 | `CorpseFixSummonsCorpses` | BOOL | `false` | — | Enable to cause #corpsefix to summon corpses to player |
+| `CampTimerMs` | INT | `100` | `FastCampBlockedInCombat` | Milliseconds after /camp before the server completes the logout for players outside the Bazaar. Below 29000 the server closes the connection itself so the client drops to character select at once; 29000 or more is stock behavior (client closes after its own 30 s countdown). GMs always camp instantly. |
+| `FastCampBlockedInCombat` | BOOL | `true` | `CampTimerMs` | When true, a player that any NPC has on its hate list, is in a duel, or is feigning death gets the stock 29 second camp instead of Custom:CampTimerMs |
 | `EnableSeasonalCharacters` | INT | `0` | — | Set to Seasonal ID to track for current Seasonal characters, 0 to disable. |
 | `EnableGlobalLoot` | BOOL | `true` | — | Enable or disable global loot tables dynamically |
 | `PermanentServerBuffsEnabled` | BOOL | `false` | — | Enable or disable permanent server buffs (spells 43002, 43005, 36856, 17779) |

@@ -270,6 +270,7 @@ Client::Client() : Mob(
 	autosave_timer.Disable();
 	GetMercTimer()->Disable();
 	instalog = false;
+	fast_camp = false;
 	m_pp.autosplit = false;
 	// initialise haste variable
 	m_tradeskill_object = nullptr;
@@ -585,6 +586,7 @@ Client::Client(EQStreamInterface *ieqs) : Mob(
 	autosave_timer.Disable();
 	GetMercTimer()->Disable();
 	instalog = false;
+	fast_camp = false;
 	m_pp.autosplit = false;
 	// initialise haste variable
 	m_tradeskill_object = nullptr;

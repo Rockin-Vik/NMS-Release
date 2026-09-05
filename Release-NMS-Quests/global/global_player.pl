@@ -554,6 +554,9 @@ sub EVENT_CAST_BEGIN {
 }
 
 sub EVENT_SAY {
+    # Shazam buffbot - see plugins/NMS_shazam_buffs.pl
+    return if plugin::ShazamBuffs($client, $text);
+
     if ($client->GetGM()) {
         if ($text=~/#awardtitle\s*(.*)/i) {
             $client->Message(13, "Disregard the command not recognized error.");
