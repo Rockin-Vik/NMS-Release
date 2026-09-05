@@ -9,6 +9,7 @@ local lp_list = {};
 
 local zmkp_min = nil;
 local zmkp_max = nil;
+local memory_id = 26000; -- progression flag NPC, see quests/global/26000.pl
 
 function Tunat_Second_Spawn()
 	eq.set_next_hp_event(90);
@@ -17,6 +18,17 @@ end
 function Tunat_Second_Death(e)
 	eq.signal(298223, 298055); -- NPC: zone_status
 	eq.signal(298223,2); -- Unlock Doors
+
+	-- NMS progression: Tunat`Muram is the Omens of War prerequisite. Spawn the memory NPC
+	-- the raid hails for the flag (global/26000.pl); the hail itself enforces the instance rule.
+	-- The flag name is a literal, not GetCleanName(): this encounter renames the boss with
+	-- TempName() during its phases, and CleanMobName() drops the spaces from a temp name, which
+	-- would yield "tunat`muramcuuvauax" and never match the OoW prerequisite.
+	local memory_npc = eq.spawn2(memory_id, 0, 0, e.self:GetX(), e.self:GetY(), e.self:GetZ(), e.self:GetHeading());
+	if memory_npc ~= nil then
+		memory_npc:SetEntityVariable("Flag-Name", "tunat`muram cuu vauax");
+		memory_npc:SetEntityVariable("Stage-Name", "OoW");
+	end
 end
 
 function Tunat_Second_HP(e)
