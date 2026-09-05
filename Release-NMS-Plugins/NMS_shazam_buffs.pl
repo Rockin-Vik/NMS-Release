@@ -11,8 +11,10 @@
 #   Trigger word  -> $SHAZAM_TRIGGER regex
 #   Tier bounds   -> @SHAZAM_TIERS (max level per tier, ascending)
 #   Buffs         -> the spell-ID lists in %SHAZAM_BUFFS
+#   Levitate      -> $SHAZAM_LEVITATE (spell id, 0 to disable)
 
 our $SHAZAM_COOLDOWN = 60;
+our $SHAZAM_LEVITATE = 261;   # Levitate - cast in every tier when the zone allows it
 our $SHAZAM_TRIGGER  = qr/\bshazam\b/i;
 our $SHAZAM_BUCKET   = "shazam_cooldown";
 
@@ -146,6 +148,14 @@ sub ShazamBuffs {
     foreach my $spell_id (@$buffs) {
         next unless $spell_id;
         $client->SpellFinished($spell_id, $client);
+    }
+
+    # $zone lives in the quest package, not in plugin::, so fetch it the same way
+    # $client/$text are fetched above. Skipped in no-levitate zones to avoid the
+    # "can't levitate here" spam.
+    my $zone = plugin::val('$zone');
+    if ($SHAZAM_LEVITATE && $zone && $zone->CanLevitate()) {
+        $client->SpellFinished($SHAZAM_LEVITATE, $client);
     }
 
     $client->SetBucket($SHAZAM_BUCKET, "1", $SHAZAM_COOLDOWN . "s");

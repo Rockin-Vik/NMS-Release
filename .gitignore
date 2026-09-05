@@ -29,3 +29,16 @@ out/
 # every runtime DLL from it - so the committed tree looked vendored while being
 # unusable offline. Better to fetch it honestly than to half-ship it.
 Release-NMS-Server/vcpkg/
+
+# Real credentials written by Release-NMS-Deploy scripts. The tracked templates live under
+# .devcontainer/base/ and loginserver/login_util/ and are fine.
+credentials.txt
+/Release-NMS-Server/eqemu_config.json
+/Release-NMS-Server/login.json
+
+# Compact-wrapper logs
+.logs/
+
+# Generator bytecode
+__pycache__/
+*.pyc

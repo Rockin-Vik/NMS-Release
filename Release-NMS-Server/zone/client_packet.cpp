@@ -4532,6 +4532,10 @@ void Client::Handle_OP_Camp(const EQApplicationPacket *app)
 	if (IsLFP())
 		worldserver.StopLFP(CharacterID());
 
+	// Every /camp decides afresh whether the server finishes the logout itself; only the
+	// fast branch below sets this, so a cancelled or combat-blocked camp never inherits it.
+	fast_camp = false;
+
 	if ((zone->GetZoneID() == Zones::BAZAAR || zone->GetZoneID() == Zones::ECOMMONS) && !GetRestTimer()) {
 		camp_timer.Start(100, true);
 	} else {
@@ -4548,7 +4552,19 @@ void Client::Handle_OP_Camp(const EQApplicationPacket *app)
 			return;
 		}
 
-		camp_timer.Start(29000, true);
+		// AggroCount is how many NPCs have this client on their hate list; a Client's own
+		// hate_list is not maintained for NPC aggro, so IsEngaged() would never be true here.
+		const bool in_combat = GetAggroCount() > 0 || IsDueling() || GetFeigned();
+		if (RuleB(Custom, FastCampBlockedInCombat) && in_combat) {
+			camp_timer.Start(29000, true);
+		} else {
+			// The stock client keeps its own ~30 s countdown and closes the connection itself.
+			// Anything shorter only works because Client::Process closes the stream for us when
+			// fast_camp is set at camp_timer expiry. Clamp so the timer is always sane.
+			const int camp_ms = std::max(1, std::min(RuleI(Custom, CampTimerMs), 29000));
+			fast_camp = camp_ms < 29000;
+			camp_timer.Start(camp_ms, true);
+		}
 	}
 
 	if (RuleB(Bots, Enabled)) {
@@ -14565,6 +14581,7 @@ void Client::Handle_OP_SpawnAppearance(const EQApplicationPacket *app)
 			BindWound(this, false, true);
 			camp_timer.Disable();
 			bot_camp_timer.Disable();
+			fast_camp = false;
 		}
 		else if (sa->parameter == Animation::Sitting) {
 			SetAppearance(eaSitting);

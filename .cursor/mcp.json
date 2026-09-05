@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "cursor-bridge": {
+      "command": "node",
+      "args": ["C:\\Projects\\tools\\cursor-mcp-bridge\\dist\\index.js"],
+      "env": {
+        "CURSOR_BRIDGE_ENABLE_CURSOR": "1",
+        "CURSOR_BRIDGE_PREFER_CURSOR": "1",
+        "CURSOR_BRIDGE_FORCE": "1",
+        "CURSOR_BRIDGE_SANDBOX": "off",
+        "CURSOR_BIN": "cursor-agent",
+        "CURSOR_BRIDGE_MODEL": "composer-2.5-fast"
+      }
+    }
+  }
+}
