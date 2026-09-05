@@ -25,6 +25,14 @@ rename it, strip out what you do not want, add whatever you do.
 
 Each folder has its own README with detailed instructions. Start with the server.
 
+Reference documents:
+
+| Document | What it is |
+| --- | --- |
+| [`Release-NMS-Deploy/CODEBASE.md`](Release-NMS-Deploy/CODEBASE.md) | How the server is put together — what is custom, the migration system, gotchas. Read first. |
+| [`Release-NMS-Quests/QUEST-API.md`](Release-NMS-Quests/QUEST-API.md) | Lua/Perl quest script API, with the NMS-specific bindings up front |
+| [`Release-NMS-Server/GM-COMMANDS.md`](Release-NMS-Server/GM-COMMANDS.md) | Every `#command`, its default status level, and NMS side effects |
+
 ## What makes it different
 
 - **Multiclassing** — a character can take up to three classes at once

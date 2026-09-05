@@ -2,6 +2,10 @@
 
 > Reference document for all work on this repo. Written from a full scan of the source at
 > commit `4d9f2224` ("Initial commit of NMS-Release"). Read this before touching anything.
+>
+> Companion references: [`QUEST-API.md`](../Release-NMS-Quests/QUEST-API.md) (script
+> bindings — §0 is the NMS delta) and [`GM-COMMANDS.md`](../Release-NMS-Server/GM-COMMANDS.md)
+> (every `#command` with its default status).
 
 ---
 
@@ -79,8 +83,9 @@ It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `Player
   `GetClass() == X` comparison across attack, spells, AA and bonuses. **If you add code that
   branches on class, use `HasClass`, never `GetClass()`.** This is the most common way to
   introduce a multiclass bug.
-- Quest API: `AddExtraClass` / `RemoveExtraClass` in Perl (`zone/perl_client.cpp:3772`) and
-  Lua (`zone/lua_client.cpp:3950`); the cap is enforced in `Client::AddExtraClass()`.
+- Quest API: `AddExtraClass` / `RemoveExtraClass` / `HasClassID` / `GetClassesBitmask` in
+  Perl (`zone/perl_client.cpp:3769-3773`) and Lua (`zone/lua_client.cpp:3947-3951`); the cap is
+  enforced in `Client::AddExtraClass()`. Full table in QUEST-API.md §0.2.
 
 **Two ugly-but-load-bearing hacks** you must not "clean up" without understanding them:
 
@@ -127,9 +132,12 @@ part is that it is stored **per account, not per character**.
   awarded to the whole group/raid
 - Spent at character select to unlock character sets and slots (`world/client.cpp:3178-3240`)
 
-⚠️ **`#award` does not touch `account_alt_currency`.** The GM command
-(`zone/gm_commands/award.cpp`) writes an `EoM-Award` data bucket and fires a Discord webhook.
-If you are debugging "I awarded EoM and the balance did not change", this is why.
+⚠️ **`#award` does not touch `account_alt_currency` directly.** The GM command
+(`zone/gm_commands/award.cpp`) adds to the character's `EoM-Award` data bucket, fires a
+Discord webhook, and sends cross-zone signal 666. `plugin::UpdateEoMAward`
+(`NMS_custom_events.pl`) consumes the bucket on that signal and on every zone-in and credits
+currency 6 through `AddAlternateCurrencyValue`. If the balance did not change, check that the
+plugin is the real one and not the original `return 0;` stub.
 
 ### 3.4 Item upgrade tiers — encoded in the item id
 
@@ -409,7 +417,7 @@ The 11 `NMS_*` plugins in `Release-NMS-Plugins/`:
 | `NMS_popup_utils.pl` | Tutorial popup framework (IDs shaped `628<nnn>0`) |
 | `NMS_instance_utils.pl` | `OfferStandardInstance` — DZ creation, `ScaleInstanceNPC` |
 | `NMS_progression`/`seasonal`/`soulmark` | Seasonal chars; Soulmark/CheaterFlag warnings |
-| `NMS_custom_events.pl` | **Empty hook stubs for you to extend** — say, death, handin, spawn, exp gain, item equip/click |
+| `NMS_custom_events.pl` | **Hook stubs for you to extend** — say, death, handin, spawn, exp gain, item equip/click. Each is commented with whether its return value gates the caller. `UpdateEoMAward` is live (consumes the `#award` bucket). |
 | `NMS_general.pl` | Shared helpers: announces, serialization, `transform_item` |
 
 ### ⚠️ Perl dependencies
@@ -446,7 +454,9 @@ Quick reference. Each links to the section above.
 | 1 | Branch on `HasClass()`, never `GetClass()` | 3.1 |
 | 2 | Character select smuggles the class mask through `Deity`; guilds use `mask + 1000` | 3.1 |
 | 3 | Pet window refreshes via the dirty flag, not by sending `OP_PetList` | 3.2 |
-| 4 | `#award` writes a bucket + Discord ping, not `account_alt_currency` | 3.3 |
+| 4 | `#award` writes a bucket + Discord ping; `plugin::UpdateEoMAward` does the credit | 3.3 |
+| 4b | Lua scripts use `eq.`, not `quest.`; Lua loads before Perl on a name collision | QUEST-API §0 |
+| 4c | `SummonItem()` rolls an upgrade tier; use `SummonFixedItem()` for an exact item | QUEST-API §0.1 |
 | 5 | Quest hand-ins must normalize item ids with `% 1000000` | 3.4 |
 | 6 | Item stat changes need `shared_memory` re-run | 3.4 |
 | 7 | `db_version.custom_version` is a claim — audit with the health-check SQL | 4.3 |
