@@ -59,17 +59,17 @@ repo", "a local install", "the reviewer") and use `users.noreply.github.com` add
 - Before `gh pr create` / `gh pr edit` / `gh issue comment`, run the body through
   `node .githooks/pii-scan.mjs --file <body.md>` (or `--text "..."`) and fix any hit. PR bodies do
   not pass through git hooks, so this step is on the agent.
-- Commit identity: this repo pins a generic author, `NMS Dev <nms-dev@users.noreply.github.com>`, via
-  repo-local `git config user.name` / `user.email`. The pre-commit hook rejects any author or
-  committer whose email is not a `users.noreply.github.com` address or whose name/email matches a
-  local `pii.term`; `node .githooks/pii-scan.mjs --ident` checks it on demand.
+- Commit identity: the author name may be a GitHub handle, but the email must be that account's
+  `users.noreply.github.com` address, never a personal one. The pre-commit hook rejects any author
+  or committer whose email is not a noreply address or whose name/email matches a local
+  `pii.term`; `node .githooks/pii-scan.mjs --ident` checks it on demand.
 - Merges made in the GitHub web UI are authored with the account's public email unless the GitHub
   setting **Keep my email addresses private** (and **Block command line pushes that expose my
   email**) is on. Turn both on at github.com/settings/emails before merging a PR through the
   browser; a merge commit that exposed a personal email is only removable by rewriting history.
 - After cloning on a new machine: `git config core.hooksPath .githooks`, re-add the `pii.term`
-  entries, and set `git config user.name "NMS Dev"` / `git config user.email
-  "nms-dev@users.noreply.github.com"`, or the guards are not active.
+  entries, and make sure `git config user.email` is your GitHub noreply address, or the guards are
+  not active.
 
 ## Lessons (self-maintained)
 

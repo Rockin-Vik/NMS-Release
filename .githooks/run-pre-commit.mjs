@@ -32,7 +32,7 @@ if (identFailure) {
     `pre-commit: blocked — commit author/committer identity ${identFailure.kind}: ${identFailure.hit}`,
   );
   console.error(
-    'pre-commit: set a generic identity for this repo: git config user.name "NMS Dev" && git config user.email "nms-dev@users.noreply.github.com"',
+    'pre-commit: use your GitHub noreply address: git config user.email "<id>+<handle>@users.noreply.github.com"',
   );
   process.exit(1);
 }
