@@ -13,7 +13,6 @@
 #   global/global_npc.pl      EVENT_DEATH_COMPLETE -> plugin::SpawnProgressionFlagNPC($npc)
 #   bazaar/Magus_Alaria.pl    EVENT_SAY            -> plugin::MagusExpansionPort($client, $text)
 #   global/global_player.pl   EVENT_ENTERZONE      -> plugin::GMUnlockAll($client)
-#   NMS_popup_utils.pl        GetMaxExpansionName  -> $plugin::MAX_EXPANSION_NAME
 #
 # The stage prerequisite list itself (%STAGE_PREREQUISITES) stays in NMS_progression_utils.pl
 # because that file builds lookups from it at load time. Opening an expansion is therefore:
@@ -24,9 +23,6 @@
 
 # Stages the time lock allows on NMS (multiclass) servers. Order does not matter.
 our %UNLOCKED_STAGES = map { $_ => 1 } qw(RoK SoV SoL PoP GoD OoW DoN);
-
-# Shown in the welcome popup.
-our $MAX_EXPANSION_NAME = "Dragons of Norrath";
 
 # Boss death => stage flag. Keyed by npc_type id when the boss is renamed mid-fight with TempName()
 # (CleanMobName() strips the spaces from a temp name, so a name lookup would never match) and by

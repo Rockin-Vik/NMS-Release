@@ -3,8 +3,10 @@
 # popup button IDs use the least significant digit of the ID as 0 for default button (popup_id in Popup2 definition) and 9 is for negative_id
 # three hashes define them. %popups is friendly name to ID, %popups_text is ID => text, %popups_title is ID=>title
 
+# The welcome popup is shown to a NEW account. "Kunark" is what a fresh account can reach by
+# default, not the highest expansion the server has open, so it does not track the unlock list.
 sub GetMaxExpansionName {
-    return $plugin::MAX_EXPANSION_NAME || "Kunark"; # set in NMS_expansion_unlock.pl
+    return "Kunark";
 }
 
 my $color_end = "</font>";
