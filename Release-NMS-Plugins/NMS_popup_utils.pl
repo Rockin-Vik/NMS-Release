@@ -4,7 +4,7 @@
 # three hashes define them. %popups is friendly name to ID, %popups_text is ID => text, %popups_title is ID=>title
 
 sub GetMaxExpansionName {
-    return "Kunark";
+    return $plugin::MAX_EXPANSION_NAME || "Kunark"; # set in NMS_expansion_unlock.pl
 }
 
 my $color_end = "</font>";
