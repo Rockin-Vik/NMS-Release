@@ -147,6 +147,8 @@
         "GuideAudit",
         "EnableFabledMobs",
         "CorpseFixSummonsCorpses",
+        "CampTimerMs",
+        "FastCampBlockedInCombat",
         "GroupIncentiveProgram",
         "UseAAEXPVeterancy",
         "AAConsumeBaseValue"
@@ -281,6 +283,10 @@
     [
       "CastedSpellCritBonusRatio",
       "ProcSpellCritBonusRatio"
+    ],
+    [
+      "CampTimerMs",
+      "FastCampBlockedInCombat"
     ]
   ]
 }
