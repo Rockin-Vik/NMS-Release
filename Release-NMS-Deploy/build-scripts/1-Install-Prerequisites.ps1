@@ -6,12 +6,16 @@
     Audits a fresh Windows box, then installs whatever is missing:
 
         Visual Studio 2022 Build Tools (C++ workload)   ~12 GB, needed to compile the server
+        VC++ Redistributable                             the RUNTIME the binaries load;
+                                                         without it every server binary
+                                                         exits -1073741515 with no output
         CMake                                            build system
         Git                                              to clone the repo
         7-Zip                                            to unpack the 540 MB database dump
         MariaDB 11 LTS                                   the database, bound to loopback only
-        Strawberry Perl                                  the quest scripting engine
-        Perl CPAN: DBI, DBD::mysql, JSON, Switch         required by the NMS plugins
+        Strawberry Perl 5.32.1.1                         embedded by zone.exe - the version
+                                                         is pinned, see the note below
+        Perl CPAN: DBI, JSON, Switch, DBD::MariaDB       required by the NMS plugins
 
     Every step is skip-if-present, so re-running is safe and cheap. Nothing is uninstalled
     or downgraded. When a component is already present at an acceptable version the script
@@ -52,8 +56,9 @@
     Context: CODEBASE.md, one level up in Release-NMS-Deploy/. Read it before changing
              anything here - several steps exist only to work around documented quirks.
 
-    UNTESTED ON A REAL VPS. Treat the first run as supervised. A full transcript is written
-    next to the credentials file so any failure can be diagnosed after the fact.
+    Stage 1 has been run to completion on a real Windows Server 2025 box. A full
+    transcript is written next to the credentials file so any failure can be diagnosed
+    after the fact. Re-run until the summary shows no Failed rows - it is idempotent.
 #>
 
 [CmdletBinding()]
@@ -104,6 +109,7 @@ $script:Packages = @{
     Git        = 'Git.Git'
     SevenZip   = '7zip.7zip'
     MariaDB    = 'MariaDB.Server'
+    VCRedist   = 'Microsoft.VCRedist.2015+.x64'
 }
 
 # Perl is pinned to 5.32.1.1, and NOT installed via winget, which would give the latest.
@@ -124,7 +130,15 @@ $script:Packages = @{
 # CPAN modules must be installed into THIS Perl - not some other one that happens to be
 # on PATH. See CODEBASE.md section 6.
 $script:PerlVersion = '5.32.1.1'
-$script:PerlMsiUrl  = 'https://github.com/StrawberryPerl/Perl-Dist-Strawberry/releases/download/SP_5321_5321/strawberry-perl-5.32.1.1-64bit.msi'
+
+# Several mirrors, tried in order. strawberryperl.com/download/<version>/ is the
+# long-standing canonical layout; the GitHub release is a mirror whose tag naming has
+# changed over time. Relying on a single guessed URL cost a failed run with a 404.
+$script:PerlMsiUrls = @(
+    'https://strawberryperl.com/download/5.32.1.1/strawberry-perl-5.32.1.1-64bit.msi'
+    'https://github.com/StrawberryPerl/Perl-Dist-Strawberry/releases/download/SP_5321_5321/strawberry-perl-5.32.1.1-64bit.msi'
+    'https://github.com/StrawberryPerl/Perl-Dist-Strawberry/releases/download/SP_5321_5321_1/strawberry-perl-5.32.1.1-64bit.msi'
+)
 
 # Perl versions known to break the build or the DBD driver, warned about on sight.
 $script:PerlMinVersion = [version]'5.32'
@@ -287,7 +301,10 @@ function Save-Credential {
 
 function Test-Winget {
     if (-not (Test-Command 'winget')) { return $false }
-    try { winget --version *> $null; return $LASTEXITCODE -eq 0 } catch { return $false }
+    # Invoke-Native: under 'Stop', anything winget writes to stderr becomes terminating
+    # on PS 5.1 even with the stream redirected - which would make this report "winget
+    # unavailable" on a box where winget works fine.
+    return ((Invoke-Native { winget --version }) -eq 0)
 }
 
 function Install-WithWinget {
@@ -450,8 +467,8 @@ function Invoke-CheckCMake {
         Write-Ok "Installed: $v"
         Add-Result 'CMake' 'Installed' $v
     } else {
-        Write-Warn 'CMake installed but not yet on PATH. It will be after a new shell.'
-        Add-Result 'CMake' 'Installed' 'PATH refresh pending'
+        Write-Bad 'CMake installed but not yet invocable. Open a new shell and re-run.'
+        Add-Result 'CMake' 'Failed' 'installed but not on PATH'
     }
 }
 
@@ -490,8 +507,8 @@ function Invoke-CheckSimpleTool {
         Write-Ok 'Installed.'
         Add-Result $Component 'Installed'
     } else {
-        Write-Warn 'Installed but not yet visible. Should resolve in a new shell.'
-        Add-Result $Component 'Installed' 'PATH refresh pending'
+        Write-Bad "$Component installed but not yet invocable. Open a new shell and re-run."
+        Add-Result $Component 'Failed' 'installed but not on PATH'
     }
 }
 
@@ -663,12 +680,107 @@ function Set-MariaDbLoopbackOnly {
     Write-Ok "Bound to loopback (backup at $($ini.Name).nms-backup)"
 }
 
+function Resolve-PerlExe {
+    <#
+        Finds perl.exe on PATH, or failing that at the standard Strawberry location.
+
+        Probing the fixed path matters: the MSI's PERL_PATH=Yes does not always write the
+        machine PATH, so a perfectly good install can be invisible to Test-Command. Without
+        this the script concluded "Not found" and tried to re-download 120 MB over an
+        install that was already sitting on disk.
+    #>
+    $cmd = Get-Command perl -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+
+    # Standard locations first, then the MSI's own record of where it went. Do not assume
+    # C:\Strawberry - the install path is configurable and a wrong assumption here reads
+    # as "not installed" and triggers a pointless 100 MB re-download.
+    foreach ($p in 'C:\Strawberry\perl\bin\perl.exe',
+                   "$env:ProgramFiles\Strawberry\perl\bin\perl.exe",
+                   "$env:SystemDrive\Strawberry\perl\bin\perl.exe") {
+        if (Test-Path $p) { return $p }
+    }
+
+    try {
+        $installed = Get-ItemProperty `
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' `
+            -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.PSObject.Properties.Name -contains 'DisplayName' -and
+                $_.DisplayName -match 'Strawberry Perl' -and
+                $_.PSObject.Properties.Name -contains 'InstallLocation' -and $_.InstallLocation
+            }
+        foreach ($i in @($installed)) {
+            $p = Join-Path $i.InstallLocation 'perl\bin\perl.exe'
+            if (Test-Path $p) { return $p }
+        }
+    } catch { }
+
+    return $null
+}
+
 function Get-PerlVersion {
-    if (-not (Test-Command 'perl')) { return $null }
-    $null = Invoke-Native -Capture { perl -e 'printf "%vd", $^V' }
+    $exe = Resolve-PerlExe
+    if (-not $exe) { return $null }
+
+    # Call by full path - perl may be installed but not yet on this session's PATH.
+    $null = Invoke-Native -Capture { & $exe -e 'printf "%vd", $^V' }
     $raw = ($script:NativeOutput | Select-Object -First 1)
     if ($raw -match '(\d+)\.(\d+)') { return [version]"$($Matches[1]).$($Matches[2])" }
     return $null
+}
+
+function Assert-PerlOnMachinePath {
+    <#
+        Guarantees Strawberry's bin directories are on the MACHINE PATH.
+
+        This matters far beyond convenience. zone.exe embeds Perl and links against
+        perl532.dll, which nothing copies into the server directory - it resolves purely
+        from PATH. The servers run as NSSM services under LocalSystem, whose environment
+        is built from the HKLM PATH only; the user PATH is never merged. Zone processes
+        are grandchildren of that service and inherit its environment verbatim.
+
+        So if the MSI did not write the machine PATH, zone.exe dies at image load with
+        exit code -1073741515 and no output at all - identical to the missing VC++ runtime.
+
+        c\bin is not optional either: Strawberry's XS modules (DBI.dll,
+        DBD\MariaDB\MariaDB.dll) are MinGW-built and need libgcc_s_seh-1.dll,
+        libstdc++-6.dll and libwinpthread-1.dll from there.
+
+        zone.exe also SHELLS OUT to bare `perl` to syntax-check quest files
+        (zone/embperl.cpp:270-285). If perl.exe is not on the service PATH every quest
+        fails its check and is marked broken, while the process itself runs fine.
+    #>
+    $wanted = @(
+        'C:\Strawberry\perl\bin',
+        'C:\Strawberry\c\bin',
+        'C:\Strawberry\perl\site\bin'
+    ) | Where-Object { Test-Path $_ }
+
+    if (@($wanted).Count -eq 0) {
+        Write-Warn 'Strawberry Perl bin directories not found at the expected location.'
+        return
+    }
+
+    $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $existing = @($machine -split ';' | Where-Object { $_ })
+    $missing  = @($wanted | Where-Object { $existing -notcontains $_ })
+
+    if ($missing.Count -eq 0) {
+        Write-Ok 'Strawberry Perl is on the machine PATH.'
+        return
+    }
+
+    $backup = Join-Path $env:ProgramData "nms-path-backup-$(Get-Date -Format 'yyyyMMdd-HHmmss').txt"
+    Set-Content -Path $backup -Value $machine -Encoding ASCII
+    Write-Step "Machine PATH backed up to $backup"
+
+    [Environment]::SetEnvironmentVariable('Path', (($existing + $missing) -join ';'), 'Machine')
+    Update-SessionPath
+    foreach ($m in $missing) { Write-Ok "Added to machine PATH: $m" }
+    Write-Step 'Services run as LocalSystem and read only the machine PATH - without this,'
+    Write-Step 'zone.exe cannot load perl532.dll and exits silently with -1073741515.'
 }
 
 function Install-PinnedPerl {
@@ -681,24 +793,91 @@ function Install-PinnedPerl {
     #>
     $msi = Join-Path $env:TEMP "strawberry-perl-$($script:PerlVersion).msi"
 
+    # A partial file from a failed attempt would be treated as complete, so size-check it.
+    # The MSI is ~120 MB; anything under 50 MB is a truncated download.
+    if ((Test-Path $msi) -and ((Get-Item $msi).Length -lt 50MB)) {
+        Write-Warn 'Discarding a truncated installer from a previous attempt.'
+        Remove-Item $msi -Force -ErrorAction SilentlyContinue
+    }
+
     if (-not (Test-Path $msi)) {
-        Write-Step "Downloading Strawberry Perl $($script:PerlVersion) (~120 MB)..."
-        try {
-            Invoke-WebRequest -Uri $script:PerlMsiUrl -OutFile $msi -UseBasicParsing
-        } catch {
-            Write-Bad "Download failed: $($_.Exception.Message)"
+        # Retry: this is a 120 MB transfer from GitHub and mid-stream resets are common.
+        # BITS first where available - it resumes and is far more robust than a plain
+        # WebRequest - then fall back.
+        $ok = $false
+        foreach ($url in $script:PerlMsiUrls) {
+            foreach ($attempt in 1..2) {
+                Write-Step "Downloading from $url (attempt $attempt)..."
+                try {
+                    if (Get-Command Start-BitsTransfer -ErrorAction SilentlyContinue) {
+                        Start-BitsTransfer -Source $url -Destination $msi -ErrorAction Stop
+                    } else {
+                        $ProgressPreference = 'SilentlyContinue'   # a progress bar slows this hugely
+                        Invoke-WebRequest -Uri $url -OutFile $msi -UseBasicParsing -ErrorAction Stop
+                    }
+                    if ((Test-Path $msi) -and ((Get-Item $msi).Length -ge 50MB)) { $ok = $true; break }
+                    Write-Warn 'Downloaded file is too small; discarding.'
+                    Remove-Item $msi -Force -ErrorAction SilentlyContinue
+                } catch {
+                    $msg = $_.Exception.Message
+                    Write-Warn "Failed: $msg"
+                    Remove-Item $msi -Force -ErrorAction SilentlyContinue
+                    # A 404 means this mirror is wrong, not that the network is flaky -
+                    # no point retrying the same URL, move to the next one.
+                    if ($msg -match '404') { break }
+                    if ($attempt -lt 2) { Start-Sleep -Seconds 5 }
+                }
+            }
+            if ($ok) { break }
+        }
+
+        if (-not $ok) {
+            Write-Bad 'Could not download the Strawberry Perl installer from any mirror.'
+            Write-Warn 'Download it by hand, save it to the path below, and re-run this'
+            Write-Warn 'script - it will reuse an existing file rather than downloading:'
+            Write-Warn ''
+            Write-Warn "  Save to: $msi"
+            Write-Warn ''
+            Write-Warn '  Find "strawberry-perl-5.32.1.1-64bit.msi" at:'
+            Write-Warn '    https://strawberryperl.com/releases.html'
+            Write-Warn '    https://github.com/StrawberryPerl/Perl-Dist-Strawberry/releases'
             return $false
         }
+        Write-Ok "Downloaded ($([math]::Round((Get-Item $msi).Length/1MB)) MB)."
     } else {
-        Write-Step 'Using the already-downloaded installer.'
+        Write-Step "Using the already-downloaded installer ($([math]::Round((Get-Item $msi).Length/1MB)) MB)."
     }
 
     Write-Step 'Installing (a few minutes)...'
-    # /i install, /qn silent, PERL_PATH=Yes puts it on the machine PATH so CMake finds it.
-    $code = Invoke-Native -Show { msiexec /i $msi /qn PERL_PATH=Yes }
-    if ($code -ne 0) { Write-Warn "msiexec returned $code." }
+
+    # Start-Process -Wait, NOT a bare call. msiexec.exe hands the work to the Windows
+    # Installer service and RETURNS IMMEDIATELY - so a plain invocation looks like it
+    # succeeded while nothing is installed yet, and the very next check for C:\Strawberry
+    # fails against a directory that appears seconds later.
+    $msiLog = Join-Path $env:TEMP 'strawberry-perl-install.log'
+    $p = Start-Process -FilePath 'msiexec.exe' -Wait -PassThru -ArgumentList @(
+        '/i', "`"$msi`"", '/qn', '/norestart', 'PERL_PATH=Yes', '/L*v', "`"$msiLog`""
+    )
+    $code = $p.ExitCode
+
+    # 0 = success, 3010 = success but wants a reboot.
+    if ($code -notin 0, 3010) {
+        Write-Bad "msiexec failed with exit code $code."
+        switch ($code) {
+            1603 { Write-Warn '1603: fatal install error - often a leftover older Strawberry.' }
+            1618 { Write-Warn '1618: another installation is already in progress. Wait and retry.' }
+            1619 { Write-Warn '1619: the installer package could not be opened (corrupt download).' }
+            1625 { Write-Warn '1625: install blocked by system policy.' }
+        }
+        Write-Warn "Full MSI log: $msiLog"
+        Write-Warn 'The tail of that log names the action that failed.'
+        return $false
+    }
+    if ($code -eq 3010) { Write-Warn 'Installed; Windows wants a reboot to finish.' }
+    Write-Ok 'msiexec completed.'
 
     Update-SessionPath
+    Assert-PerlOnMachinePath
     if (Test-Command 'perl') { return $true }
 
     # The MSI writes the machine PATH, but that write can lag behind msiexec returning, so
@@ -706,11 +885,14 @@ function Install-PinnedPerl {
     # operator start a new shell just to continue, add the known install location to THIS
     # session directly. The machine PATH is already correct for future shells.
     Write-Step 'Perl not on PATH yet; adding its install location to this session...'
-    $bins = @(
+    # @() around the PIPELINE, not just the literal - Where-Object yields $null when
+    # nothing matches, and .Count on $null throws under StrictMode. This is the recovery
+    # path for a failed install, so it must not itself fail.
+    $bins = @(@(
         'C:\Strawberry\perl\bin',
         'C:\Strawberry\c\bin',
         'C:\Strawberry\perl\site\bin'
-    ) | Where-Object { Test-Path $_ }
+    ) | Where-Object { Test-Path $_ })
 
     if ($bins.Count -gt 0) {
         $env:Path = ($bins -join ';') + ';' + $env:Path
@@ -729,10 +911,22 @@ function Invoke-CheckPerl {
     $v = Get-PerlVersion
 
     if ($v) {
-        Write-Step "Found Perl $v at $((Get-Command perl).Source)"
+        Write-Step "Found Perl $v at $(Resolve-PerlExe)"
+
+        # An install that exists but is not on PATH is the common case after the MSI, and
+        # it is NOT a reason to reinstall. Repair the PATH and carry on - services need the
+        # machine PATH anyway, since LocalSystem reads nothing else.
+        if (-not (Test-Command 'perl')) {
+            Write-Warn 'Perl is installed but not on this session PATH. Repairing...'
+            if (-not $CheckOnly) {
+                Assert-PerlOnMachinePath
+                Update-SessionPath
+            }
+        }
 
         if ($v -ge $script:PerlMinVersion -and $v -lt $script:PerlMaxVersion) {
             Write-Ok "Perl $v is in the supported range."
+            if (-not $CheckOnly) { Assert-PerlOnMachinePath }
             Add-Result 'Perl' 'Present' "$v"
         } else {
             # This is not cosmetic - both failure modes are real and already observed.
@@ -772,8 +966,13 @@ function Invoke-CheckPerl {
             Write-Ok "Installed Perl $v"
             Add-Result 'Perl' 'Installed' "$v"
         } else {
-            Write-Warn 'Perl installed but not yet on PATH. Re-run in a new shell.'
-            Add-Result 'Perl' 'Installed' 'PATH refresh pending'
+            # 'Failed', not 'Installed'. Marking this Installed kept it out of the failure
+            # list, so the script printed "All prerequisites satisfied" and exited 0 - while
+            # the return below skipped the CPAN and DBD-driver checks entirely, leaving a
+            # Perl that stage 2 would build against with no quest database layer at all.
+            Write-Bad 'Perl was installed but is not invocable in this session.'
+            Write-Warn 'Open a NEW PowerShell window and re-run this script.'
+            Add-Result 'Perl' 'Failed' 'installed but not invocable - re-run in a new shell'
             return
         }
     }
@@ -1138,6 +1337,55 @@ function Write-DsnNotice {
     Write-Warn 'needed if your quests came from this repo. See CODEBASE.md section 6.1.'
 }
 
+function Invoke-CheckVCRedist {
+    <#
+        The Visual C++ runtime redistributable.
+
+        Easy to overlook: Build Tools gives you the COMPILER, not the redistributable
+        runtime the compiled binaries load at execution time. vcpkg does not ship it
+        either, so nothing else in this pipeline provides it.
+
+        Without it every server binary dies instantly with exit code -1073741515
+        (0xC0000135, STATUS_DLL_NOT_FOUND) and NO output at all - the loader fails before
+        main() runs, so there is nothing to print. Under NSSM that surfaces only as a
+        service stuck in Paused, which is a long way from the real cause.
+
+        Detected by probing System32 for the runtime DLLs rather than trusting a registry
+        key, since that is exactly what the loader looks for.
+    #>
+    Write-Head 'Visual C++ runtime'
+
+    $required = @('vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll')
+    $absent = @($required | Where-Object {
+        -not (Test-Path (Join-Path $env:SystemRoot "System32\$_"))
+    })
+
+    if ($absent.Count -eq 0) {
+        Write-Ok 'Runtime DLLs present in System32.'
+        Add-Result 'VC++ runtime' 'Present' 'vcruntime140, msvcp140'
+        return
+    }
+
+    Write-Bad "Missing: $($absent -join ', ')"
+    Write-Warn 'Every compiled server binary will fail to load without these, with exit'
+    Write-Warn 'code -1073741515 and no error message.'
+
+    if ($CheckOnly) { Add-Result 'VC++ runtime' 'Missing' ($absent -join ', '); return }
+
+    Install-WithWinget -PackageId $script:Packages.VCRedist -Component 'VC++ Redistributable'
+
+    $absent = @($required | Where-Object {
+        -not (Test-Path (Join-Path $env:SystemRoot "System32\$_"))
+    })
+    if ($absent.Count -eq 0) {
+        Write-Ok 'Installed.'
+        Add-Result 'VC++ runtime' 'Installed'
+    } else {
+        Write-Bad "Still missing after install: $($absent -join ', ')"
+        Add-Result 'VC++ runtime' 'Failed' ($absent -join ', ')
+    }
+}
+
 function Invoke-CheckDiskSpace {
     Write-Head 'Disk space'
 
@@ -1216,13 +1464,15 @@ On Windows Server 2025 winget normally ships in the box. If it is missing, insta
 "App Installer" package from https://aka.ms/getwinget and re-run this script.
 '@
     }
-    Write-Ok "winget $(& winget --version)"
+    $null = Invoke-Native -Capture { winget --version }
+    Write-Ok "winget $($script:NativeOutput | Select-Object -First 1)"
 
     Invoke-CheckDiskSpace
     Invoke-CheckSimpleTool -Component 'Git' -CommandName 'git' -PackageId $script:Packages.Git
     Invoke-CheckSimpleTool -Component '7-Zip' -CommandName '7z' -PackageId $script:Packages.SevenZip `
         -ExtraProbePaths @((Join-Path $env:ProgramFiles '7-Zip\7z.exe'))
     Invoke-CheckBuildTools
+    Invoke-CheckVCRedist
     Invoke-CheckCMake
     Invoke-CheckMariaDb
     Invoke-CheckPerl

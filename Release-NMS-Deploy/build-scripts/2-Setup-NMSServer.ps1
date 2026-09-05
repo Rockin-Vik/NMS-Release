@@ -15,6 +15,8 @@
         Migrate    Run shared_memory, then boot world to apply both manifests
         Patches    Apply the 10 loose .sql files that nothing else applies (CODEBASE.md 4.4).
                    Runs AFTER Migrate so manifest entries cannot clobber them.
+        Login      Create the loginserver's five tables. Also in no manifest and not in
+                   the dump - without them the login service exits on its first query.
         Health     Run the health-check SQL, because custom_version lies (CODEBASE.md 4.3)
         Export     Run export_client_files and stage the four client data files
         Services   Register world/zone/ucs/queryserv/loginserver as Windows services,
@@ -36,7 +38,14 @@
     Run exactly one stage and stop. Useful for iterating on a single failing step.
 
 .PARAMETER RepoUrl
-    Source repo. Default is the public NMS-Release.
+    Git URL to clone the server source from.
+
+    If omitted, the script works it out in this order:
+      1. the 'origin' remote of the checkout these scripts came from, if they were copied
+         out of a clone and that clone is still reachable
+      2. the 'origin' remote of an existing clone already at <InstallRoot>\src
+    If neither applies it stops and asks for -RepoUrl. That keeps any particular fork's
+    URL out of the script.
 
 .PARAMETER PublicAddress
     The address players connect to. Auto-detected if omitted. Set this explicitly if the
@@ -75,7 +84,8 @@
     Just audit the database and print what content actually landed.
 
 .NOTES
-    Target:  Windows Server 2025, 8 cores / 24 GB / 300 GB, full Administrator
+    Target:  Windows Server 2019/2022/2025 (also fine on Windows 10/11), full Administrator.
+             Budget ~40 GB disk and expect the build to use every core you give it.
     Login:   local loginserver on 5998 (not Project EQ public login)
     Time:    2-4 hours on a fresh box; the build and the DB import dominate
 
@@ -92,21 +102,34 @@ param(
     [string] $InstallRoot = 'C:\NMS',
 
     [ValidateSet('Clone','Database','Build','Runtime','Maps','Config',
-                 'Migrate','Patches','Health','Export','Services','Firewall','All')]
+                 'Migrate','Patches','Login','Health','Export','Services','Firewall','All')]
     [string] $Stage = 'All',
 
     [ValidateSet('Clone','Database','Build','Runtime','Maps','Config',
-                 'Migrate','Patches','Health','Export','Services','Firewall')]
+                 'Migrate','Patches','Login','Health','Export','Services','Firewall')]
     [string] $OnlyStage,
 
-    [string] $RepoUrl = 'https://github.com/Rockin-Vik/NMS-Release.git',
+    # Where to clone the server source from. Left empty on purpose: the script derives it
+    # from the checkout these scripts were copied out of, so a fork works with no edit.
+    # Pass -RepoUrl explicitly when running the scripts standalone.
+    [string] $RepoUrl,
     [string] $PublicAddress,
     [string] $ServerLongName  = 'NMS Server',
     [string] $ServerShortName = 'nms',
     [string] $DbName = 'peq',
     [string] $DbUser = 'peq',
     [string] $MariaDbRootPassword,
-    [switch] $SkipDatabaseImport
+    [switch] $SkipDatabaseImport,
+
+    # DESTRUCTIVE. login_schema.sql begins every statement with DROP TABLE IF EXISTS, so
+    # re-applying it deletes every player login account. Only pass this to deliberately
+    # rebuild the loginserver schema from scratch.
+    [switch] $ForceLoginSchema,
+
+    # Do not add a Defender exclusion for -InstallRoot. Expect to restore quarantined
+    # binaries by hand: Defender removes the compiled server executables after they are
+    # copied, and the services then fail to start with no stated cause.
+    [switch] $SkipDefenderExclusion
 )
 
 $ErrorActionPreference = 'Stop'
@@ -140,7 +163,14 @@ $script:BinDir      = Join-Path $script:BuildDir  'bin\Release'
 
 # Zone pathing / line-of-sight maps. utils/defaults/Maps in the repo is an empty .keep
 # directory and no README mentions this - zones misbehave badly without it.
-$script:MapsRepo = 'https://github.com/Akkadius/EQEmuMaps.git'
+#
+# Layout inside this repo (per its readme):
+#   base/<zone>.map    line of sight, best-Z calculation
+#   water/<zone>.wtr   water/lava region detection
+#   nav/<zone>.nav     navmesh for NPC pathing
+# These land as Maps/base, Maps/water, Maps/nav under the server root.
+$script:MapsRepo = 'https://github.com/EQEmu/maps.git'
+$script:MapsSubdirs = @('base', 'water', 'nav')
 
 # The ten loose .sql files. Nothing in the codebase applies these - grep confirms zero
 # references. See CODEBASE.md 4.4.
@@ -161,7 +191,32 @@ $script:LoosePatches = @(
 # doors/object/npc_types rows; if a manifest entry rewrites any of those rows, running the
 # patches first means the manifest silently clobbers them and we would report success.
 $script:StageOrder = @('Clone','Database','Build','Runtime','Maps','Config',
-                       'Migrate','Patches','Health','Export','Services','Firewall')
+                       'Migrate','Patches','Login','Health','Export','Services','Firewall')
+
+# The loginserver's own schema. Historically the loginserver ran against a separate
+# database, so these tables are not in the PEQ dump and no migration manifest creates
+# them - the files just sit in loginserver/login_util/ waiting to be applied by hand.
+# Without them the service starts, connects, fails its first query and exits, which
+# Windows reports only as "Failed to start service".
+$script:LoginSchemaFiles = @(
+    'Release-NMS-Server\loginserver\login_util\login_schema.sql',
+    'Release-NMS-Server\loginserver\login_util\login_tickets.sql'
+)
+
+# Tables login_schema.sql creates. Used to decide whether it has already been applied.
+$script:LoginTables = @(
+    'login_accounts', 'login_server_admins', 'login_server_list_types',
+    'login_world_servers', 'login_api_tokens'
+)
+
+# Lookup rows for login_server_list_types. The schema creates the table empty, but
+# loginserver/login_types.h:147 defines the ids and world_server.cpp:436 auto-registers
+# new worlds as Standard (3).
+$script:LoginServerListTypes = @(
+    @{ Id = 1; Description = 'Legends' }
+    @{ Id = 2; Description = 'Preferred' }
+    @{ Id = 3; Description = 'Standard' }
+)
 
 # Services, in boot order. shared_memory is deliberately absent: it is a run-once tool
 # that must exit before world starts, not a service. See CODEBASE.md section 2.
@@ -181,7 +236,12 @@ $script:Services = @(
 #
 # 9001 (world servertalk) is bound to 127.0.0.1 in our config, so it is not listed here.
 $script:FirewallRules = @(
-    @{ Name = 'NMS Login Server';  Port = '5998';      Protocol = 'UDP' }
+    # 5998 is the Titanium opcode stream, 5999 the SoD-lineage one - loginserver runs BOTH
+    # (client_manager.cpp:88 and :126) with DIFFERENT opcode files. RoF2 is SoD-lineage and
+    # must use 5999; on 5998 the session opens and then OP_Login is never recognised, so
+    # the client hangs at "Logging in to the server" forever with no server-side error.
+    @{ Name = 'NMS Login Server';      Port = '5998'; Protocol = 'UDP' }
+    @{ Name = 'NMS Login Server SoD';  Port = '5999'; Protocol = 'UDP' }
     @{ Name = 'NMS World Server';  Port = '9000';      Protocol = 'UDP' }
     @{ Name = 'NMS Chat Server';   Port = '7778';      Protocol = 'UDP' }
     @{ Name = 'NMS Zone Servers';  Port = '7000-7400'; Protocol = 'UDP' }
@@ -249,6 +309,44 @@ function Invoke-Native {
     }
 }
 
+function Write-TextFile {
+    <#
+    .SYNOPSIS
+        Writes a text file as UTF-8 WITHOUT a byte-order mark.
+
+    .DESCRIPTION
+        This is not a style preference, it is a hard requirement for the JSON configs.
+
+        PowerShell 5.1's `Set-Content -Encoding UTF8` prepends a BOM (EF BB BF). EQEmu
+        parses its config with jsoncpp, which does not tolerate one, and fails with:
+
+            Error from reader: * Line 1, Column 1
+              Syntax error: value, object or array expected.
+            Init Failed to load eqemu config
+
+        world.exe then exits immediately, and export_client_files.exe cannot connect -
+        so a single BOM takes out the Migrate and Export stages and leaves a server that
+        will not boot, all with an error that points at the JSON rather than the encoding.
+
+        PowerShell 7 changed the default to BOM-less, so this only bites on 5.1 - which
+        is what ships with Windows Server. [IO.File]::WriteAllText is BOM-less on both.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Content
+    )
+    # Resolve to a full filesystem path. WriteAllText uses the PROCESS working directory,
+    # which is not PowerShell's current location - they diverge after Push-Location, and a
+    # relative path would land somewhere unexpected.
+    #
+    # GetUnresolvedProviderPathFromPSPath handles absolute and relative alike and does not
+    # require the file to exist yet. Do NOT hand an already-rooted path to Join-Path first:
+    # that yields "C:\current\dir\C:\other\path" and GetFullPath then throws
+    # "The given path's format is not supported."
+    $full = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+    [IO.File]::WriteAllText($full, $Content, (New-Object System.Text.UTF8Encoding($false)))
+}
+
 function Write-Step { param([string] $Text) Write-Host "  -> $Text" -ForegroundColor Gray }
 function Write-Ok   { param([string] $Text) Write-Host "  [ OK ] $Text" -ForegroundColor Green }
 function Write-Warn { param([string] $Text) Write-Host "  [WARN] $Text" -ForegroundColor Yellow }
@@ -263,6 +361,99 @@ function Test-Admin {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     ([Security.Principal.WindowsPrincipal]::new($id)).IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Stop-NmsServices {
+    <#
+        Stops any running NMS services and waits for the processes to release their files.
+
+        Required before Runtime (which overwrites the binaries - Windows refuses to replace
+        a running executable), and before Migrate (which starts its own world.exe and would
+        otherwise collide with the service over port 9001).
+
+        Paused counts as running here: that is NSSM's crash-loop state, and a paused service
+        can still hold file handles.
+    #>
+    param([string] $Reason = 'to release file handles')
+
+    $running = @(Get-Service -Name 'NMS-*' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Status -in 'Running', 'Paused' })
+
+    if ($running.Count -eq 0) { return @() }
+
+    Write-Step "Stopping $($running.Count) running service(s) $Reason..."
+    foreach ($s in $running) {
+        Stop-Service -Name $s.Name -Force -ErrorAction SilentlyContinue
+        Write-Step "  stopped $($s.Name)"
+    }
+
+    # Service 'Stopped' only means the SCM is done; the process can linger briefly and
+    # keep its executable locked. Wait for the images themselves to go.
+    $names = @('world', 'zone', 'ucs', 'queryserv', 'loginserver', 'eqlaunch', 'shared_memory')
+    $deadline = (Get-Date).AddSeconds(30)
+    while ((Get-Date) -lt $deadline) {
+        $alive = @(Get-Process -Name $names -ErrorAction SilentlyContinue)
+        if ($alive.Count -eq 0) { break }
+        Start-Sleep -Milliseconds 500
+    }
+
+    $alive = @(Get-Process -Name $names -ErrorAction SilentlyContinue)
+    if ($alive.Count -gt 0) {
+        Write-Warn "$($alive.Count) server process(es) still running; forcing."
+        $alive | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+    }
+
+    Write-Ok 'Services stopped.'
+    return @($running | ForEach-Object { $_.Name })
+}
+
+function Set-DefenderExclusion {
+    <#
+        Excludes the install root from Microsoft Defender.
+
+        This is not optional hardening-avoidance, it is required for the build to survive.
+        Defender quarantines freshly compiled, unsigned executables that open listening
+        sockets and handle credentials - which describes world.exe, zone.exe, ucs.exe,
+        shared_memory.exe and loginserver.exe exactly. Observed behaviour: the binaries
+        are removed from the runtime folder AFTER being copied, so services get registered
+        against files that then disappear, and Windows reports only "Failed to start
+        service" with no cause.
+
+        The trade-off is real and worth stating: nothing under this path is scanned any
+        more. That is defensible for a directory containing only binaries you compiled
+        yourself from source you control - but it does mean anything else written there
+        is also unscanned, so do not use the install root as a general download folder.
+
+        -SkipDefenderExclusion opts out; expect to re-add quarantined binaries by hand.
+    #>
+    if ($SkipDefenderExclusion) {
+        Write-Warn 'Defender exclusion skipped by request.'
+        Write-Warn 'If binaries vanish from the runtime folder after the build, this is why.'
+        return
+    }
+
+    if (-not (Get-Command Add-MpPreference -ErrorAction SilentlyContinue)) {
+        Write-Step 'Defender cmdlets unavailable (third-party AV, or Defender removed).'
+        Write-Step "If your AV quarantines the built binaries, exclude $InstallRoot by hand."
+        return
+    }
+
+    try {
+        $current = @((Get-MpPreference -ErrorAction Stop).ExclusionPath)
+        if ($current -contains $InstallRoot) {
+            Write-Ok "Defender already excludes $InstallRoot"
+            return
+        }
+        Add-MpPreference -ExclusionPath $InstallRoot -ErrorAction Stop
+        Write-Ok "Added Defender exclusion for $InstallRoot"
+        Write-Step 'Without this, Defender quarantines the compiled server binaries and the'
+        Write-Step 'services fail to start with no explanation.'
+    } catch {
+        Write-Warn "Could not add the Defender exclusion: $($_.Exception.Message)"
+        Write-Warn 'Add it by hand if binaries disappear after the build:'
+        Write-Warn "  Add-MpPreference -ExclusionPath '$InstallRoot'"
+    }
 }
 
 function Should-Run {
@@ -302,12 +493,13 @@ function Set-StoredCredential {
     param([string] $Label, [string] $Value)
 
     if (-not (Test-Path $script:CredentialFile)) {
-        @(
+        $header = @(
             '# NMS server credentials',
             "# Created $(Get-Date -Format 'u')",
             '# Keep this. Back it up somewhere off this machine.',
             ''
-        ) | Set-Content -Path $script:CredentialFile -Encoding UTF8
+        ) -join "`r`n"
+        Write-TextFile -Path $script:CredentialFile -Content $header
 
         $acl = Get-Acl $script:CredentialFile
         $acl.SetAccessRuleProtection($true, $false)
@@ -323,7 +515,7 @@ function Set-StoredCredential {
     }
     # @() so a single remaining line stays an array - bare + on a scalar string is
     # concatenation, not append, and would collapse the file to one mangled line.
-    (@($existing) + "$Label = $Value") | Set-Content -Path $script:CredentialFile -Encoding UTF8
+    Write-TextFile -Path $script:CredentialFile -Content ((@($existing) + "$Label = $Value") -join "`r`n")
 }
 
 # ---------------------------------------------------------------------------
@@ -444,12 +636,50 @@ function Get-RootPassword {
 # Stage: Clone
 # ---------------------------------------------------------------------------
 
+function Resolve-RepoUrl {
+    <#
+        Works out where to clone from, without hardcoding anyone's fork.
+
+        Order: the caller's -RepoUrl, then the origin of the checkout these scripts were
+        copied out of (../.. from build-scripts/), then the origin of an existing clone at
+        <InstallRoot>\src. Failing all three, ask.
+    #>
+    if ($RepoUrl) { return $RepoUrl }
+
+    $candidates = @(
+        (Resolve-Path (Join-Path $PSScriptRoot '..\..') -ErrorAction SilentlyContinue),
+        $script:SrcRoot
+    ) | Where-Object { $_ -and (Test-Path (Join-Path $_ '.git')) }
+
+    foreach ($c in $candidates) {
+        if ((Invoke-Native -Capture { git -C "$c" remote get-url origin }) -eq 0) {
+            $url = ($script:NativeOutput | Select-Object -First 1)
+            if ($url -match '\S') {
+                Write-Step "Using the origin of $c"
+                return "$url".Trim()
+            }
+        }
+    }
+
+    throw @'
+Could not determine which repository to clone.
+
+Pass it explicitly:
+    .\2-Setup-NMSServer.ps1 -RepoUrl https://github.com/<owner>/NMS-Release.git
+
+The script normally reads this from the checkout it was copied out of, so running it from
+inside a clone needs no argument.
+'@
+}
+
 function Invoke-StageClone {
-    Write-Head 'Stage 1/12 - Clone'
+    Write-Head 'Stage 1/13 - Clone'
 
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
         throw 'git is not on PATH. Run 1-Install-Prerequisites.ps1, then open a new shell.'
     }
+
+    $RepoUrl = Resolve-RepoUrl
 
     if (Test-Path (Join-Path $script:SrcRoot '.git')) {
         Write-Step 'Repo already present; fetching updates...'
@@ -466,8 +696,13 @@ function Invoke-StageClone {
 
             if ($behind -and [int]$behind -gt 0) {
                 Write-Step "$behind commit(s) behind; pulling..."
-                $null = Invoke-Native -Show { git pull --ff-only --quiet }
-                Write-Ok 'Updated.'
+                $pullCode = Invoke-Native -Show { git pull --ff-only --quiet }
+                if ($pullCode -eq 0) { Write-Ok 'Updated.' }
+                else {
+                    # Common on --depth 1 clones. Not fatal, but do NOT claim success -
+                    # the build would then compile stale source under a green summary.
+                    Write-Warn "git pull failed (exit $pullCode); continuing on the existing checkout."
+                }
             } else {
                 Write-Ok 'Already up to date.'
             }
@@ -491,7 +726,10 @@ function Invoke-StageClone {
     }
     Write-Ok 'All four release folders present.'
 
-    $sha = (& git -C $script:SrcRoot rev-parse --short HEAD)
+    $sha = 'unknown'
+    if ((Invoke-Native -Capture { git -C $script:SrcRoot rev-parse --short HEAD }) -eq 0) {
+        $sha = $script:NativeOutput | Select-Object -First 1
+    }
     Add-Summary 'Clone' 'Done' "at $sha"
 }
 
@@ -500,7 +738,7 @@ function Invoke-StageClone {
 # ---------------------------------------------------------------------------
 
 function Invoke-StageDatabase {
-    Write-Head 'Stage 2/12 - Database'
+    Write-Head 'Stage 2/13 - Database'
 
     $rootPw = Get-RootPassword
 
@@ -543,9 +781,9 @@ FLUSH PRIVILEGES;
         return
     }
 
-    $tableCount = [int](@(Invoke-Sql -Password $rootPw -Query @"
+    $tableCount = Get-SqlScalar -RootPassword $rootPw -Query @"
 SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DbName';
-"@) | Select-Object -Last 1)
+"@
 
     if ($tableCount -gt 100) {
         Write-Ok "Database already has $tableCount tables; skipping import."
@@ -592,9 +830,9 @@ SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DbName';
     Invoke-SqlFile -Path $sqlFile.FullName -Password $rootPw -Database $DbName
     $sw.Stop()
 
-    $tableCount = [int](@(Invoke-Sql -Password $rootPw -Query @"
+    $tableCount = Get-SqlScalar -RootPassword $rootPw -Query @"
 SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DbName';
-"@) | Select-Object -Last 1)
+"@
     Write-Ok "Imported $tableCount tables in $([math]::Round($sw.Elapsed.TotalMinutes,1)) minutes."
 
     if ($tableCount -lt 100) { throw "Only $tableCount tables after import - something went wrong." }
@@ -602,13 +840,12 @@ SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$DbName';
     # Verify the two things migrations do NOT create. See CODEBASE.md 4.4.
     Write-Step 'Checking for content the migrations cannot supply...'
 
-    $wp = [int](@(Invoke-Sql -Password $rootPw -Database $DbName -Quiet -Query @"
+    $wp = Get-SqlScalar -RootPassword $rootPw -Query @"
 SELECT COUNT(*) FROM information_schema.tables
  WHERE table_schema='$DbName' AND table_name='nms_waypoints';
-"@) | Select-Object -Last 1)
+"@
     if ($wp -gt 0) {
-        $rows = [int](@(Invoke-Sql -Password $rootPw -Database $DbName -Quiet `
-            -Query 'SELECT COUNT(*) FROM nms_waypoints;') | Select-Object -Last 1)
+        $rows = Get-SqlScalar -RootPassword $rootPw -Query 'SELECT COUNT(*) FROM nms_waypoints;'
         if ($rows -gt 0) { Write-Ok "nms_waypoints has $rows rows." }
         else {
             Write-Warn 'nms_waypoints exists but is EMPTY. Waypoints will silently do nothing.'
@@ -618,10 +855,10 @@ SELECT COUNT(*) FROM information_schema.tables
         Write-Step 'nms_waypoints not in the dump; the custom manifest will create it (empty).'
     }
 
-    $cs = [int](@(Invoke-Sql -Password $rootPw -Database $DbName -Quiet -Query @"
+    $cs = Get-SqlScalar -RootPassword $rootPw -Query @"
 SELECT COUNT(*) FROM information_schema.tables
  WHERE table_schema='$DbName' AND table_name LIKE 'account_character_set%';
-"@) | Select-Object -Last 1)
+"@
     if ($cs -gt 0) { Write-Ok "account_character_set* tables present ($cs)." }
     else {
         Write-Warn 'account_character_set* tables are MISSING and have no migration'
@@ -636,7 +873,7 @@ SELECT COUNT(*) FROM information_schema.tables
 # ---------------------------------------------------------------------------
 
 function Invoke-StagePatches {
-    Write-Head 'Stage 8/12 - Loose SQL patches'
+    Write-Head 'Stage 8/13 - Loose SQL patches'
     Write-Step 'These ten files are referenced nowhere in the codebase and are applied by'
     Write-Step 'nothing. Without this stage they simply never run. See CODEBASE.md 4.4.'
 
@@ -665,7 +902,207 @@ function Invoke-StagePatches {
     }
 
     Write-Step "Applied $applied of $($script:LoosePatches.Count) ($missing missing)."
-    Add-Summary 'Patches' 'Done' "$applied applied"
+    $state = if ($applied -eq $script:LoosePatches.Count) { 'Done' }
+             elseif ($applied -eq 0)                      { 'Failed' }
+             else                                         { 'Partial' }
+    Add-Summary 'Patches' $state "$applied/$($script:LoosePatches.Count) applied"
+}
+
+# ---------------------------------------------------------------------------
+# Stage: Login
+# ---------------------------------------------------------------------------
+
+function Invoke-StageLogin {
+    Write-Head 'Stage 9/13 - Loginserver schema'
+    Write-Step 'The loginserver needs five tables that are in no migration manifest and'
+    Write-Step 'not in the PEQ dump - loginserver/login_util/login_schema.sql creates them,'
+    Write-Step 'and nothing applies it. Without them the service exits on its first query.'
+
+    $rootPw = Get-RootPassword
+
+    $presentCount = Get-LoginTableCount -RootPassword $rootPw
+    Write-Step "Found $presentCount of $($script:LoginTables.Count) loginserver tables."
+
+    # Guard on ANY tables present, not on all five.
+    #
+    # The earlier version required a full set before backing off, so a server sitting at
+    # 4 of 5 - which is normal, since login_api_tokens comes from the other file and
+    # login_tickets.sql may never have been applied - fell straight through to
+    # login_schema.sql and its leading DROP TABLE IF EXISTS. That silently destroyed every
+    # player login account, with no prompt and without -ForceLoginSchema.
+    if ($presentCount -gt 0 -and -not $ForceLoginSchema) {
+        if ($presentCount -lt $script:LoginTables.Count) {
+            Write-Warn "$presentCount of $($script:LoginTables.Count) loginserver tables exist."
+            Write-Warn 'NOT re-applying the schema: it begins with DROP TABLE IF EXISTS and'
+            Write-Warn 'would delete every existing login account to create the missing few.'
+            Write-Warn 'Re-run with -ForceLoginSchema only if you mean to rebuild from scratch.'
+            Invoke-SeedLoginServerListTypes -RootPassword $rootPw
+            Invoke-SeedLauncher -RootPassword $rootPw
+            Add-Summary 'Login' 'Partial' "$presentCount/$($script:LoginTables.Count) tables"
+            return
+        }
+    }
+
+    if ($presentCount -eq $script:LoginTables.Count -and -not $ForceLoginSchema) {
+        Write-Ok 'Loginserver schema already present; leaving it alone.'
+        # This is not laziness. Every statement in login_schema.sql begins with
+        # DROP TABLE IF EXISTS, so re-applying it on a live server deletes every
+        # player login account. Re-apply only on explicit instruction.
+        Write-Step 'login_schema.sql starts with DROP TABLE - re-applying would delete all'
+        Write-Step 'player accounts. Use -ForceLoginSchema only if you mean exactly that.'
+        Invoke-SeedLoginServerListTypes -RootPassword $rootPw
+        Invoke-SeedLauncher -RootPassword $rootPw
+        Add-Summary 'Login' 'Done' 'schema already present'
+        return
+    }
+
+    if ($ForceLoginSchema -and $presentCount -gt 0) {
+        Write-Warn 'RE-APPLYING the loginserver schema because -ForceLoginSchema was given.'
+        Write-Warn 'Every existing login account will be destroyed.'
+        $accounts = Get-SqlScalar -RootPassword $rootPw -Query 'SELECT COUNT(*) FROM login_accounts;'
+        if ($accounts -gt 0) {
+            Write-Warn "There are currently $accounts login account(s)."
+            # Always confirm interactively. -ForceLoginSchema says "rebuild the schema",
+            # not "destroy accounts without asking", and there is no way to undo this.
+            $answer = Read-Host '  Type DELETE to confirm'
+            if ($answer -ne 'DELETE') {
+                Write-Step 'Cancelled; schema left untouched.'
+                Add-Summary 'Login' 'Skipped' 'user cancelled'
+                return
+            }
+        }
+    }
+
+    $applied = 0
+    foreach ($rel in $script:LoginSchemaFiles) {
+        $path = Join-Path $script:SrcRoot $rel
+        $name = Split-Path -Leaf $rel
+        if (-not (Test-Path $path)) { Write-Warn "$name not found - skipping"; continue }
+        try {
+            Invoke-SqlFile -Path $path -Password $rootPw -Database $DbName
+            Write-Ok $name
+            $applied++
+        } catch {
+            Write-Bad "$name failed: $($_.Exception.Message)"
+        }
+    }
+
+    if ($applied -eq 0) {
+        Add-Summary 'Login' 'Failed' 'no schema applied'
+        return
+    }
+
+    Invoke-SeedLoginServerListTypes -RootPassword $rootPw
+    Invoke-SeedLauncher -RootPassword $rootPw
+
+    $afterCount = Get-LoginTableCount -RootPassword $rootPw
+
+    if ($afterCount -eq $script:LoginTables.Count) {
+        Write-Ok "All $afterCount loginserver tables present."
+        Add-Summary 'Login' 'Done' "$applied file(s) applied"
+    } else {
+        Write-Warn "Only $afterCount of $($script:LoginTables.Count) tables exist after applying."
+        Add-Summary 'Login' 'Partial' "$afterCount/$($script:LoginTables.Count) tables"
+    }
+}
+
+function Invoke-SeedLauncher {
+    <#
+        Seeds the `launcher` table with a row named 'zone'.
+
+        Without it the zone launcher is rejected and NO ZONES EVER BOOT - and this is the
+        worst failure signature in the whole deployment, because everything looks healthy:
+
+          world/launcher_link.cpp:92-97 - eqlaunch announces itself, world calls
+          GetConfig(name), gets nullptr because `SELECT name FROM launcher` returned
+          nothing (world/worlddb.cpp:828), logs "Unknown launcher [zone] connected.
+          Disconnecting" at INFO level, and drops the connection.
+
+        The NMS-Zone service reports Running. status-server.ps1 looks clean. Players log
+        in, see the server, and then hang forever at character select because no zone
+        process exists. The only trace is an INFO line in the world log.
+
+        The PEQ dump ships this table empty and no migration seeds it.
+        'dynamics' is the number of zone processes to keep spare; 20 fits the configured
+        7000-7400 port range and its firewall rule.
+    #>
+    param([Parameter(Mandatory)] [string] $RootPassword)
+
+    try {
+        Invoke-Sql -Password $RootPassword -Database $DbName -Query @"
+INSERT INTO launcher (name, dynamics) VALUES ('zone', 20)
+  ON DUPLICATE KEY UPDATE dynamics = GREATEST(dynamics, 20);
+"@ | Out-Null
+        $n = Get-SqlScalar -RootPassword $RootPassword `
+            -Query "SELECT dynamics FROM launcher WHERE name = 'zone';"
+        Write-Ok "launcher 'zone' present with $n dynamic zones."
+    } catch {
+        Write-Bad "Could not seed the launcher row: $($_.Exception.Message)"
+        Write-Warn 'Without it eqlaunch is rejected and no zones boot - while every service'
+        Write-Warn 'still reports Running. Add it by hand:'
+        Write-Warn "  INSERT INTO launcher (name, dynamics) VALUES ('zone', 20);"
+    }
+}
+
+function Get-SqlScalar {
+    <#
+        Runs a query expected to yield ONE number and returns it as [int].
+
+        Counting output lines is not reliable: Invoke-Sql merges stderr into its result,
+        so any client warning or stray blank becomes an extra "row" - which is how a check
+        for 5 tables managed to report 6. Ask the database for the number instead, and
+        take the last line that is purely digits.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $Query,
+        [Parameter(Mandatory)] [string] $RootPassword
+    )
+    # -Quiet + try/catch: several callers ask about tables that may not exist yet, where
+    # "the query failed" and "the answer is zero" mean the same thing to us. Returning 0
+    # is correct there and avoids an [int] cast blowing up on an error string.
+    try {
+        $out = @(Invoke-Sql -Password $RootPassword -Database $DbName -Query $Query -Quiet)
+    } catch {
+        return 0
+    }
+    $num = $out | Where-Object { "$_".Trim() -match '^\d+$' } | Select-Object -Last 1
+    if ($null -eq $num) { return 0 }
+    return [int]("$num".Trim())
+}
+
+function Get-LoginTableCount {
+    param([Parameter(Mandatory)] [string] $RootPassword)
+
+    $list = ($script:LoginTables | ForEach-Object { "'$_'" }) -join ','
+    return Get-SqlScalar -RootPassword $RootPassword -Query @"
+SELECT COUNT(*) FROM information_schema.tables
+ WHERE table_schema = '$DbName' AND table_name IN ($list);
+"@
+}
+
+function Invoke-SeedLoginServerListTypes {
+    <#
+        login_schema.sql creates login_server_list_types empty. The ids come from
+        loginserver/login_types.h:147 (Legends 1, Preferred 2, Standard 3), and
+        world_server.cpp:436 auto-registers a new world as Standard - so row 3 in
+        particular has to exist.
+
+        INSERT IGNORE, so this is safe to run on every setup.
+    #>
+    param([Parameter(Mandatory)] [string] $RootPassword)
+
+    $values = ($script:LoginServerListTypes |
+        ForEach-Object { "($($_.Id), '$($_.Description)')" }) -join ', '
+
+    try {
+        Invoke-Sql -Password $RootPassword -Database $DbName -Query @"
+INSERT IGNORE INTO login_server_list_types (id, description) VALUES $values;
+"@ | Out-Null
+        $n = Get-SqlScalar -RootPassword $RootPassword -Query 'SELECT COUNT(*) FROM login_server_list_types;'
+        Write-Ok "login_server_list_types has $n row(s)."
+    } catch {
+        Write-Warn "Could not seed login_server_list_types: $($_.Exception.Message)"
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -689,7 +1126,7 @@ function Resolve-CMake {
 }
 
 function Invoke-StageBuild {
-    Write-Head 'Stage 3/12 - Build'
+    Write-Head 'Stage 3/13 - Build'
 
     $cmake = Resolve-CMake
     Write-Step "CMake: $cmake"
@@ -718,7 +1155,24 @@ function Invoke-StageBuild {
     Write-Step 'Configuring...'
     Push-Location $script:RepoServer
     try {
-        $code = Invoke-Native -Show { & $cmake -S . -B Build -G 'Visual Studio 17 2022' -A x64 -DEQEMU_BUILD_LOGIN=ON }
+        $code = Invoke-Native -Capture { & $cmake -S . -B Build -G 'Visual Studio 17 2022' -A x64 -DEQEMU_BUILD_LOGIN=ON }
+        $script:NativeOutput | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+
+        # CMake reports a missing Perl as a STATUS line and exits 0. Without PerlLibs the
+        # build simply omits -DEMBPERL, so zone.exe comes out with no Perl quest parser at
+        # all: it starts fine, .lua quests work, and every one of the ~4,000 .pl scripts
+        # and 52 plugins silently does nothing. Catch it here rather than in production.
+        if ($script:NativeOutput -match 'Perl:\s+MISSING') {
+            throw @'
+CMake did not find PerlLibs.
+
+zone.exe would build WITHOUT the embedded Perl parser, and every .pl quest script and
+plugin would silently do nothing - with no error at runtime.
+
+Run 1-Install-Prerequisites.ps1 and confirm Perl reports Present before building.
+'@
+        }
+
         if ($code -ne 0) {
             throw @"
 CMake configure failed (exit $code).
@@ -766,7 +1220,7 @@ Usual causes:
 # ---------------------------------------------------------------------------
 
 function Invoke-StageRuntime {
-    Write-Head 'Stage 4/12 - Runtime directory'
+    Write-Head 'Stage 4/13 - Runtime directory'
 
     # 'export' matters: export_client_files writes with a bare std::ofstream to
     # <ServerRoot>/export/spells_us.txt (client_files/export/main.cpp:132 and friends).
@@ -784,11 +1238,100 @@ function Invoke-StageRuntime {
         if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
     }
 
+    # Windows will not let us overwrite a running executable, so the services must go
+    # down first. Without this the stage dies with "being used by another process".
+    $null = Stop-NmsServices -Reason 'before overwriting binaries'
+
     Write-Step 'Copying binaries and their DLLs...'
     Copy-Item -Path (Join-Path $script:BinDir '*') -Destination $script:ServerRoot `
         -Include '*.exe', '*.dll' -Force
     $n = @(Get-ChildItem $script:ServerRoot -Filter '*.exe').Count
-    Write-Ok "$n executables in place."
+    Write-Ok "$n executables copied."
+
+    # The vcpkg runtime DLLs are NOT all emitted into Build\bin\Release - CMake copies
+    # some, but boost, icu, zstd, lzma and friends stay in the vcpkg tree. Without them
+    # the binaries load-fail with -1073741515 and no output whatsoever, because the
+    # Windows loader gives up before main() runs and there is nothing to print.
+    # Some DLLs the project builds itself do NOT land in bin\Release - zlib-ng1.dll is
+    # built by libs/zlibng and ends up elsewhere in the build tree. world.exe imports it,
+    # so without this sweep world dies at load with -1073741515 and no output, while
+    # shared_memory.exe (which does not link it) runs fine and makes everything look OK.
+    Write-Step 'Sweeping the build tree for any other DLLs...'
+    $swept = 0
+    Get-ChildItem $script:BuildDir -Recurse -Filter '*.dll' -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            $dest = Join-Path $script:ServerRoot $_.Name
+            if (-not (Test-Path $dest) -or $_.LastWriteTime -gt (Get-Item $dest).LastWriteTime) {
+                Copy-Item $_.FullName $dest -Force
+                $swept++
+            }
+        }
+    if ($swept -gt 0) { Write-Ok "$swept additional DLL(s) from the build tree." }
+
+    $vcpkgBin = Join-Path $script:RepoServer 'vcpkg\vcpkg-export-x64\installed\x64-windows\bin'
+    if (Test-Path $vcpkgBin) {
+        Write-Step 'Copying vcpkg runtime DLLs...'
+        Copy-Item -Path (Join-Path $vcpkgBin '*.dll') -Destination $script:ServerRoot -Force
+        $d = @(Get-ChildItem $script:ServerRoot -Filter '*.dll').Count
+        Write-Ok "$d DLLs in place."
+    } else {
+        Write-Warn "vcpkg runtime DLLs not found at $vcpkgBin"
+        Write-Warn 'If binaries exit with -1073741515, this is why. The vcpkg tree is'
+        Write-Warn 'restored by the CMake configure step - re-run the Build stage.'
+    }
+
+    # The VC++ runtime is a SYSTEM component, not something the build emits. Build Tools
+    # installs the compiler, not the redistributable the compiled binaries load, and
+    # vcpkg does not ship it either - so nothing upstream of here provides it.
+    $vcRuntime = @('vcruntime140.dll', 'msvcp140.dll') | Where-Object {
+        -not (Test-Path (Join-Path $env:SystemRoot "System32\$_"))
+    }
+    if ($vcRuntime) {
+        Write-Bad "VC++ runtime missing from System32: $($vcRuntime -join ', ')"
+        Write-Warn 'Every server binary will fail to load with exit code -1073741515 and'
+        Write-Warn 'no error message. Install it:'
+        Write-Warn '  winget install --id Microsoft.VCRedist.2015+.x64 --exact --silent'
+        Write-Warn 'Stage 1 does this - re-run 1-Install-Prerequisites.ps1.'
+        throw 'VC++ runtime redistributable is not installed.'
+    }
+    Write-Ok 'VC++ runtime present in System32.'
+
+    # Verify BY NAME, not by count. Counting hid a real failure once: the stage reported
+    # "9 exe" while loginserver.exe was absent, so the service was registered against a
+    # binary that did not exist and Windows could only say "failed to start".
+    $required = @(
+        @{ Name = 'world.exe';               Why = 'world server' }
+        @{ Name = 'zone.exe';                Why = 'zone server' }
+        @{ Name = 'eqlaunch.exe';            Why = 'zone launcher' }
+        @{ Name = 'shared_memory.exe';       Why = 'must run before world' }
+        @{ Name = 'ucs.exe';                 Why = 'chat and mail' }
+        @{ Name = 'queryserv.exe';           Why = 'query server' }
+        @{ Name = 'loginserver.exe';         Why = 'local login (needs -DEQEMU_BUILD_LOGIN=ON)' }
+        @{ Name = 'export_client_files.exe'; Why = 'generates the four client data files' }
+    )
+
+    $absent = @()
+    foreach ($r in $required) {
+        if (Test-Path (Join-Path $script:ServerRoot $r.Name)) {
+            Write-Ok "$($r.Name)"
+        } else {
+            Write-Bad "$($r.Name) MISSING - $($r.Why)"
+            $absent += $r.Name
+        }
+    }
+
+    Test-BinaryDependencies
+
+    if ($absent.Count -gt 0) {
+        Write-Warn ''
+        Write-Warn "$($absent.Count) required binary/binaries did not reach the runtime folder."
+        Write-Warn "Check what the build actually produced in:"
+        Write-Warn "  $($script:BinDir)"
+        Write-Warn 'If they are missing there too, re-run the Build stage. If they are present'
+        Write-Warn 'there but not here, the copy failed - check for a file lock or a running'
+        Write-Warn 'service holding the old binary open.'
+        throw "Runtime assembly incomplete: $($absent -join ', ')"
+    }
 
     # patch_*.conf and the opcode files. The config points at assets/patches/.
     Write-Step 'Copying opcode and patch files...'
@@ -836,17 +1379,84 @@ function Invoke-StageRuntime {
 # Stage: Maps
 # ---------------------------------------------------------------------------
 
+function Test-BinaryDependencies {
+    <#
+        Verifies every DLL the server binaries import can actually be found.
+
+        This is the check that would have caught zlib-ng1.dll immediately instead of via a
+        silent service failure. A missing import gives exit code -1073741515 with NO output
+        at all - the loader gives up before main() runs - so there is nothing to log, and
+        under NSSM it surfaces only as a service stuck in Paused.
+
+        Uses dumpbin from the MSVC toolset. If it is unavailable the check is skipped
+        rather than failing the stage; it is a diagnostic, not a gate.
+
+        api-ms-win-crt-* entries are virtual API sets resolved by the UCRT and never exist
+        as real files, so they are excluded.
+    #>
+    $dumpbin = Get-ChildItem `
+        'C:\Program Files (x86)\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe',
+        'C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe' `
+        -ErrorAction SilentlyContinue | Select-Object -First 1
+
+    if (-not $dumpbin) {
+        Write-Step 'dumpbin not found; skipping the DLL dependency check.'
+        return
+    }
+
+    Write-Step 'Checking DLL dependencies of each binary...'
+    $problems = @{}
+
+    foreach ($exe in @(Get-ChildItem $script:ServerRoot -Filter '*.exe')) {
+        $null = Invoke-Native -Capture { & $dumpbin.FullName /DEPENDENTS $exe.FullName }
+        $deps = @($script:NativeOutput |
+            Select-String '^\s+(\S+\.dll)' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value })
+
+        foreach ($d in $deps) {
+            if ($d -like 'api-ms-win-*') { continue }   # virtual API sets
+            $found = (Test-Path (Join-Path $script:ServerRoot $d)) -or
+                     (Test-Path (Join-Path $env:SystemRoot "System32\$d")) -or
+                     [bool](Get-Command $d -ErrorAction SilentlyContinue)
+            if (-not $found) {
+                if (-not $problems.ContainsKey($d)) { $problems[$d] = @() }
+                $problems[$d] += $exe.Name
+            }
+        }
+    }
+
+    if ($problems.Count -eq 0) {
+        Write-Ok 'All binaries resolve their imports.'
+        return
+    }
+
+    Write-Bad "$($problems.Count) DLL(s) cannot be found:"
+    foreach ($d in $problems.Keys) {
+        Write-Bad "  $d  (needed by $($problems[$d] -join ', '))"
+    }
+    Write-Warn 'Those binaries will exit with -1073741515 and print nothing at all.'
+    Write-Warn 'Look for the DLL under the build tree or the vcpkg bin directory and copy'
+    Write-Warn "it into $($script:ServerRoot)."
+    throw "Missing runtime DLL(s): $($problems.Keys -join ', ')"
+}
+
 function Invoke-StageMaps {
-    Write-Head 'Stage 5/12 - Zone maps'
+    Write-Head 'Stage 5/13 - Zone maps'
     Write-Step 'utils/defaults/Maps in the repo is an empty .keep directory, and no README'
     Write-Step 'mentions this. Without map files, NPC pathing and line-of-sight are broken.'
 
     $mapDir = Join-Path $script:ServerRoot 'Maps'
-    $existing = (Get-ChildItem $mapDir -Recurse -File -ErrorAction SilentlyContinue |
-        Measure-Object).Count
+    # Check EACH subdirectory, not the total. base/ alone is thousands of files, so a
+    # run where nav/ or water/ failed would look complete forever and never be retried.
+    $haveAll = $true
+    foreach ($sub in $script:MapsSubdirs) {
+        $c = @(Get-ChildItem (Join-Path $mapDir $sub) -File -Recurse -ErrorAction SilentlyContinue).Count
+        if ($c -eq 0) { $haveAll = $false; break }
+    }
 
-    if ($existing -gt 100) {
-        Write-Ok "$existing map files already present; skipping."
+    if ($haveAll) {
+        $existing = @(Get-ChildItem $mapDir -Recurse -File -ErrorAction SilentlyContinue).Count
+        Write-Ok "$existing map files already present in all of $($script:MapsSubdirs -join ', '); skipping."
         Add-Summary 'Maps' 'Done' "$existing files (existing)"
         return
     }
@@ -866,33 +1476,40 @@ function Invoke-StageMaps {
         return
     }
 
-    # The repo may nest the files under a Maps/ or maps/ subdirectory, or keep them flat.
-    $source = @(
-        (Join-Path $tmp 'Maps'),
-        (Join-Path $tmp 'maps'),
-        $tmp
-    ) | Where-Object {
-        Test-Path $_ -PathType Container
-    } | Where-Object {
-        (Get-ChildItem $_ -File -Include '*.map','*.wtr','*.path' -Recurse `
-            -ErrorAction SilentlyContinue | Select-Object -First 1)
-    } | Select-Object -First 1
+    # EQEmu/maps keeps base/, water/ and nav/ at the REPO ROOT, and the server expects
+    # them at Maps/base, Maps/water, Maps/nav. Copy each subdirectory across by name
+    # rather than guessing at a nested layout.
+    $copied = @()
+    foreach ($sub in $script:MapsSubdirs) {
+        $src = Join-Path $tmp $sub
+        if (-not (Test-Path $src -PathType Container)) {
+            Write-Warn "$sub/ not present in the maps repo - skipping."
+            continue
+        }
+        $dst = Join-Path $mapDir $sub
+        Write-Step "Copying $sub/ ..."
+        $rc = Invoke-Native { robocopy $src $dst /E /NFL /NDL /NJH /NJS /NC /NS /NP /XD '.git' }
+        if ($rc -ge 8) {
+            Write-Warn "robocopy failed on $sub (exit $rc)"
+            continue
+        }
+        $count = @(Get-ChildItem $dst -Recurse -File -ErrorAction SilentlyContinue).Count
+        Write-Ok "$sub/ - $count files"
+        $copied += $sub
+    }
 
-    if (-not $source) {
-        Write-Warn 'Cloned, but found no .map files in the expected layout.'
+    if ($copied.Count -eq 0) {
+        Write-Warn 'Cloned, but none of the expected map directories were found.'
+        Write-Warn "Expected: $($script:MapsSubdirs -join ', ') at the repo root."
         Add-Summary 'Maps' 'Failed' 'unexpected layout'
         return
     }
 
-    Write-Step 'Copying maps into the runtime directory...'
-    $rc = Invoke-Native { robocopy $source $mapDir /E /NFL /NDL /NJH /NJS /NC /NS /NP /XD '.git' }
-    if ($rc -ge 8) { throw "robocopy failed copying maps (exit $rc)" }
-
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 
-    $count = (Get-ChildItem $mapDir -Recurse -File | Measure-Object).Count
-    Write-Ok "$count map files installed."
-    Add-Summary 'Maps' 'Done' "$count files"
+    $total = @(Get-ChildItem $mapDir -Recurse -File -ErrorAction SilentlyContinue).Count
+    Write-Ok "$total map files installed ($($copied -join ', '))."
+    Add-Summary 'Maps' 'Done' "$total files"
 }
 
 # ---------------------------------------------------------------------------
@@ -933,7 +1550,7 @@ function Get-PublicAddress {
 function Invoke-StageConfig {
     param([string] $Address)
 
-    Write-Head 'Stage 6/12 - Configuration'
+    Write-Head 'Stage 6/13 - Configuration'
 
     # Detected once by the caller and passed in. Calling Get-PublicAddress twice risks the
     # second call timing out and falling back to a private LAN address, which would put a
@@ -1008,6 +1625,14 @@ function Invoke-StageConfig {
                 patches = 'assets/patches/'
                 opcodes = 'assets/patches/'
                 plugins = 'quests/plugins/'
+                # lua_modules is NOT optional. zone/main.cpp:366 calls
+                # CheckForCompatibleQuestPlugins() and returns 1 - refusing to start - unless
+                # it finds "CheckHandin" in BOTH a plugin and a lua module. The lua side lives
+                # in Release-NMS-Quests/lua_modules/, which robocopy lands at
+                # quests/lua_modules/, but the default for this key is a bare 'lua_modules/'
+                # at the server root. Without this line zone.exe exits 1 on every start with
+                # "Failed to find CheckHandin in lua_modules" buried in logs\zone\.
+                lua_modules = 'quests/lua_modules/'
             }
         }
     }
@@ -1018,7 +1643,8 @@ function Invoke-StageConfig {
         Copy-Item $configPath $backup -Force
         Write-Step "Backed up the existing config to $(Split-Path -Leaf $backup)"
     }
-    $config | ConvertTo-Json -Depth 10 | Set-Content -Path $configPath -Encoding UTF8
+    # BOM-less: jsoncpp rejects a byte-order mark. See Write-TextFile.
+    Write-TextFile -Path $configPath -Content ($config | ConvertTo-Json -Depth 10)
     Write-Ok "Wrote eqemu_config.json (world address: $addr)"
 
     # login.json. auto_create_accounts is on: with a private loginserver, the first
@@ -1061,7 +1687,7 @@ function Invoke-StageConfig {
     if (Test-Path $loginPath) {
         Copy-Item $loginPath "$loginPath.$(Get-Date -Format 'yyyyMMdd-HHmmss').bak" -Force
     }
-    $login | ConvertTo-Json -Depth 10 | Set-Content -Path $loginPath -Encoding UTF8
+    Write-TextFile -Path $loginPath -Content ($login | ConvertTo-Json -Depth 10)
     Write-Ok 'Wrote login.json (local loginserver on 5998).'
 
     # The loginserver needs its own opcode files next to it.
@@ -1084,6 +1710,25 @@ function Invoke-StageConfig {
     }
     Write-Ok 'Restricted config file permissions (they contain the DB password).'
 
+    # Verify what actually landed on disk. A BOM here is invisible in every editor and
+    # takes out world, shared_memory and the exporter with an error that blames the JSON
+    # rather than the encoding - so check the bytes, not just that the file exists.
+    foreach ($f in $configPath, $loginPath) {
+        $bytes = [IO.File]::ReadAllBytes($f)
+        $name  = Split-Path -Leaf $f
+
+        if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+            throw "$name was written with a UTF-8 BOM. EQEmu's JSON parser will reject it."
+        }
+
+        try {
+            [IO.File]::ReadAllText($f) | ConvertFrom-Json | Out-Null
+            Write-Ok "$name parses cleanly, no BOM."
+        } catch {
+            throw "$name is not valid JSON: $($_.Exception.Message)"
+        }
+    }
+
     Add-Summary 'Config' 'Done' "address $addr"
 }
 
@@ -1092,7 +1737,11 @@ function Invoke-StageConfig {
 # ---------------------------------------------------------------------------
 
 function Invoke-StageMigrate {
-    Write-Head 'Stage 7/12 - Shared memory and migrations'
+    Write-Head 'Stage 7/13 - Shared memory and migrations'
+
+    # A running NMS-World would own port 9001, so the world.exe we launch below would
+    # exit instantly and the stage would report Partial for the wrong reason.
+    $null = Stop-NmsServices -Reason 'before running migrations'
 
     # Initialised out here, not inside the try: it is read after the try/finally, and a
     # future edit adding a catch would otherwise turn that into an uninitialised read
@@ -1225,7 +1874,7 @@ function Invoke-StageMigrate {
 # ---------------------------------------------------------------------------
 
 function Invoke-StageHealth {
-    Write-Head 'Stage 9/12 - Content health check'
+    Write-Head 'Stage 10/13 - Content health check'
     Write-Step 'db_version.custom_version is a claim, not a fact - the authors found servers'
     Write-Step 'stamped past payloads that never landed. This audits the actual data.'
     Write-Step 'See CODEBASE.md 4.3.'
@@ -1282,7 +1931,7 @@ function Invoke-StageHealth {
 # ---------------------------------------------------------------------------
 
 function Invoke-StageExport {
-    Write-Head 'Stage 10/12 - Client data files'
+    Write-Head 'Stage 11/13 - Client data files'
 
     $exe = Join-Path $script:ServerRoot 'export_client_files.exe'
     if (-not (Test-Path $exe)) {
@@ -1337,25 +1986,41 @@ function Invoke-StageExport {
     $advertised = Get-StoredCredential 'Public address'
     if (-not $advertised) { $advertised = Get-PublicAddress }
 
+    # eqhost.txt is how the client finds the loginserver. Without it the client sits at the
+    # login screen forever with no error - it has nowhere to connect to. Neither the client
+    # README nor any EQEmu doc in this repo mentions it, so generate it here with the real
+    # address rather than leaving players to write it by hand.
+    # 5999, not 5998: RoF2 is a SoD-lineage client and needs the SoD opcode stream.
+    $eqhost = "[LoginServer]`r`nHost=$advertised" + ':5999' + "`r`n"
+    Write-TextFile -Path (Join-Path $script:ClientOut 'eqhost.txt') -Content $eqhost
+    Write-Ok "eqhost.txt written (points at $advertised`:5999 - the SoD stream RoF2 needs)"
+
     $readme = @"
 NMS client setup
 ================
 
 Server address: $advertised
-Login port:     5998
+Login port:     5999  (the SoD-lineage stream; RoF2 requires this, not 5998)
 
 1. Start from a RoF2-era EverQuest client. It is not included and cannot be - the client
    files are Daybreak's.
 
-2. Copy everything in ClientFiles\ over your client, preserving structure:
+2. Copy eqhost.txt into the client root, next to eqgame.exe. This is what tells the
+   client where the server is - without it the client sits at the login screen
+   forever with no error message. It should read:
+
+     [LoginServer]
+     Host=$advertised`:5999
+
+3. Copy everything in ClientFiles\ over your client, preserving structure:
      - dinput8.dll goes in the client root, next to eqgame.exe
      - uifiles\<skin>\*.xml go into the matching skin folders
 
-3. Copy these four files into BOTH the client root AND the client's Resources\ folder.
+4. Copy these four files into BOTH the client root AND the client's Resources\ folder.
    The client keeps two copies and will load stale data if you only do one:
      $($got -join "`r`n     ")
 
-4. Point the client at the server address above.
+5. Launch eqgame.exe. Do NOT use any patcher or launcher - go straight to the exe.
 
 Notes
 -----
@@ -1373,10 +2038,16 @@ Notes
 
 Generated $(Get-Date -Format 'u')
 "@
-    $readme | Set-Content -Path (Join-Path $script:ClientOut 'README.txt') -Encoding UTF8
+    Write-TextFile -Path (Join-Path $script:ClientOut 'README.txt') -Content $readme
 
     Write-Ok "Client package staged in $($script:ClientOut)"
-    Add-Summary 'Export' 'Done' "$($got.Count)/4 files"
+
+    # Producing none of the four is a FAILURE, not a Done with a small number beside it.
+    # Players cannot connect without these, so it must show up red in the summary.
+    $state = if ($got.Count -eq $wanted.Count) { 'Done' }
+             elseif ($got.Count -eq 0)         { 'Failed' }
+             else                              { 'Partial' }
+    Add-Summary 'Export' $state "$($got.Count)/$($wanted.Count) files"
 }
 
 # ---------------------------------------------------------------------------
@@ -1384,7 +2055,7 @@ Generated $(Get-Date -Format 'u')
 # ---------------------------------------------------------------------------
 
 function Invoke-StageServices {
-    Write-Head 'Stage 11/12 - Services'
+    Write-Head 'Stage 12/13 - Services'
 
     # sc.exe can run a bare .exe as a service, but EQEmu binaries are console apps that do
     # not implement the service control protocol, so Windows kills them at startup. A
@@ -1440,6 +2111,18 @@ function Invoke-StageServices {
         # Manual start. These must come up in order (world before zone), and Windows
         # service dependencies do not express "wait until world is actually serving".
         # start-server.ps1 sequences them properly.
+        # Belt and braces on the PATH. Services run as LocalSystem, which reads only the
+        # machine PATH; zone.exe needs perl532.dll and the MinGW runtime from Strawberry,
+        # and shells out to bare `perl` to syntax-check quests. Stage 1 fixes the machine
+        # PATH, but a service registered before that ran would not see it.
+        $perlBins = @(
+            'C:\Strawberry\perl\bin', 'C:\Strawberry\c\bin', 'C:\Strawberry\perl\site\bin'
+        ) | Where-Object { Test-Path $_ }
+        if (@($perlBins).Count -gt 0) {
+            $envExtra = "PATH=$((@($perlBins) -join ';'));%PATH%"
+            $null = Invoke-Native { & $nssm.Source set $svc.Name AppEnvironmentExtra $envExtra }
+        }
+
         $null = Invoke-Native { & $nssm.Source set $svc.Name Start SERVICE_DEMAND_START }
 
         $null = Invoke-Native { & $nssm.Source set $svc.Name AppStdout (Join-Path $script:ServerRoot "logs\$($svc.Name).out.log") }
@@ -1527,11 +2210,11 @@ if (-not $SkipSharedMemory) {
 }
 
 $order = @(
-    @{ Name = 'NMS-LoginServer'; Wait = 3  },
-    @{ Name = 'NMS-World';       Wait = 15 },   # world needs to be serving before zones attach
-    @{ Name = 'NMS-Zone';        Wait = 5  },
-    @{ Name = 'NMS-UCS';         Wait = 2  },
-    @{ Name = 'NMS-QueryServ';   Wait = 0  }
+    @{ Name = 'NMS-LoginServer'; Exe = 'loginserver.exe'; Wait = 3  },
+    @{ Name = 'NMS-World';       Exe = 'world.exe';       Wait = 15 },  # world must be serving before zones attach
+    @{ Name = 'NMS-Zone';        Exe = 'eqlaunch.exe';    Wait = 5  },
+    @{ Name = 'NMS-UCS';         Exe = 'ucs.exe';         Wait = 2  },
+    @{ Name = 'NMS-QueryServ';   Exe = 'queryserv.exe';   Wait = 0  }
 )
 
 foreach ($s in $order) {
@@ -1539,8 +2222,24 @@ foreach ($s in $order) {
     if (-not $svc) { Write-Warning "$($s.Name) is not registered; skipping."; continue }
     if ($svc.Status -eq 'Running') { Write-Host "$($s.Name) already running." -ForegroundColor DarkGray; continue }
 
+    # NSSM parks a service in Paused when the application keeps exiting faster than its
+    # restart throttle. A paused service cannot be started - Start-Service fails with
+    # "Cannot open <name> service on computer '.'", which reads like a permissions
+    # problem and is not. It has to be stopped first.
+    if ($svc.Status -eq 'Paused') {
+        Write-Warning "$($s.Name) is Paused (NSSM restart throttle - it was crash-looping). Resetting."
+        Stop-Service -Name $s.Name -Force -ErrorAction SilentlyContinue
+        (Get-Service -Name $s.Name).WaitForStatus('Stopped', '00:00:20')
+    }
+
     Write-Host "Starting $($s.Name)..." -ForegroundColor Cyan
-    Start-Service -Name $s.Name
+    try {
+        Start-Service -Name $s.Name -ErrorAction Stop
+    } catch {
+        Write-Warning "$($s.Name) failed to start: $($_.Exception.Message)"
+        Write-Warning "Run it directly to see why:  cd $PSScriptRoot; .\$($s.Exe)"
+        continue
+    }
     if ($s.Wait -gt 0) { Start-Sleep -Seconds $s.Wait }
 }
 
@@ -1554,7 +2253,9 @@ $ErrorActionPreference = 'Continue'
 
 foreach ($n in 'NMS-QueryServ', 'NMS-UCS', 'NMS-Zone', 'NMS-World', 'NMS-LoginServer') {
     $svc = Get-Service -Name $n -ErrorAction SilentlyContinue
-    if ($svc -and $svc.Status -eq 'Running') {
+    # Paused counts as needing a stop too - that is NSSM's crash-loop state, and leaving
+    # it paused blocks the next Start-Service.
+    if ($svc -and $svc.Status -in 'Running', 'Paused') {
         Write-Host "Stopping $n..." -ForegroundColor Cyan
         Stop-Service -Name $n -Force
     }
@@ -1601,9 +2302,9 @@ if (Test-Path $logs) {
 } else { Write-Host '  no logs directory yet' -ForegroundColor DarkGray }
 '@
 
-    $start  | Set-Content (Join-Path $script:ServerRoot 'start-server.ps1')  -Encoding UTF8
-    $stop   | Set-Content (Join-Path $script:ServerRoot 'stop-server.ps1')   -Encoding UTF8
-    $status | Set-Content (Join-Path $script:ServerRoot 'status-server.ps1') -Encoding UTF8
+    Write-TextFile -Path (Join-Path $script:ServerRoot 'start-server.ps1')  -Content $start
+    Write-TextFile -Path (Join-Path $script:ServerRoot 'stop-server.ps1')   -Content $stop
+    Write-TextFile -Path (Join-Path $script:ServerRoot 'status-server.ps1') -Content $status
 
     Write-Ok 'Wrote start-server.ps1, stop-server.ps1, status-server.ps1'
 }
@@ -1613,7 +2314,7 @@ if (Test-Path $logs) {
 # ---------------------------------------------------------------------------
 
 function Invoke-StageFirewall {
-    Write-Head 'Stage 12/12 - Firewall'
+    Write-Head 'Stage 13/13 - Firewall'
 
     foreach ($r in $script:FirewallRules) {
         $existing = Get-NetFirewallRule -DisplayName $r.Name -ErrorAction SilentlyContinue
@@ -1633,6 +2334,13 @@ function Invoke-StageFirewall {
 
         Write-Ok "$($r.Protocol)/$($r.Port)  $($r.Name)"
     }
+
+    Write-Host ''
+    Write-Warn 'This opens WINDOWS Firewall only. Most VPS providers run their own network'
+    Write-Warn 'firewall in front of the machine, and many block inbound UDP by default.'
+    Write-Warn 'If clients cannot connect while every service reports Running, open these'
+    Write-Warn 'inbound UDP ports in the provider control panel as well:'
+    Write-Warn '  5998 (login)  9000 (world)  7000-7400 (zones)  7778 (chat)'
 
     # Deliberate omissions, stated so nobody "fixes" them later:
     Write-Host ''
@@ -1664,11 +2372,13 @@ try {
     Write-Head 'NMS server - Stage 2 of 2 - Setup'
     Write-Host "  Install root: $InstallRoot"
     Write-Host "  Stage:        $(if ($OnlyStage) { "$OnlyStage (only)" } else { $Stage })"
-    Write-Host "  Repo:         $RepoUrl"
+    Write-Host "  Repo:         $(if ($RepoUrl) { $RepoUrl } else { '(derived from the local checkout at clone time)' })"
     Write-Host "  Log:          $transcript"
 
     if (-not (Test-Admin)) { throw 'Must run as Administrator.' }
     Write-Ok 'Running elevated.'
+
+    Set-DefenderExclusion
 
     if (Should-Run 'Clone')    { Invoke-StageClone }
     if (Should-Run 'Database') { Invoke-StageDatabase }
@@ -1682,6 +2392,7 @@ try {
     }
     if (Should-Run 'Migrate')  { Invoke-StageMigrate }
     if (Should-Run 'Patches')  { Invoke-StagePatches }
+    if (Should-Run 'Login')    { Invoke-StageLogin }
     if (Should-Run 'Health')   { Invoke-StageHealth }
     if (Should-Run 'Export')   { Invoke-StageExport }
     if (Should-Run 'Services') { Invoke-StageServices }

@@ -288,6 +288,48 @@ sends opcodes in the `0x1338`–`0x1409` range that stock clients do not underst
   (`zone/client_packet.cpp:5106`) validates `GetClassesBits() * GetID()` and **disconnects
   clients without the DLL.**
 
+### 5.1 ⚠️ The login stream: RoF2 needs port 5999, not 5998
+
+The loginserver opens **two UDP listeners in one process**, each with its own opcode file
+(`loginserver/client_manager.cpp:88` and `:126`):
+
+| Port | Opcode file | Client lineage |
+| --- | --- | --- |
+| 5998 | `login_opcodes.conf` | Titanium |
+| **5999** | `login_opcodes_sod.conf` | **SoD onwards — includes RoF2** |
+
+The two files disagree on the opcodes that matter:
+
+| Opcode | Titanium (5998) | SoD (5999) |
+| --- | --- | --- |
+| `OP_Login` | 0x0002 | 0x0002 |
+| **`OP_ChatMessage`** | **0x0016** | **0x0017** |
+| `OP_LoginAccepted` | 0x0017 | 0x0018 |
+| `OP_ServerListResponse` | 0x0018 | 0x0019 |
+| `OP_LoginExpansionPacketData` | *absent* | 0x0031 |
+
+**Why this bites so hard:** the login handshake reply is sent as `OP_ChatMessage`
+(`loginserver/client.cpp:97`). Point a RoF2 client at 5998 and the server answers with
+`0x0016`; the client is waiting for `0x0017`, discards the packet, and never sends
+`OP_Login`. The client sits on "Logging in to the server. Please wait." forever.
+
+Server-side there is **no error at all** — the log shows a connection and
+`Session ready received`, then nothing, because from the server's point of view the client
+simply stopped talking. Every service reports healthy.
+
+Note also that `display_expansions: true` in `login.json` requires
+`OP_LoginExpansionPacketData`, which exists only in the SoD set.
+
+So `eqhost.txt` must read:
+
+```
+[LoginServer]
+Host=<server-ip>:5999
+```
+
+and **UDP 5999 must be open** in Windows Firewall *and* at the hosting provider. It is easy
+to open only 5998, since that is the port every generic EQEmu guide mentions.
+
 ### What players install
 
 `Release-NMS-Client/ClientFiles/` is an *overlay* on a client they source themselves (RoF2-era;
@@ -419,6 +461,14 @@ Quick reference. Each links to the section above.
 | 14c | `zone.exe` **embeds** Perl — pin 5.32.1.1; 5.40+ breaks the build *and* the driver | 6.0 |
 | 15 | `utils/defaults/Maps/` is **empty** — zone pathing/LOS files must be fetched separately | — |
 | 16 | `shared_memory` must run and exit before `world` starts | 2 |
+| 17 | **RoF2 logs in on UDP 5999, not 5998** — wrong port hangs the client silently | 5.1 |
+| 18 | The VC++ **runtime** is not installed by Build Tools — binaries exit -1073741515 mute | 8 |
+| 19 | `zlib-ng1.dll` is built outside `Build\bin\Release`; sweep the whole build tree | 8 |
+| 20 | `zone.exe` needs `perl<ver>.dll` from PATH — services read only the **machine** PATH | 6.0 |
+| 21 | Build BEFORE installing Perl and CMake silently links its own downloaded 5.24 | 6.0 |
+| 22 | `launcher` table ships empty — without a 'zone' row, zero zones boot, silently | 8 |
+| 23 | `lua_modules` defaults to the server root; `zone.exe` exits 1 without the config key | 8 |
+| 24 | Defender quarantines the compiled binaries after they are copied | 8 |
 
 ---
 
@@ -453,7 +503,10 @@ The full sequence, which `build-scripts/2-Setup-NMSServer.ps1` automates:
 12. Register services and open the firewall. **All player traffic is UDP** — every
     client-facing listener is `EQStreamManager` → `uv_udp_t`, and world's is hardcoded to
     9000 in `world/main.cpp:335` (it is *not* `world.tcp.port` from the config):
-    - Open: **UDP 5998** login, **UDP 9000** world, **UDP 7778** UCS, **UDP 7000–7400** zones
+    - Open: **UDP 5998** and **UDP 5999** login (RoF2 uses 5999 — see §5.1), **UDP 9000**
+      world, **UDP 7778** UCS, **UDP 7000–7400** zones
+    - Open the same ports at the **hosting provider** — its firewall is separate from
+      Windows Firewall and several providers block inbound UDP by default
     - Not opened: 3306 (DB, loopback only), **TCP** 9000 (telnet — an unauthenticated
       admin channel, and a different thing from UDP 9000), 9001 (servertalk, loopback),
       9080/9081 (web)

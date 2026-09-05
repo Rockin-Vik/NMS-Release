@@ -84,7 +84,7 @@ database driver. Every check is skip-if-present, so re-running is safe.
 > and use whichever is present — MySQL boxes behave exactly as before, MariaDB boxes now
 > work. Without that patch, item upgrade tiers and expansion progression fail silently.
 
-**Stage 2** — twelve stages, each independently re-runnable:
+**Stage 2** — thirteen stages, each independently re-runnable:
 
 | # | Stage | Notes |
 | --- | --- | --- |
@@ -96,10 +96,11 @@ database driver. Every check is skip-if-present, so re-running is safe.
 | 6 | Config | `eqemu_config.json` + `login.json` with real credentials and the public IP. |
 | 7 | Migrate | `shared_memory`, then boots world until both manifests reach target. |
 | 8 | Patches | The 10 loose `.sql` files nothing else applies. Runs *after* Migrate. |
-| 9 | Health | `nms_content_health_check.sql`, because `custom_version` lies. |
-| 10 | Export | `export_client_files` → the four client data files. |
-| 11 | Services | NSSM services (manual start) + a boot task that sequences them. |
-| 12 | Firewall | UDP 5998, 7000-7400, 7778, 9000. |
+| 9 | Login | Loginserver schema + `launcher` seed. In no manifest, not in the dump. |
+| 10 | Health | `nms_content_health_check.sql`, because `custom_version` lies. |
+| 11 | Export | `export_client_files` → the four client files + `eqhost.txt`. |
+| 12 | Services | NSSM services (manual start) + a boot task that sequences them. |
+| 13 | Firewall | UDP 5998, 5999, 7000-7400, 7778, 9000. |
 
 Layout under `C:\NMS`:
 
@@ -138,13 +139,18 @@ Perl. Building on the box that runs it removes a whole class of "zone.exe won't 
 problems, and guarantees the quest plugins' CPAN modules live in the interpreter the
 server actually uses.
 
-**Local loginserver, not Project EQ.** Players point at your IP on 5998. Nothing depends
-on anyone else's infrastructure. To go public later: register with PEQ, then fill in
+**Local loginserver, not Project EQ.** Players point at your IP on **5999** (the SoD-lineage
+stream RoF2 requires — see CODEBASE.md §5.1). Nothing depends on anyone else's infrastructure. To go public later: register with PEQ, then fill in
 `loginserver1.account` / `.password` / `.host` / `.port` in `eqemu_config.json`.
 
 **All player traffic is UDP.** EQEmu builds every client-facing listener on UDP, including
 world's, which is hardcoded to 9000 and is *not* the `world.tcp.port` from the config.
 Opening these as TCP lets a player authenticate and then hang at server select.
+
+**The loginserver runs two streams.** 5998 carries Titanium opcodes, 5999 the SoD-lineage
+set. RoF2 needs 5999; on 5998 the handshake reply arrives with the wrong `OP_ChatMessage`
+opcode and the client hangs with no server-side error. Both are opened; `eqhost.txt` is
+generated pointing at 5999.
 
 **MariaDB never leaves the box.** Bound to 127.0.0.1, and 3306 is never opened. Telnet
 (TCP 9000) is bound to loopback too — it is an unauthenticated admin channel.
@@ -155,10 +161,38 @@ instead, which runs `shared_memory` first and sequences the rest with real delay
 
 ---
 
+## Your VPS provider's firewall is separate
+
+The Firewall stage opens Windows Firewall. Most VPS providers run **their own** network
+firewall in front of the machine, and several block inbound UDP by default — so the server
+looks perfectly healthy (services Running, ports bound, Windows rules enabled) while no
+client can reach it.
+
+Open these **inbound UDP** ports in the provider's control panel:
+
+| Port | What breaks without it |
+| --- | --- |
+| **5999** | **Login for RoF2.** The client hangs at "Logging in to the server" forever, with no server-side error at all. See CODEBASE.md §5.1 |
+| **5998** | Login for Titanium-lineage clients. Harmless to open; not what RoF2 uses |
+| **9000** | World — you authenticate, then hang at server select |
+| **7000–7400** | Zones — you get in-game and then cannot enter any zone |
+| **7778** | Chat, mail, guild chat |
+
+All UDP. Every client-facing EQEmu listener is UDP, so TCP rules on these numbers do
+nothing. Do **not** expose 3306, TCP 9000 (telnet), 9001, or 9080/9081.
+
+To test from outside:
+
+```powershell
+Test-NetConnection <server-ip> -Port 9000      # TCP; failure suggests upstream filtering
+```
+
 ## Known caveats
 
-- **Stage 1 has been run on a real Windows Server 2025 box; stage 2 has not.** Treat the
-  first stage-2 run as supervised. Full transcripts land in `C:\NMS\logs\`.
+- **Both stages have now been run end to end on a real Windows Server 2025 box**, with a
+  RoF2 client connecting successfully. Full transcripts land in `C:\NMS\logs\`.
+- **The client needs `eqhost.txt` pointing at port 5999**, not 5998. The Export stage
+  generates one with the right address; CODEBASE.md §5.1 explains why the port matters.
 - **Perl 5.40+ will not work**, for two independent reasons — see the Perl note at the top.
   Uninstall it via Programs and Features and let stage 1 install the pinned 5.32.1.1.
 - **The first CMake configure needs internet.** The repo commits a *partial* vcpkg tree —
