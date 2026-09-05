@@ -170,10 +170,6 @@ my %atlas = (
 my @STAGES = qw(RoK SoV SoL PoP GoD OoW DoN FNagafen);
 my %VALID_STAGES = map { $_ => 1 } @STAGES;
 
-# Stages open on NMS (multiclass) servers. Anything not listed here is time-locked
-# regardless of kill flags; unlocking a new expansion is a one-line change here.
-my %NMS_UNLOCKED_STAGES = map { $_ => 1 } qw(RoK SoV SoL PoP GoD OoW);
-
 # Global hash of stage prerequisites
 my %STAGE_PREREQUISITES = (
     'RoK' => ['Lord Nagafen', 'Lady Vox'],  
@@ -181,7 +177,7 @@ my %STAGE_PREREQUISITES = (
     'SoL' => ['Klandicar', 'Zlandicar', 'Wuoshi', 'Dozekar the Cursed', 'Kelorek`Dar'],
     'PoP' => ['Thought Horror Overfiend', 'The Insanity Crawler', 'Grieg Veneficus', 'Xerkizh the Creator', 'Emperor Ssraeshza'],
     'GoD' => ['Saryrn'],
-    'OoW' => ['Tunat`Muram Cuu Vauax'],   # final boss of Tacvi (GoD); flag NPC is spawned by tacvi/encounters/tmcv.lua
+    'OoW' => ['Disabled'],
     'DoN' => ['Disabled'],
     'FNagafen' => ['Quarm'],
     # ... and so on for each stage
@@ -479,8 +475,24 @@ sub is_time_locked {
     my $stage = shift;
     my $client = plugin::val('client');
 
-    if (plugin::IsNMS()) {
-        return $NMS_UNLOCKED_STAGES{$stage} ? 0 : 1;
+    if (plugin::IsNMS()) {  
+        if ($stage eq 'RoK') {       
+            return 0;
+        }
+
+        if ($stage eq 'SoV') {       
+            return 0;
+        }
+
+        if ($stage eq 'SoL') {       
+            return 0;
+        }
+
+        if ($stage eq 'PoP')  {
+            return 0;
+        }
+
+        return 1;
     }
 
     if ($stage eq 'RoK') {       
