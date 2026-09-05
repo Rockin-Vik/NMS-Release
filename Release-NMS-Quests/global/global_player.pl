@@ -25,6 +25,10 @@ sub EVENT_ENTERZONE {
 
 	plugin::CommonCharacterUpdate($client);
 
+	# GM accounts: every progression flag, granted here rather than in EVENT_CONNECT because the
+	# server fires EVENT_ENTERZONE first and the eligibility bounce below must see the flags.
+	plugin::GMUnlockAll($client);
+
 	if (!plugin::is_eligible_for_zone($client, $zonesn)) {
 		$client->Message(4, "Your vision blurs. You lose conciousness and wake up in a familiar place.");
 		$client->MovePC(151, 185, -835, 4, 390); # Bazaar Safe Location.

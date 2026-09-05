@@ -12,6 +12,7 @@
 #   NMS_progression_utils.pl  is_time_locked      -> %plugin::UNLOCKED_STAGES
 #   global/global_npc.pl      EVENT_DEATH_COMPLETE -> plugin::SpawnProgressionFlagNPC($npc)
 #   bazaar/Magus_Alaria.pl    EVENT_SAY            -> plugin::MagusExpansionPort($client, $text)
+#   global/global_player.pl   EVENT_ENTERZONE      -> plugin::GMUnlockAll($client)
 #   NMS_popup_utils.pl        GetMaxExpansionName  -> $plugin::MAX_EXPANSION_NAME
 #
 # The stage prerequisite list itself (%STAGE_PREREQUISITES) stays in NMS_progression_utils.pl
@@ -105,6 +106,20 @@ sub MagusExpansionPort {
         return 1;
     }
     return 0;
+}
+
+# GM accounts at or above Custom:GMUnlockMinStatus get every progression flag on zone entry (the
+# server runs EVENT_ENTERZONE before EVENT_CONNECT, and the zone-eligibility bounce lives there).
+# Non-GM accounts return after one rule read and one status compare. Waypoints need nothing here:
+# Client::GetUnlockedWaypoints returns the whole map for the same status.
+sub GMUnlockAll {
+    my ($client) = @_;
+    return 0 unless $client;
+    my $min_status = quest::get_rule("Custom:GMUnlockMinStatus") || 0;
+    return 0 unless $min_status > 0 && $client->Admin() >= $min_status;
+    my $granted = plugin::GrantAllProgression($client);
+    $client->Message(263, "GM: $granted progression flag(s) granted.") if $granted;
+    return 1;
 }
 
 1;

@@ -8,8 +8,8 @@
 	(4, 'Velious'),
 	(5, 'Luclin'),
 	(6, 'The Planes'),
-	(7, 'Taelosia'),
-	(8, 'Discord');
+	(7, 'Discord'),
+	(8, 'Special');
 
 --Antonica waypoints
 	  INSERT INTO content.nms_waypoints(shortname, long_name, category, x, y, z, heading) VALUES('blackburrow', 'Blackburrow', 0, -7, 38, 3, 300),
@@ -98,7 +98,7 @@
 	('potranquility', 'The Plane of Tranquility', 6, -8, -192, -628, 115),
 	('potimea', 'The Plane of Time', 6, 0, 110, 8, 0);
 
---Taelosia waypoints
+--Discord waypoints (Gates of Discord + Omens of War; category 7 matches the client DLL)
 	  INSERT INTO content.nms_waypoints(shortname, long_name, category, x, y, z, heading) VALUES('barindu', 'Barindu, Hanging Gardens', 7, 210, -515, -117, 510),
 	('kodtaz', 'Kod`Taz, Broken Trial Grounds', 7, 1536, -2422, -348, 4),
 	('natimbi', 'Natimbi, the Broken Shores', 7, -310, 125, 520, 70),
@@ -106,7 +106,8 @@
 	('txevu', 'Txevu, Lair of the Elite', 7, -316, -20, -420, 430);
 
 --Discord waypoints
-	  INSERT INTO content.nms_waypoints(shortname, long_name, category, x, y, z, heading) VALUES('wallofslaughter', 'Wall of Slaughter', 8, -943, 13, 130, 0);
+	  INSERT INTO content.nms_waypoints(shortname, long_name, category, x, y, z, heading) VALUES('wallofslaughter', 'Wall of Slaughter', 7, -943, 13, 130, 0);
+-- nedaria, draniksscar, bloodfields (7) and broodlands (0) are inserted from the zone table's safe points by custom manifest v26.
 
 --Default waypoints
 	  INSERT INTO content.nms_waypoints_default(waypoint_id, race_id, class_mask, min_level, max_level)
