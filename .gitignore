@@ -38,3 +38,7 @@ credentials.txt
 
 # Compact-wrapper logs
 .logs/
+
+# Generator bytecode
+__pycache__/
+*.pyc
