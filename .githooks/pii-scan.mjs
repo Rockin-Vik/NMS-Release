@@ -52,8 +52,8 @@ if (args[0] === "--file") {
   const abs = path.isAbsolute(filePath) ? filePath : path.join(cwd, filePath);
   const rel = path.relative(cwd, abs).replace(/\\/g, "/");
   const content = fs.readFileSync(abs, "utf8");
-  const pathHit = findPiiInText(rel, { filePath: rel });
-  if (pathHit) reportBlocked(rel, pathHit.kind, pathHit.masked);
+  // Ad-hoc files (PR bodies, drafts) may live anywhere, so only their CONTENT is
+  // scanned; repo paths are still checked by --staged and --range.
   const contentHit = findPiiInText(content, { filePath: rel });
   if (contentHit) reportBlocked(rel, contentHit.kind, contentHit.masked);
   reportClean();
