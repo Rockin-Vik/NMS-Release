@@ -21,8 +21,13 @@
 #include "../common/rulesys.h"
 #include "../common/strings.h"
 
+#include <algorithm>
+#include <vector>
+
 #include "client.h"
 #include "../common/data_bucket.h"
+#include "../common/repositories/character_class_exp_repository.h"
+#include "class_exp_routing.h"
 #include "groups.h"
 #include "mob.h"
 #include "raids.h"
@@ -1155,6 +1160,54 @@ void Client::SetEXP(ExpSource exp_source, uint64 set_exp, uint64 set_aaxp, bool 
 		else Message(Chat::Yellow, "You have lost experience.");
 	}
 
+	// Route the target into the per-class rows before the stock derivation runs, so the
+	// pool the stock loop sees is already the trailing class and the stock clamps below
+	// are no-ops.
+	if (RuleB(Custom, MulticlassingEnabled) && RuleB(Custom, HeroCatchupEnabled) && !m_class_exp.empty()) {
+		const uint32 classes_bits = GetClassesBits();
+
+		std::vector<uint8>  active_classes;
+		std::vector<uint64> active_exp;
+
+		for (const auto &row : m_class_exp) {
+			if (classes_bits & GetPlayerClassBit(row.first)) {
+				active_classes.push_back(row.first);
+				active_exp.push_back(row.second);
+			}
+		}
+
+		if (!active_classes.empty()) {
+			// SetLevel() below calls Save() while m_pp.exp still holds the old pool. Defer the
+			// class row write until the pool has been assigned so the rows are never persisted
+			// against a pool they no longer describe.
+			m_class_exp_save_deferred = true;
+
+			const uint64 row_minimum = *std::min_element(active_exp.begin(), active_exp.end());
+			const uint64 target = ApplyExpClamps(set_exp, LevelFromExp(set_exp));
+			// Compute against the pre-repair pool because set_exp came from that same stale base.
+			// This preserves the award rather than treating the stale gap as new experience.
+			// Repairing first would inflate the laggard by that gap.
+			const int64  delta  = static_cast<int64>(target) - static_cast<int64>(m_pp.exp);
+
+			if (m_pp.exp != row_minimum) {
+				LogError(
+					"Class exp pool for [{}] was [{}] but the lowest class row is [{}], repairing the pool",
+					GetCleanName(),
+					m_pp.exp,
+					row_minimum
+				);
+
+				m_pp.exp = row_minimum;
+			}
+
+			set_exp = RouteClassExp(active_exp, delta, GetClassExpCap());
+
+			for (size_t i = 0; i < active_classes.size(); i++) {
+				m_class_exp[active_classes[i]] = active_exp[i];
+			}
+		}
+	}
+
 	//check_level represents the level we should be when we have
 	//this ammount of exp (once these loops complete)
 	uint16 check_level = GetLevel()+1;
@@ -1295,7 +1348,7 @@ void Client::SetEXP(ExpSource exp_source, uint64 set_exp, uint64 set_aaxp, bool 
 
 		if (RuleB(Bots, Enabled) && RuleB(Bots, BotLevelsWithOwner)) {
 			// hack way of doing this..but, least invasive... (same criteria as gain level for sendlvlapp)
-			Bot::LevelBotWithClient(this, GetLevel(), (myoldlevel == check_level - 1));
+			Bot::LevelBotWithClient(this, GetRewardLevel(), (myoldlevel == check_level - 1));
 		}
 	}
 
@@ -1317,6 +1370,25 @@ void Client::SetEXP(ExpSource exp_source, uint64 set_exp, uint64 set_aaxp, bool 
 
 	//set the client's EXP and AAEXP
 	m_pp.exp = set_exp;
+
+	// The pool now matches the rows routed above, so the deferred write can be released.
+	if (m_class_exp_save_deferred) {
+		m_class_exp_save_deferred = false;
+		m_class_exp_dirty         = true;
+	}
+
+	// With catch-up disabled the rows carry no spread of their own; they shadow the single
+	// pool so that enabling the rule later does not resurrect a stale value. Purely a
+	// persistence concern - level and exp above are untouched stock behavior.
+	if (RuleB(Custom, MulticlassingEnabled) && !RuleB(Custom, HeroCatchupEnabled) && !m_class_exp.empty()) {
+		for (auto &row : m_class_exp) {
+			if (row.second != set_exp) {
+				row.second        = set_exp;
+				m_class_exp_dirty = true;
+			}
+		}
+	}
+
 	m_pp.expAA = set_aaxp;
 
 	if (GetLevel() < 51 && !RuleB(Custom, MulticlassingEnabled)) {
@@ -1419,6 +1491,7 @@ void Client::SetLevel(uint8 set_level, bool command)
 
 	if (command) {
 		m_pp.exp = GetEXPForLevel(set_level);
+		SetAllClassExp(m_pp.exp);
 		Message(Chat::Yellow, fmt::format("Welcome to level {}!", set_level).c_str());
 		lu->exp = 0;
 
@@ -1465,16 +1538,20 @@ void Client::SetLevel(uint8 set_level, bool command)
 	UpdateMercLevel();
 
 	Save();
+
+	if (RuleB(Custom, ServerAuthStats) && IsCatchingUp()) {
+		SendBulkStatsUpdate();
+	}
 }
 
 // Note: The client calculates exp separately, we cant change this function
 // Add: You can set the values you want now, client will be always sync :) - Merkur
-uint32 Client::GetEXPForLevel(uint16 check_level)
+uint32 Client::GetEXPForLevel(uint16 check_level) const
 {
 #ifdef LUA_EQEMU
 	uint32 lua_ret = 0;
 	bool ignoreDefault = false;
-	lua_ret = LuaParser::Instance()->GetEXPForLevel(this, check_level, ignoreDefault);
+	lua_ret = LuaParser::Instance()->GetEXPForLevel(const_cast<Client *>(this), check_level, ignoreDefault);
 
 	if (ignoreDefault) {
 		return lua_ret;
@@ -1557,6 +1634,328 @@ uint32 Client::GetEXPForLevel(uint16 check_level)
 	return finalxp;
 }
 
+// Mirrors the derivation loop and hard bounds in Client::SetEXP: thresholds begin at
+// level 2, so anything below the level-2 threshold reports level 1.
+uint8 Client::LevelFromExp(uint64 exp) const
+{
+	uint16 check_level = 2;
+
+	while (exp >= GetEXPForLevel(check_level)) {
+		check_level++;
+
+		if (check_level > 127) {	//hard level cap
+			check_level = 127;
+			break;
+		}
+	}
+
+	check_level--;
+
+	return static_cast<uint8>(check_level);
+}
+
+// The post-derivation clamp rules from Client::SetEXP, applied to a candidate target
+// before it is routed into the rows so the stock block downstream stays a no-op.
+uint64 Client::ApplyExpClamps(uint64 candidate_exp, uint16 candidate_level) const
+{
+	uint8 maxlevel = RuleI(Character, MaxExpLevel) + 1;
+
+	if (maxlevel <= 1) {
+		maxlevel = RuleI(Character, MaxLevel) + 1;
+	}
+
+	if (candidate_level > maxlevel) {
+		candidate_exp = RuleB(Character, KeepLevelOverMax) ?
+			GetEXPForLevel(GetLevel() + 1) :
+			GetEXPForLevel(maxlevel);
+	}
+
+	const auto client_max_level = GetClientMaxLevel();
+
+	if (client_max_level && Admin() < RuleI(GM, MinStatusToLevelTarget)) {
+		if (GetLevel() >= client_max_level) {
+			const uint64 exp_needed = GetEXPForLevel(client_max_level);
+
+			if (candidate_exp > exp_needed) {
+				candidate_exp = exp_needed;
+			}
+		}
+	}
+
+	return candidate_exp;
+}
+
+// Ceiling for an individual class row. Unlike ApplyExpClamps this must never pull a
+// caught-up row down to the current (trailing) level, so the KeepLevelOverMax
+// allowance only ever raises the ceiling.
+uint64 Client::GetClassExpCap() const
+{
+	uint8 maxlevel = RuleI(Character, MaxExpLevel) + 1;
+
+	if (maxlevel <= 1) {
+		maxlevel = RuleI(Character, MaxLevel) + 1;
+	}
+
+	uint64 cap = GetEXPForLevel(maxlevel);
+
+	if (RuleB(Character, KeepLevelOverMax) && GetLevel() + 1 > maxlevel) {
+		cap = std::max<uint64>(cap, GetEXPForLevel(GetLevel() + 1));
+	}
+
+	const auto client_max_level = GetClientMaxLevel();
+
+	if (client_max_level && Admin() < RuleI(GM, MinStatusToLevelTarget)) {
+		if (GetLevel() >= client_max_level) {
+			cap = std::min<uint64>(cap, GetEXPForLevel(client_max_level));
+		}
+	}
+
+	return cap;
+}
+
+uint64 Client::GetClassExp(uint8 class_id) const
+{
+	const auto row = m_class_exp.find(class_id);
+
+	return row != m_class_exp.end() ? row->second : 0;
+}
+
+uint8 Client::GetClassLevel(uint8 class_id) const
+{
+	const auto row = m_class_exp.find(class_id);
+
+	return row != m_class_exp.end() ? LevelFromExp(row->second) : 0;
+}
+
+uint8 Client::GetRewardLevel() const
+{
+	if (m_class_exp.empty()) {
+		return GetLevel();
+	}
+
+	const uint32 classes_bits = GetClassesBits();
+
+	bool   found   = false;
+	uint64 lowest  = 0;
+	uint64 highest = 0;
+
+	for (const auto &row : m_class_exp) {
+		if (!(classes_bits & GetPlayerClassBit(row.first))) {
+			continue;
+		}
+
+		if (!found) {
+			lowest  = row.second;
+			highest = row.second;
+			found   = true;
+			continue;
+		}
+
+		lowest  = std::min(lowest, row.second);
+		highest = std::max(highest, row.second);
+	}
+
+	if (!found || lowest == highest) {
+		return GetLevel();
+	}
+
+	return LevelFromExp(highest);
+}
+
+bool Client::IsCatchingUp() const
+{
+	if (m_class_exp.empty()) {
+		return false;
+	}
+
+	const uint32 classes_bits = GetClassesBits();
+
+	bool   found   = false;
+	uint64 lowest  = 0;
+	uint64 highest = 0;
+
+	for (const auto &row : m_class_exp) {
+		if (!(classes_bits & GetPlayerClassBit(row.first))) {
+			continue;
+		}
+
+		if (!found) {
+			lowest  = row.second;
+			highest = row.second;
+			found   = true;
+			continue;
+		}
+
+		lowest  = std::min(lowest, row.second);
+		highest = std::max(highest, row.second);
+	}
+
+	return found && lowest < highest;
+}
+
+bool Client::SetClassExp(uint8 class_id, uint64 exp)
+{
+	if (!(GetClassesBits() & GetPlayerClassBit(class_id))) {
+		return false;
+	}
+
+	const auto row = m_class_exp.find(class_id);
+	if (row == m_class_exp.end()) {
+		return false;
+	}
+
+	row->second       = ApplyExpClamps(exp, LevelFromExp(exp));
+	m_class_exp_dirty = true;
+	return true;
+}
+
+void Client::SetAllClassExp(uint64 exp)
+{
+	if (!RuleB(Custom, MulticlassingEnabled) || !RuleB(Custom, HeroCatchupEnabled) || m_class_exp.empty()) {
+		return;
+	}
+
+	const uint64 target = ApplyExpClamps(exp, LevelFromExp(exp));
+
+	// Retained rows for classes that are no longer in the bitmask move too, so a
+	// re-add after an absolute write does not resume at a stale value.
+	for (auto &row : m_class_exp) {
+		row.second = target;
+	}
+
+	m_pp.exp          = target;
+	m_class_exp_dirty = true;
+}
+
+void Client::LoadClassExp()
+{
+	std::vector<CharacterClassExpRepository::CharacterClassExp> rows;
+	const uint8 loaded_level = m_pp.level;
+
+	// A failed read is not an empty row set. Bail out before touching the cache so nothing
+	// downstream backfills or saves over rows that are still on disk.
+	if (!CharacterClassExpRepository::GetForCharacter(database, CharacterID(), rows)) {
+		LogError("Failed to load class exp rows for character [{}], leaving them untouched", CharacterID());
+		return;
+	}
+
+	m_class_exp.clear();
+	m_class_exp_dirty = false;
+
+	for (const auto &row : rows) {
+		m_class_exp[row.class_id] = row.class_exp;
+	}
+
+	// Login fallback: a set class bit without a row would otherwise be invented at
+	// zero on the next kill, so backfill it at the current pool value.
+	const uint32 classes_bits = GetClassesBits();
+
+	bool fallback_persisted = true;
+
+	for (uint8 class_id = Class::Warrior; class_id <= Class::Berserker; class_id++) {
+		if (!(classes_bits & GetPlayerClassBit(class_id)) || m_class_exp.count(class_id)) {
+			continue;
+		}
+
+		CharacterClassExpRepository::CharacterClassExp e{};
+
+		e.character_id = CharacterID();
+		e.class_id     = class_id;
+		e.class_exp    = m_pp.exp;
+
+		if (!CharacterClassExpRepository::SaveRows(database, { e })) {
+			LogError(
+				"Failed to insert class exp row for character [{}] class [{}]",
+				CharacterID(),
+				class_id
+			);
+
+			fallback_persisted = false;
+		}
+
+		m_class_exp[class_id] = m_pp.exp;
+	}
+
+	if (!fallback_persisted) {
+		m_class_exp_dirty = true;
+	}
+
+	// Catch-up disabled: the rows are bookkeeping that shadows the single pool, so hold them
+	// in lockstep and leave the stock level/exp derivation below alone.
+	if (!RuleB(Custom, HeroCatchupEnabled)) {
+		for (auto &row : m_class_exp) {
+			if (row.second != m_pp.exp) {
+				row.second        = m_pp.exp;
+				m_class_exp_dirty = true;
+			}
+		}
+
+		return;
+	}
+
+	bool   found   = false;
+	uint64 lowest  = 0;
+
+	for (const auto &row : m_class_exp) {
+		if (!(classes_bits & GetPlayerClassBit(row.first))) {
+			continue;
+		}
+
+		if (!found || row.second < lowest) {
+			lowest = row.second;
+			found  = true;
+		}
+	}
+
+	if (found) {
+		const uint8 derived_level = LevelFromExp(lowest);
+
+		m_pp.exp   = lowest;
+		m_pp.level = derived_level;
+		level      = derived_level;
+
+		if (derived_level != loaded_level) {
+			LogError(
+				"Class exp rows corrected character [{}] from loaded level [{}] to [{}]",
+				CharacterID(),
+				loaded_level,
+				derived_level
+			);
+		}
+	}
+}
+
+void Client::SaveClassExp()
+{
+	if (!m_class_exp_dirty) {
+		return;
+	}
+
+	if (m_class_exp.empty()) {
+		m_class_exp_dirty = false;
+		return;
+	}
+
+	std::vector<CharacterClassExpRepository::CharacterClassExp> entries;
+	entries.reserve(m_class_exp.size());
+
+	for (const auto &row : m_class_exp) {
+		CharacterClassExpRepository::CharacterClassExp e{};
+
+		e.character_id = CharacterID();
+		e.class_id     = row.first;
+		e.class_exp    = row.second;
+
+		entries.push_back(e);
+	}
+
+	if (CharacterClassExpRepository::SaveRows(database, entries)) {
+		m_class_exp_dirty = false;
+	} else {
+		LogError("Failed to persist class exp rows for character [{}]", CharacterID());
+	}
+}
+
 void Client::AddLevelBasedExp(ExpSource exp_source, uint8 exp_percentage, uint8 max_level, bool ignore_mods)
 {
 	uint64	award;
@@ -1604,7 +2003,7 @@ void Group::SplitExp(ExpSource exp_source, const uint64 exp, Mob* other) {
 	}
 
 	auto       group_experience = exp;
-	const auto highest_level    = GetHighestLevel();
+	const auto highest_level    = GetHighestRewardLevel();
 
 	auto group_modifier = 1.0f;
 	if (RuleB(Character, EnableGroupMemberEXPModifier)) {
@@ -1637,7 +2036,7 @@ void Group::SplitExp(ExpSource exp_source, const uint64 exp, Mob* other) {
 
 	for (const auto& m : members) {
 		if (m && m->IsClient()) {
-			if (Mob::IsWithinRewardLevelRange(m->GetLevel(), highest_level)) {
+			if (Mob::IsWithinRewardLevelRange(m->CastToClient()->GetRewardLevel(), highest_level)) {
 				const uint64 tmp  = (m->GetLevel() + 3) * (m->GetLevel() + 3) * 75 * 35 / 10;
 				const uint64 tmp2 = group_experience / member_count;
 				m->CastToClient()->AddEXP(exp_source, tmp < tmp2 ? tmp : tmp2, consider_level, false, other->CastToNPC());
@@ -1661,7 +2060,7 @@ void Raid::SplitExp(ExpSource exp_source, const uint64 exp, Mob* other) {
 	}
 
 	auto       raid_experience = exp;
-	const auto highest_level   = GetHighestLevel();
+	const auto highest_level   = GetHighestRewardLevel();
 
 	if (RuleB(Character, EnableRaidEXPModifier)) {
 		raid_experience = static_cast<uint64>(static_cast<float>(raid_experience) *	(1.0f - RuleR(Character, RaidExpMultiplier)));
@@ -1681,7 +2080,7 @@ void Raid::SplitExp(ExpSource exp_source, const uint64 exp, Mob* other) {
 
 	for (const auto& m : members) {
 		if (m.member && !m.is_bot) {
-			if (Mob::IsWithinRewardLevelRange(m.member->GetLevel(), highest_level)) {
+			if (Mob::IsWithinRewardLevelRange(m.member->GetRewardLevel(), highest_level)) {
 				const uint64 tmp  = (m.member->GetLevel() + 3) * (m.member->GetLevel() + 3) * 75 * 35 / 10;
 				const uint64 tmp2 = (raid_experience / member_modifier) + 1;
 				m.member->AddEXP(exp_source, tmp < tmp2 ? tmp : tmp2, consider_level, false, other->CastToNPC());

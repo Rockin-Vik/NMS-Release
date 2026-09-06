@@ -158,11 +158,23 @@ bool Perl_Mob_BehindMob(Mob* self, Mob* other, float x, float y) // @categories 
 
 void Perl_Mob_SetLevel(Mob* self, uint8_t in_level) // @categories Stats and Attributes
 {
+	// On a client the raw form would move Mob::level without moving the class rows it
+	// caches, so the quest surface always takes the command path.
+	if (self->IsClient()) {
+		self->CastToClient()->SetLevel(in_level, true);
+		return;
+	}
+
 	self->SetLevel(in_level);
 }
 
 void Perl_Mob_SetLevel(Mob* self, uint8_t in_level, bool command) // @categories Stats and Attributes
 {
+	if (self->IsClient()) {
+		self->CastToClient()->SetLevel(in_level, true);
+		return;
+	}
+
 	self->SetLevel(in_level, command);
 }
 

@@ -1195,6 +1195,9 @@ RULE_CATEGORY(Custom)
 // Multiclassing Engine
 RULE_BOOL(Custom, 	ServerAuthStats, 						true, "Enable this rule in order to send explicit client updates. Requires client dll.")
 RULE_BOOL(Custom, 	MulticlassingEnabled, 					true, "Enable this to enable all multiclass-related tweaks. Requires ServerAuthStats and UseDynamicAATimers for full functionality.")
+RULE_INT(Custom, 	MaxMulticlasses, 						4, "Cap on multiclasses; inert unless MulticlassingEnabled and requires Character:UseOldClassExpPenalties false.")
+RULE_BOOL(Custom, 	HeroCatchupEnabled, 					true, "New classes hard-catch-up from the configured start; when false they join at the watermark; inert unless MulticlassingEnabled.")
+RULE_INT(Custom, 	NewClassStartLevel, 					1, "New class start level; ignored when catch-up is off and inert unless MulticlassingEnabled.")
 RULE_BOOL(Custom, 	UseDynamicAATimers, 					true, "Enable using dynamic AA timers. Required to deconflict multiclass AA timers")
 
 // NMS Options

@@ -3408,6 +3408,7 @@ uint32 Client::GetEquippedItemFromTextureSlot(uint8 material_slot) const
 int64_t Client::GetStatEntryValue(StatEntry label)
 {
 	pTimerType timer;
+	const uint32 classes_bits = GetClassesBits();
 
 	switch (label)
 	{
@@ -3867,6 +3868,38 @@ int64_t Client::GetStatEntryValue(StatEntry label)
 			}
 			return rune_number;
 		}
+		case ClassLevel1:
+			return (classes_bits & GetPlayerClassBit(1)) ? GetClassLevel(1) : 0;
+		case ClassLevel2:
+			return (classes_bits & GetPlayerClassBit(2)) ? GetClassLevel(2) : 0;
+		case ClassLevel3:
+			return (classes_bits & GetPlayerClassBit(3)) ? GetClassLevel(3) : 0;
+		case ClassLevel4:
+			return (classes_bits & GetPlayerClassBit(4)) ? GetClassLevel(4) : 0;
+		case ClassLevel5:
+			return (classes_bits & GetPlayerClassBit(5)) ? GetClassLevel(5) : 0;
+		case ClassLevel6:
+			return (classes_bits & GetPlayerClassBit(6)) ? GetClassLevel(6) : 0;
+		case ClassLevel7:
+			return (classes_bits & GetPlayerClassBit(7)) ? GetClassLevel(7) : 0;
+		case ClassLevel8:
+			return (classes_bits & GetPlayerClassBit(8)) ? GetClassLevel(8) : 0;
+		case ClassLevel9:
+			return (classes_bits & GetPlayerClassBit(9)) ? GetClassLevel(9) : 0;
+		case ClassLevel10:
+			return (classes_bits & GetPlayerClassBit(10)) ? GetClassLevel(10) : 0;
+		case ClassLevel11:
+			return (classes_bits & GetPlayerClassBit(11)) ? GetClassLevel(11) : 0;
+		case ClassLevel12:
+			return (classes_bits & GetPlayerClassBit(12)) ? GetClassLevel(12) : 0;
+		case ClassLevel13:
+			return (classes_bits & GetPlayerClassBit(13)) ? GetClassLevel(13) : 0;
+		case ClassLevel14:
+			return (classes_bits & GetPlayerClassBit(14)) ? GetClassLevel(14) : 0;
+		case ClassLevel15:
+			return (classes_bits & GetPlayerClassBit(15)) ? GetClassLevel(15) : 0;
+		case ClassLevel16:
+			return (classes_bits & GetPlayerClassBit(16)) ? GetClassLevel(16) : 0;
 		default:
 			return 0;
 	}
@@ -3884,10 +3917,10 @@ void Client::SendBulkStatsUpdate()
 		outapp = new EQApplicationPacket(OP_ServerAuthStats, 4 + (sizeof(StatEntry_Struct) * ((int)(StatEntry::statMax) - 1)));
 		itempacket = (Stat_Struct*)outapp->pBuffer;
 		itempacket->count = (int)(StatEntry::statMax) - 1;
-		for(int i = 0; i < StatEntry::statMax - 1; i++)
+		for(int i = 1; i < StatEntry::statMax; i++)
 		{
-			itempacket->entries[i].statKey = (StatEntry)i;
-			itempacket->entries[i].statValue = GetStatEntryValue((StatEntry)i);
+			itempacket->entries[i - 1].statKey = (StatEntry)i;
+			itempacket->entries[i - 1].statValue = GetStatEntryValue((StatEntry)i);
 		}
 		QueuePacket(outapp);
 		safe_delete(outapp);

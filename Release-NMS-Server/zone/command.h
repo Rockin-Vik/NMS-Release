@@ -106,6 +106,7 @@ void command_grantaa(Client* c, const Seperator* sep);
 void command_grid(Client *c, const Seperator *sep);
 void command_guild(Client *c, const Seperator *sep);
 void command_help(Client *c, const Seperator *sep);
+void command_hero(Client *c, const Seperator *sep);
 void command_hotfix(Client *c, const Seperator *sep);
 void command_hp(Client *c, const Seperator *sep);
 void command_illusion_block(Client* c, const Seperator* sep);

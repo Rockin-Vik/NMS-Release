@@ -4281,7 +4281,7 @@ Merc* Merc::LoadMercenary(Client *c, MercTemplate* merc_template, uint32 merchan
 
 		const NPCType* npc_type_to_copy = nullptr;
 		if (c) {
-			npc_type_to_copy = content_db.GetMercenaryType(merc_template->MercNPCID, merc_template->RaceID, c->GetLevel());
+			npc_type_to_copy = content_db.GetMercenaryType(merc_template->MercNPCID, merc_template->RaceID, c->GetRewardLevel());
 		}
 
 		if(npc_type_to_copy != nullptr)
@@ -4418,7 +4418,7 @@ void Merc::UpdateMercStats(Client *c, bool setmax)
 		Log(Logs::General, Logs::Mercenaries, "Updating Mercenary Stats for %s (%s).", GetName(),
 			c->GetName());
 		const NPCType *npc_type = content_db.GetMercenaryType(
-		    zone->GetMercTemplate(c->GetMercInfo().MercTemplateID)->MercNPCID, GetRace(), c->GetLevel());
+		    zone->GetMercTemplate(c->GetMercInfo().MercTemplateID)->MercNPCID, GetRace(), c->GetRewardLevel());
 		if (npc_type) {
 			max_hp = npc_type->max_hp;
 			base_hp = npc_type->max_hp;
@@ -5625,7 +5625,7 @@ void Client::UpdateMercLevel() {
 	if (merc)
 	{
 		merc->UpdateMercStats(this, false);
-		merc->SendAppearancePacket(AppearanceType::WhoLevel, GetLevel(), true, true);
+		merc->SendAppearancePacket(AppearanceType::WhoLevel, GetRewardLevel(), true, true);
 	}
 }
 

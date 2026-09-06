@@ -15,6 +15,7 @@ SET(zone_sources
     bot_database.cpp
     botspellsai.cpp
     cheat_manager.cpp
+    class_exp_routing.cpp
     client.cpp
     client_evolving_items.cpp
     client_bot.cpp
@@ -135,6 +136,7 @@ SET(zone_headers
     bot_database.h
     bot_structs.h
     cheat_manager.h
+    class_exp_routing.h
     client.h
     client_packet.h
     combat_record.h
@@ -371,6 +373,7 @@ set(gm_command_sources
     gm_commands/grantaa.cpp
     gm_commands/grid.cpp
     gm_commands/guild.cpp
+    gm_commands/hero.cpp
     gm_commands/hp.cpp
     gm_commands/illusion_block.cpp
     gm_commands/instance.cpp

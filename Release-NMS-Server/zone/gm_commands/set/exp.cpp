@@ -31,6 +31,7 @@ void SetEXP(Client *c, const Seperator *sep)
 			amount
 		);
 	} else if (is_exp) {
+		t->SetAllClassExp(amount);
 		t->SetEXP(
 			ExpSource::GM,
 			amount,

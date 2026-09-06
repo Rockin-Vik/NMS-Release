@@ -774,6 +774,51 @@ WHERE log_category_description NOT IN ('Error', 'Warning', 'Crash', 'MySQL Error
 		.content_schema_update = false,
 	},
 
+	// Versions 26 and 27 are reserved by other open branches.
+	ManifestEntry{
+		.version = 28,
+		.description = "2026_09_06_character_class_exp_table",
+		.check = "SHOW TABLES LIKE 'character_class_exp'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+CREATE TABLE IF NOT EXISTS `character_class_exp` (
+	`character_id` int(10) unsigned NOT NULL,
+	`class_id` tinyint(3) unsigned NOT NULL,
+	`class_exp` bigint(20) unsigned NOT NULL DEFAULT 0,
+	PRIMARY KEY (`character_id`, `class_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)",
+		.content_schema_update = false,
+	},
+	ManifestEntry{
+		.version = 29,
+		.description = "2026_09_06_character_class_exp_backfill",
+		// The runner evaluates every entry's check up front, before it applies any SQL, so this
+		// check cannot look at `character_class_exp`: version 28 has not created it yet at that
+		// point. Probing `character_data` instead is safe because the INSERT below is idempotent:
+		// it is an INSERT IGNORE that already filters out rows present in `character_class_exp`.
+		.check = "SELECT 1 FROM character_data LIMIT 1",
+		.condition = "not_empty",
+		.match = "",
+		.sql = R"(
+INSERT IGNORE INTO character_class_exp (character_id, class_id, class_exp)
+SELECT cd.id, classes.class_id, cd.exp
+FROM character_data cd
+LEFT JOIN data_buckets db ON db.character_id = cd.id AND db.`key` = 'GestaltClasses'
+CROSS JOIN (
+	SELECT 1 AS class_id UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+	UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8
+	UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11 UNION ALL SELECT 12
+	UNION ALL SELECT 13 UNION ALL SELECT 14 UNION ALL SELECT 15 UNION ALL SELECT 16
+) classes
+LEFT JOIN character_class_exp e ON e.character_id = cd.id AND e.class_id = classes.class_id
+WHERE ((IF(db.character_id IS NOT NULL, CAST(db.`value` AS UNSIGNED), IF(cd.`class` BETWEEN 1 AND 16, 1 << (cd.`class` - 1), 0)) >> (classes.class_id - 1)) & 1) = 1
+  AND e.character_id IS NULL;
+)",
+		.content_schema_update = false,
+	},
+
 	// Used for testing
 	//	ManifestEntry{
 	//		.version = 9229,

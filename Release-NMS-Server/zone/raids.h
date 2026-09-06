@@ -137,6 +137,7 @@ public:
 	uint8	GroupCount(uint32 gid);
 	uint8	RaidCount();
 	uint32	GetHighestLevel();
+	uint8	GetHighestRewardLevel();
 	uint32	GetLowestLevel();
 	uint32	GetGroup(const char *name);
 	uint32	GetGroup(Client *c);

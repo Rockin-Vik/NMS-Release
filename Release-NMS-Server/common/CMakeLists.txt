@@ -78,6 +78,7 @@ SET(common_sources
     proc_launcher.cpp
     profanity_manager.cpp
     ptimer.cpp
+    race_class.cpp
     races.cpp
     rdtsc.cpp
     rulesys.cpp
@@ -171,6 +172,7 @@ SET(repositories
     repositories/base/base_character_bandolier_repository.h
     repositories/base/base_character_bind_repository.h
     repositories/base/base_character_buffs_repository.h
+    repositories/base/base_character_class_exp_repository.h
     repositories/base/base_character_corpses_repository.h
     repositories/base/base_character_corpse_items_repository.h
     repositories/base/base_character_currency_repository.h
@@ -367,6 +369,7 @@ SET(repositories
     repositories/character_bandolier_repository.h
     repositories/character_bind_repository.h
     repositories/character_buffs_repository.h
+    repositories/character_class_exp_repository.h
     repositories/character_corpses_repository.h
     repositories/character_corpse_items_repository.h
     repositories/character_currency_repository.h
@@ -634,6 +637,7 @@ SET(common_headers
     profiler.h
     ptimer.h
     queue.h
+    race_class.h
     races.h
     raid.h
     random.h

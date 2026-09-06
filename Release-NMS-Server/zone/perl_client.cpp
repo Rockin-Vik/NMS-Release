@@ -272,11 +272,13 @@ void Perl_Client_AddEXP(Client* self, uint32 add_exp, uint8 conlevel, bool resex
 
 void Perl_Client_SetEXP(Client* self, uint64 set_exp, uint64 set_aaxp) // @categories Experience and Level
 {
+	self->SetAllClassExp(set_exp);
 	self->SetEXP(ExpSource::Quest, set_exp, set_aaxp);
 }
 
 void Perl_Client_SetEXP(Client* self, uint64 set_exp, uint64 set_aaxp, bool resexp) // @categories Experience and Level
 {
+	self->SetAllClassExp(set_exp);
 	self->SetEXP(ExpSource::Quest, set_exp, set_aaxp, resexp);
 }
 
@@ -2206,6 +2208,36 @@ bool Perl_Client_AddExtraClass(Client* self, int class_id)
 	return self->AddExtraClass(class_id);
 }
 
+bool Perl_Client_AddExtraClass(Client* self, int class_id, bool join_at_watermark)
+{
+	return self->AddExtraClass(class_id, join_at_watermark);
+}
+
+int Perl_Client_CanAddExtraClass(Client* self, int class_id)
+{
+	return static_cast<int>(self->CanAddExtraClass(class_id));
+}
+
+uint8_t Perl_Client_GetClassLevel(Client* self, int class_id)
+{
+	return self->GetClassLevel(static_cast<uint8>(class_id));
+}
+
+uint64_t Perl_Client_GetClassExp(Client* self, int class_id)
+{
+	return self->GetClassExp(static_cast<uint8>(class_id));
+}
+
+uint8_t Perl_Client_GetRewardLevel(Client* self)
+{
+	return self->GetRewardLevel();
+}
+
+bool Perl_Client_IsCatchingUp(Client* self)
+{
+	return self->IsCatchingUp();
+}
+
 bool Perl_Client_RemoveExtraClass(Client* self, int class_id)
 {
 	return self->RemoveExtraClass(class_id);
@@ -3770,6 +3802,12 @@ void perl_register_client()
 	package.add("HasClass", (bool(*)(Client*, std::string))&Perl_Client_HasClass);
 	package.add("GetClassesBitmask", &Perl_Client_GetClassesBitmask);
 	package.add("AddExtraClass", (bool(*)(Client*, int))&Perl_Client_AddExtraClass);
+	package.add("AddExtraClass", (bool(*)(Client*, int, bool))&Perl_Client_AddExtraClass);
+	package.add("CanAddExtraClass", &Perl_Client_CanAddExtraClass);
+	package.add("GetClassLevel", &Perl_Client_GetClassLevel);
+	package.add("GetClassExp", &Perl_Client_GetClassExp);
+	package.add("GetRewardLevel", &Perl_Client_GetRewardLevel);
+	package.add("IsCatchingUp", &Perl_Client_IsCatchingUp);
 	package.add("RemoveExtraClass", (bool(*)(Client*, int))&Perl_Client_RemoveExtraClass);
 	package.add("GetKillCount", (int(*)(Client*, int))&Perl_Client_GetKillCount);
 	package.add("GetClientMaxLevel", &Perl_Client_GetClientMaxLevel);

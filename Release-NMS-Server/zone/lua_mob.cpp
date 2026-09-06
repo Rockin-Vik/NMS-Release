@@ -60,11 +60,23 @@ bool Lua_Mob::BehindMob(Lua_Mob other, float x, float y) {
 
 void Lua_Mob::SetLevel(int level) {
 	Lua_Safe_Call_Void();
+	// On a client the raw form would move Mob::level without moving the class rows it
+	// caches, so the quest surface always takes the command path.
+	if (self->IsClient()) {
+		self->CastToClient()->SetLevel(level, true);
+		return;
+	}
+
 	self->SetLevel(level);
 }
 
 void Lua_Mob::SetLevel(int level, bool command) {
 	Lua_Safe_Call_Void();
+	if (self->IsClient()) {
+		self->CastToClient()->SetLevel(level, true);
+		return;
+	}
+
 	self->SetLevel(level, command);
 }
 

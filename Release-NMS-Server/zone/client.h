@@ -89,6 +89,7 @@ namespace EQ
 #endif
 
 #include <float.h>
+#include <array>
 #include <set>
 #include <algorithm>
 #include <memory>
@@ -260,6 +261,19 @@ struct ExpeditionInvite
 	uint32_t    dz_id;
 	std::string inviter_name;
 	std::string swap_name;
+};
+
+enum class AddClassResult : int {
+	Ok = 0,
+	MulticlassingDisabled,
+	OldClassPenaltyRuleOn,
+	InvalidClass,
+	AlreadyHeld,
+	AtCap,
+	RaceNotAllowed,
+	InCombat,
+	ZoneTooHigh,
+	RowInsertFailed
 };
 
 class Client : public Mob
@@ -602,8 +616,32 @@ public:
 	int64 CalcManaRegenCap() final;
 
 	uint32 GetClassesBits() const;
-	bool   AddExtraClass(int class_id);
+	AddClassResult CanAddExtraClass(int class_id, bool join_at_watermark = false) const;
+	static const char* AddClassResultMessage(AddClassResult result);
+	bool   AddExtraClass(int class_id, bool join_at_watermark = false);
 	bool   RemoveExtraClass(int class_id);
+
+	// Per-class experience. The exp pool and every level cache are caches of the
+	// trailing (lowest) class; these read the rows themselves.
+	uint8  GetClassLevel(uint8 class_id) const;
+	uint64 GetClassExp(uint8 class_id) const;
+	uint8  GetRewardLevel() const;
+	bool   IsCatchingUp() const;
+	bool   SetClassExp(uint8 class_id, uint64 exp);
+	void   SetAllClassExp(uint64 exp);
+	void   LoadClassExp();
+	void   SaveClassExp();
+private:
+	uint8  LevelFromExp(uint64 exp) const;
+	uint64 ApplyExpClamps(uint64 candidate_exp, uint16 candidate_level) const;
+	uint64 GetClassExpCap() const;
+
+	std::map<uint8, uint64> m_class_exp;
+	bool                    m_class_exp_dirty = false;
+	// Set while SetEXP has routed the rows but not yet assigned the pool, so the Save() that
+	// SetLevel() fires mid-flight does not write the new rows against the old pool.
+	bool                    m_class_exp_save_deferred = false;
+public:
 
 	// guild pool regen shit. Sends a SpawnAppearance with a value that regens to value * 0.001
 	void EnableAreaHPRegen(int value);
@@ -1746,7 +1784,7 @@ public:
 
 	bool CanEnterZone(const std::string& zone_short_name = "", int16 instance_version = -1);
 
-	uint32 GetAggroCount();
+	uint32 GetAggroCount() const;
 	void IncrementAggroCount(bool raid_target = false);
 	void DecrementAggroCount();
 	void SendPVPStats();
@@ -2079,7 +2117,7 @@ public:
 	PlayerEvent::PlayerEvent GetPlayerEvent();
 	void RecordKilledNPCEvent(NPC *n);
 
-	uint32 GetEXPForLevel(uint16 check_level);
+	uint32 GetEXPForLevel(uint16 check_level) const;
 
 	// Evolving Item Info
 	void ProcessEvolvingItem(const uint64 exp, const Mob* mob);
@@ -2346,6 +2384,9 @@ private:
 	std::vector<PetInfo> m_petinfomulti;
 
 	std::map<EQ::skills::SkillType, bool> m_autoskill;
+	mutable std::array<uint16, EQ::skills::HIGHEST_SKILL + 1> m_catchup_skill_caps{};
+	mutable uint8 m_catchup_skill_caps_level = 0;
+	mutable bool m_catchup_skill_caps_valid = false;
 
 	InspectMessage_Struct m_inspect_message;
 	bool temp_pvp;

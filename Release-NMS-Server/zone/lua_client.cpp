@@ -195,6 +195,36 @@ bool Lua_Client::AddExtraClass(int class_id) {
 	return self->AddExtraClass(class_id);
 }
 
+bool Lua_Client::AddExtraClass(int class_id, bool join_at_watermark) {
+	Lua_Safe_Call_Bool();
+	return self->AddExtraClass(class_id, join_at_watermark);
+}
+
+int Lua_Client::CanAddExtraClass(int class_id) {
+	Lua_Safe_Call_Int();
+	return static_cast<int>(self->CanAddExtraClass(class_id));
+}
+
+int Lua_Client::GetClassLevel(int class_id) {
+	Lua_Safe_Call_Int();
+	return self->GetClassLevel(static_cast<uint8>(class_id));
+}
+
+uint64 Lua_Client::GetClassExp(int class_id) {
+	Lua_Safe_Call_Int();
+	return self->GetClassExp(static_cast<uint8>(class_id));
+}
+
+int Lua_Client::GetRewardLevel() {
+	Lua_Safe_Call_Int();
+	return self->GetRewardLevel();
+}
+
+bool Lua_Client::IsCatchingUp() {
+	Lua_Safe_Call_Bool();
+	return self->IsCatchingUp();
+}
+
 bool Lua_Client::RemoveExtraClass(int class_id) {
 	Lua_Safe_Call_Bool();
 	return self->RemoveExtraClass(class_id);
@@ -312,11 +342,13 @@ void Lua_Client::AddEXP(uint32 add_exp, int conlevel, bool resexp) {
 
 void Lua_Client::SetEXP(uint64 set_exp, uint64 set_aaxp) {
 	Lua_Safe_Call_Void();
+	self->SetAllClassExp(set_exp);
 	self->SetEXP(ExpSource::Quest, set_exp, set_aaxp);
 }
 
 void Lua_Client::SetEXP(uint64 set_exp, uint64 set_aaxp, bool resexp) {
 	Lua_Safe_Call_Void();
+	self->SetAllClassExp(set_exp);
 	self->SetEXP(ExpSource::Quest, set_exp, set_aaxp, resexp);
 }
 
@@ -3948,6 +3980,12 @@ luabind::scope lua_register_client() {
 	.def("HasClassID", (bool(Lua_Client::*)(int))&Lua_Client::HasClassID)
 	.def("GetClassesBitmask", (int(Lua_Client::*)(void))&Lua_Client::GetClassesBitmask)
 	.def("AddExtraClass", (bool(Lua_Client::*)(int))&Lua_Client::AddExtraClass)
+	.def("AddExtraClass", (bool(Lua_Client::*)(int, bool))&Lua_Client::AddExtraClass)
+	.def("CanAddExtraClass", (int(Lua_Client::*)(int))&Lua_Client::CanAddExtraClass)
+	.def("GetClassLevel", (int(Lua_Client::*)(int))&Lua_Client::GetClassLevel)
+	.def("GetClassExp", (uint64(Lua_Client::*)(int))&Lua_Client::GetClassExp)
+	.def("GetRewardLevel", (int(Lua_Client::*)(void))&Lua_Client::GetRewardLevel)
+	.def("IsCatchingUp", (bool(Lua_Client::*)(void))&Lua_Client::IsCatchingUp)
 	.def("RemoveExtraClass", (bool(Lua_Client::*)(int))&Lua_Client::RemoveExtraClass)
 	.def("GetClientMaxLevel", (int(Lua_Client::*)(void))&Lua_Client::GetClientMaxLevel)
 	.def("GetClientVersion", (int(Lua_Client::*)(void))&Lua_Client::GetClientVersion)
