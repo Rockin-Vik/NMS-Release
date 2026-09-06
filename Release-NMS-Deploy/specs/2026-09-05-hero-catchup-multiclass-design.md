@@ -86,8 +86,8 @@ This is the Inventory class list (`IW_Level` / `IW_Class` / `IW_ClassAbbr` in `E
 | Watermark | level of the highest-exp class in the bitmask |
 | XP routing | water-filling from the lowest rows (D2) |
 | Race | No add-time lock; any race may add any class |
-| Cannot remove | your last class (D8); any class whose exp is below the watermark |
-| Can remove | any other class once caught up; the row is kept for resume |
+| Cannot remove | your last class (D8) |
+| Can remove | any other class at any time; the row is kept for resume and the pool follows the remaining rows |
 | Cannot add | at the cap; a class already held; in combat, feigning or dueling; where zone `min_level` exceeds the start level (D10); while the old class-penalty rule is on (D19) |
 | On add that lowers level | pet and buffs are kept (D16) |
 | Confirm | single step, as today; the trainer hail text and the Hero tab state the cost up front |
@@ -151,7 +151,7 @@ On success, in this order so a set bit never exists without a row:
 3. Call `SetEXP` with the current pool value. The delta is zero, but routing returns the minimum row (§6), so the pool drops and the stock loop levels the character down and fires `EVENT_LEVEL_DOWN`. `SetEXP` has no early return on an unchanged value (`exp.cpp:1065-1067` only rejects an invalid curve).
 4. `CalcBonuses()`, AA table refresh, guild roster update (existing `+1000` path), `SendBulkStatsUpdate()` (D11). Pet and buffs are not touched (D16).
 
-`RemoveExtraClass`: reject if it would leave zero classes; reject if the row's exp is below the watermark. Otherwise the existing body runs (it already unscribes, ejects class-locked gear, refunds AAs, `client.cpp:14587-14653`) and the row is **kept**. Re-add does not restore spells or gear. Then `SetEXP` with the pool value so the new minimum takes effect.
+`RemoveExtraClass`: reject only if it would leave zero classes. Otherwise the existing body runs (it already unscribes, ejects class-locked gear, refunds AAs, `client.cpp:14587-14653`) and the row is **kept**. Re-add does not restore spells or gear. The pool follows the lowest remaining row in either direction before `SetEXP`, so the effective level follows the remaining classes.
 
 `GetLevel()` stays `Mob::level`. Do not scatter `min()` at call sites.
 
@@ -299,7 +299,7 @@ Integration (`#hero`):
 - Backfill: 3-class level 65 character produces three rows at 65 exp, effective 65, not catching up. Re-running the backfill entry inserts nothing.
 - Add 4th: new row at level-1 exp, effective 1, watermark 65, four bits, pet and buffs still present, header titles still 65 for the old three.
 - Add 5th, in combat, in a `min_level` 60 zone, with the old class-penalty rule on: each rejected with its reason.
-- Remove the new class at 1: rejected. Remove the last class: rejected.
+- Remove the new class at 1: allowed; the pool and level return to the remaining classes. Remove the last class: rejected.
 - Remove a caught-up non-last class: allowed; effective stays 65; row kept; re-add resumes at 65 with no debt.
 - XP while behind: only the trailing row moves. XP when equal: all four move.
 - Group: level-1 body in a group of 65s receives a share; a group of four catching-up bodies still receives shares; EoM eligibility matches.

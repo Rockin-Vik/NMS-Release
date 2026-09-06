@@ -14714,18 +14714,6 @@ bool Client::RemoveExtraClass(int class_id) {
 		return false;
 	}
 
-	uint64 highest_exp = 0;
-	for (const auto &row : m_class_exp) {
-		if (GetClassesBits() & GetPlayerClassBit(row.first)) {
-			highest_exp = std::max(highest_exp, row.second);
-		}
-	}
-
-	if (GetClassExp(static_cast<uint8>(class_id)) < highest_exp) {
-		Message(Chat::Red, "You cannot remove a class while it is behind your other classes.");
-		return false;
-	}
-
     // Lambda to check if a spell is usable by any of the given classes
     auto is_spell_usable_by_classes = [this, new_classes](int spell_id) {
         for (int i = Class::Warrior; i <= Class::Berserker; i++) {
@@ -14810,6 +14798,23 @@ bool Client::RemoveExtraClass(int class_id) {
     SendAlternateAdvancementStats();
 
     // Save changes
+	// The pool is a cache of the lowest held row. Once the class is gone the pool follows the
+	// remaining rows in either direction (the lagging class leaving can raise it; SetEXP's level
+	// loops then apply the level change), so SetEXP sees a consistent pool and the repair branch in
+	// exp.cpp stays a true alarm. With catch-up off every row is equal and this is a no-op.
+	bool has_remaining_exp = false;
+	uint64 remaining_minimum_exp = 0;
+	for (const auto &row : m_class_exp) {
+		if ((GetClassesBits() & GetPlayerClassBit(row.first)) && (!has_remaining_exp || row.second < remaining_minimum_exp)) {
+			remaining_minimum_exp = row.second;
+			has_remaining_exp = true;
+		}
+	}
+
+	if (has_remaining_exp && remaining_minimum_exp != m_pp.exp) {
+		m_pp.exp = remaining_minimum_exp;
+	}
+
 	SetEXP(ExpSource::Quest, m_pp.exp, GetAAXP());
 	SendBulkStatsUpdate();
     SaveAA();
