@@ -36,6 +36,7 @@
 #include <set>
 #include <vector>
 #include <memory>
+#include <string>
 
 #include "heal_rotation.h"
 
@@ -1517,8 +1518,8 @@ public:
 	uint32 GetAAByAAID(uint32 aa_id, uint32 *charges = nullptr) const;
 	bool SetAA(uint32 rank_id, uint32 new_value, uint32 charges = 0);
 	void ClearAAs() { aa_ranks.clear(); }
-	bool CanUseAlternateAdvancementRank(AA::Rank *rank);
-	bool CanPurchaseAlternateAdvancementRank(AA::Rank *rank, bool check_price, bool check_grant);
+	bool CanUseAlternateAdvancementRank(AA::Rank *rank, std::string *reason = nullptr);
+	bool CanPurchaseAlternateAdvancementRank(AA::Rank *rank, bool check_price, bool check_grant, std::string *reason = nullptr);
 	int GetAlternateAdvancementCooldownReduction(AA::Rank *rank_in);
 	void ExpendAlternateAdvancementCharge(uint32 aa_id);
 	void CalcAABonuses(StatBonuses* newbon);
