@@ -44,7 +44,6 @@ extern volatile bool RunLoops;
 #include "../common/profanity_manager.h"
 #include "../common/data_bucket.h"
 #include "../common/data_bucket.h"
-#include "../common/race_class.h"
 #include "dynamic_zone.h"
 #include "expedition_request.h"
 #include "position.h"
@@ -14556,15 +14555,15 @@ AddClassResult Client::CanAddExtraClass(int class_id, bool join_at_watermark) co
 		return AddClassResult::AtCap;
 	}
 
-	if (!IsClassRaceCombinationAllowed(static_cast<uint8>(class_id), GetBaseRace())) {
-		return AddClassResult::RaceNotAllowed;
-	}
+	// No race lock: any character may add any class regardless of base race (owner decision, 2026-09-06).
+	// AddClassResult::RaceNotAllowed is kept so script-facing reason codes do not shift.
 
 	if (GetAggroCount() > 0 || GetFeigned() || IsDueling()) {
 		return AddClassResult::InCombat;
 	}
 
 	if (
+		RuleB(Custom, HeroCatchupEnabled) &&
 		!join_at_watermark &&
 		ZoneStore::Instance()->GetZoneMinimumLevel(zone->GetZoneID(), zone->GetInstanceVersion()) >
 			RuleI(Custom, NewClassStartLevel)
@@ -14591,6 +14590,11 @@ const char* Client::AddClassResultMessage(AddClassResult result)
 	}
 
 	return "That class could not be added.";
+}
+
+const char* Client::CanAddExtraClassMessage(int class_id, bool join_at_watermark) const
+{
+	return AddClassResultMessage(CanAddExtraClass(class_id, join_at_watermark));
 }
 
 // Persist the class row first, then the bit and bucket, so no bit exists without progress.
@@ -14672,6 +14676,11 @@ bool Client::AddExtraClass(int class_id, bool join_at_watermark)
 	}
 
 	m_pp.classes = new_classes;
+	// A class that joins below the current pool drags the pool down to it by design; set it here so
+	// SetEXP sees a consistent pool and the repair branch in exp.cpp stays a true inconsistency alarm.
+	if (inserted_row && m_class_exp[class_id_u8] < m_pp.exp) {
+		m_pp.exp = m_class_exp[class_id_u8];
+	}
 	m_catchup_skill_caps_valid = false;
 	SetEXP(ExpSource::Quest, m_pp.exp, GetAAXP());
 	CalcBonuses();
@@ -14702,18 +14711,6 @@ bool Client::RemoveExtraClass(int class_id) {
     auto new_classes = m_pp.classes & ~GetPlayerClassBit(class_id);
 	if (!new_classes) {
 		Message(Chat::Red, "You cannot remove your last class.");
-		return false;
-	}
-
-	uint64 highest_exp = 0;
-	for (const auto &row : m_class_exp) {
-		if (GetClassesBits() & GetPlayerClassBit(row.first)) {
-			highest_exp = std::max(highest_exp, row.second);
-		}
-	}
-
-	if (GetClassExp(static_cast<uint8>(class_id)) < highest_exp) {
-		Message(Chat::Red, "You cannot remove a class while it is behind your other classes.");
 		return false;
 	}
 
@@ -14801,6 +14798,23 @@ bool Client::RemoveExtraClass(int class_id) {
     SendAlternateAdvancementStats();
 
     // Save changes
+	// The pool is a cache of the lowest held row. Once the class is gone the pool follows the
+	// remaining rows in either direction (the lagging class leaving can raise it; SetEXP's level
+	// loops then apply the level change), so SetEXP sees a consistent pool and the repair branch in
+	// exp.cpp stays a true alarm. With catch-up off every row is equal and this is a no-op.
+	bool has_remaining_exp = false;
+	uint64 remaining_minimum_exp = 0;
+	for (const auto &row : m_class_exp) {
+		if ((GetClassesBits() & GetPlayerClassBit(row.first)) && (!has_remaining_exp || row.second < remaining_minimum_exp)) {
+			remaining_minimum_exp = row.second;
+			has_remaining_exp = true;
+		}
+	}
+
+	if (has_remaining_exp && remaining_minimum_exp != m_pp.exp) {
+		m_pp.exp = remaining_minimum_exp;
+	}
+
 	SetEXP(ExpSource::Quest, m_pp.exp, GetAAXP());
 	SendBulkStatsUpdate();
     SaveAA();

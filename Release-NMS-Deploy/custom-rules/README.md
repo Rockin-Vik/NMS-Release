@@ -38,7 +38,7 @@ Turning one of these off often looks like a C++ or client bug. `MulticlassingEna
 | `ServerAuthStats` | BOOL | `true` | `BypassMulticlassStackConflict` `MulticlassingEnabled` `UseDynamicAATimers` | Enable this rule in order to send explicit client updates. Requires client dll. |
 | `MulticlassingEnabled` | BOOL | `true` | `BypassMulticlassStackConflict` `ServerAuthStats` `UseDynamicAATimers` | Enable this to enable all multiclass-related tweaks. Requires ServerAuthStats and UseDynamicAATimers for full functionality. |
 | `MaxMulticlasses` | INT | `4` | — | Cap on multiclasses; inert unless MulticlassingEnabled and requires Character:UseOldClassExpPenalties false. |
-| `HeroCatchupEnabled` | BOOL | `true` | — | New classes hard-catch-up from the configured start; when false they join at the watermark; inert unless MulticlassingEnabled. |
+| `HeroCatchupEnabled` | BOOL | `false` | — | Off (default): a new class joins at the character's current level and all class rows shadow the single pool. On: new classes start at NewClassStartLevel and the effective level is the lowest class until it catches up. Inert unless MulticlassingEnabled. |
 | `NewClassStartLevel` | INT | `1` | — | New class start level; ignored when catch-up is off and inert unless MulticlassingEnabled. |
 | `UseDynamicAATimers` | BOOL | `true` | `BypassMulticlassStackConflict` `MulticlassingEnabled` `ServerAuthStats` | Enable using dynamic AA timers. Required to deconflict multiclass AA timers |
 | `BypassMulticlassStackConflict` | BOOL | `true` | `MulticlassingEnabled` `ServerAuthStats` `UseDynamicAATimers` | Allow all of your class spells to stack |

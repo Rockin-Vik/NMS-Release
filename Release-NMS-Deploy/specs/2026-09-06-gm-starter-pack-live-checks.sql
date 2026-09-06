@@ -19,7 +19,7 @@ SELECT id, Name FROM items WHERE Name LIKE 'Sword of Truth, Reforged%' AND id >=
 -- ---------------------------------------------------------------------------------------------
 -- B. After migrate + shared_memory: the migration landed completely.
 -- ---------------------------------------------------------------------------------------------
--- Expect: 31 (or whatever the branch was renumbered to at merge time).
+-- Expect: the current CUSTOM_BINARY_DATABASE_VERSION in common/version.h (33 as of 2026-09-06; the pack landed as v31/v32).
 SELECT custom_version FROM db_version;
 
 -- Expect: one row, 40 / 4 / 100 / 5 / 0 / 1 (40 slots, giant, WR 100, bag type 5, NO DROP, NO RENT).

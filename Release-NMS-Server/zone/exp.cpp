@@ -1382,8 +1382,8 @@ void Client::SetEXP(ExpSource exp_source, uint64 set_exp, uint64 set_aaxp, bool 
 	// persistence concern - level and exp above are untouched stock behavior.
 	if (RuleB(Custom, MulticlassingEnabled) && !RuleB(Custom, HeroCatchupEnabled) && !m_class_exp.empty()) {
 		for (auto &row : m_class_exp) {
-			if (row.second != set_exp) {
-				row.second        = set_exp;
+			if (row.second != m_pp.exp) {
+				row.second        = m_pp.exp;
 				m_class_exp_dirty = true;
 			}
 		}
@@ -1880,14 +1880,39 @@ void Client::LoadClassExp()
 		m_class_exp_dirty = true;
 	}
 
-	// Catch-up disabled: the rows are bookkeeping that shadows the single pool, so hold them
-	// in lockstep and leave the stock level/exp derivation below alone.
+	// A character that took the level-1 reset while catch-up was on gets its earned level back
+	// on next load.
 	if (!RuleB(Custom, HeroCatchupEnabled)) {
+		uint64 target = m_pp.exp;
+
+		for (const auto &row : m_class_exp) {
+			if (classes_bits & GetPlayerClassBit(row.first)) {
+				target = std::max(target, row.second);
+			}
+		}
+
+		target = ApplyExpClamps(target, LevelFromExp(target));
+
 		for (auto &row : m_class_exp) {
-			if (row.second != m_pp.exp) {
-				row.second        = m_pp.exp;
+			if (row.second != target) {
+				row.second        = target;
 				m_class_exp_dirty = true;
 			}
+		}
+
+		const uint8 derived_level = LevelFromExp(target);
+
+		m_pp.exp   = target;
+		m_pp.level = derived_level;
+		level      = derived_level;
+
+		if (derived_level != loaded_level) {
+			LogInfo(
+				"Catch-up is off: character [{}] restored from level [{}] to [{}] (max of pool and class rows)",
+				CharacterID(),
+				loaded_level,
+				derived_level
+			);
 		}
 
 		return;
@@ -1908,6 +1933,8 @@ void Client::LoadClassExp()
 	}
 
 	if (found) {
+		lowest = ApplyExpClamps(lowest, LevelFromExp(lowest));
+
 		const uint8 derived_level = LevelFromExp(lowest);
 
 		m_pp.exp   = lowest;

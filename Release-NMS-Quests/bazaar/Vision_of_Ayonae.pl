@@ -50,7 +50,7 @@ sub EVENT_SAY {
             my $target_classes = plugin::MaxMulticlasses();
 
             if (!@eligible_classes || @eligible_classes < $target_classes) {
-                plugin::NPCTell("Fate cannot offer enough classes that your race may follow. Nothing has changed.");
+                plugin::NPCTell("Fate cannot offer enough new classes for you. Nothing has changed.");
                 return;
             }
             

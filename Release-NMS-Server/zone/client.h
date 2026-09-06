@@ -618,6 +618,7 @@ public:
 	uint32 GetClassesBits() const;
 	AddClassResult CanAddExtraClass(int class_id, bool join_at_watermark = false) const;
 	static const char* AddClassResultMessage(AddClassResult result);
+	const char* CanAddExtraClassMessage(int class_id, bool join_at_watermark = false) const;
 	bool   AddExtraClass(int class_id, bool join_at_watermark = false);
 	bool   RemoveExtraClass(int class_id);
 

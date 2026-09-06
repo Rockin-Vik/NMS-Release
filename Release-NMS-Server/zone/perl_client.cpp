@@ -2222,6 +2222,11 @@ int Perl_Client_CanAddExtraClass(Client* self, int class_id)
 	return static_cast<int>(self->CanAddExtraClass(class_id));
 }
 
+std::string Perl_Client_CanAddExtraClassMessage(Client* self, int class_id)
+{
+	return self->CanAddExtraClassMessage(class_id);
+}
+
 uint8_t Perl_Client_GetClassLevel(Client* self, int class_id)
 {
 	return self->GetClassLevel(static_cast<uint8>(class_id));
@@ -3808,6 +3813,7 @@ void perl_register_client()
 	package.add("AddExtraClass", (bool(*)(Client*, int))&Perl_Client_AddExtraClass);
 	package.add("AddExtraClass", (bool(*)(Client*, int, bool))&Perl_Client_AddExtraClass);
 	package.add("CanAddExtraClass", &Perl_Client_CanAddExtraClass);
+	package.add("CanAddExtraClassMessage", &Perl_Client_CanAddExtraClassMessage);
 	package.add("GetClassLevel", &Perl_Client_GetClassLevel);
 	package.add("GetClassExp", &Perl_Client_GetClassExp);
 	package.add("GetRewardLevel", &Perl_Client_GetRewardLevel);

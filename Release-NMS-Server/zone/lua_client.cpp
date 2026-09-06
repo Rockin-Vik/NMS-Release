@@ -205,6 +205,11 @@ int Lua_Client::CanAddExtraClass(int class_id) {
 	return static_cast<int>(self->CanAddExtraClass(class_id));
 }
 
+std::string Lua_Client::CanAddExtraClassMessage(int class_id) {
+	Lua_Safe_Call_String();
+	return self->CanAddExtraClassMessage(class_id);
+}
+
 int Lua_Client::GetClassLevel(int class_id) {
 	Lua_Safe_Call_Int();
 	return self->GetClassLevel(static_cast<uint8>(class_id));
@@ -3984,6 +3989,7 @@ luabind::scope lua_register_client() {
 	.def("AddExtraClass", (bool(Lua_Client::*)(int))&Lua_Client::AddExtraClass)
 	.def("AddExtraClass", (bool(Lua_Client::*)(int, bool))&Lua_Client::AddExtraClass)
 	.def("CanAddExtraClass", (int(Lua_Client::*)(int))&Lua_Client::CanAddExtraClass)
+	.def("CanAddExtraClassMessage", (std::string(Lua_Client::*)(int))&Lua_Client::CanAddExtraClassMessage)
 	.def("GetClassLevel", (int(Lua_Client::*)(int))&Lua_Client::GetClassLevel)
 	.def("GetClassExp", (uint64(Lua_Client::*)(int))&Lua_Client::GetClassExp)
 	.def("GetRewardLevel", (int(Lua_Client::*)(void))&Lua_Client::GetRewardLevel)

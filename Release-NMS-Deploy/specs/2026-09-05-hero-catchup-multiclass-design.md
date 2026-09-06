@@ -1,5 +1,7 @@
 # Hero loadout — hard catch-up multiclass (design)
 
+2026-09-06, owner decision: shipped with `Custom:HeroCatchupEnabled` off. A new class joins at the character's current level; the catch-up machinery below stays behind the rule and off-mode keeps every class row in lockstep with the pool. Characters that already took the level-1 reset are restored to their highest class row on next load.
+
 Status: draft v5. Three code-grounded review passes (two adversarial; last verdict GO), then the owner resolved every decision on 2026-09-06. Not implemented.
 Date: 2026-09-05
 Governs: `Custom` multiclass layer (`CODEBASE.md` §3.1), Inventory header, a new Hero tab.
@@ -26,7 +28,7 @@ Evidence is the file and line each decision rests on. D1–D15 came from the fir
 | D14 | **Perl reads the cap from the rule and checks the C++ result.** The welcome popup's "up to three classes" line follows the cap. | Literals at `NMS_multiclass_utils.pl:313, 328, 453`, `global_npc.pl:34, 83`, `Vision_of_Ayonae.pl:77`, `NMS_popup_utils.pl:48`. Today `plugin::AddClass` ignores the boolean and still dings, messages and announces (`NMS_multiclass_utils.pl:309-331`); Ayonae charges and locks out before knowing removal succeeded (`Vision_of_Ayonae.pl:280-294`). |
 | D15 | **Losses route through the same rule; on this server they are rare.** | Death loss is off by rule here, but the path exists (`attack.cpp:2060-2129`), sacrifice removes exp (`client.cpp:5544-5550`) and rez restores through `SetEXP` (`client_process.cpp:1408-1411`). The delta is signed and subtraction is checked; a loss comes off the lowest rows, which are the rows a rez then refills. |
 | D16 | **An add that lowers effective level leaves the active pet and running buffs alone.** (Owner decision.) | Pets take their template level at creation and never re-level with the owner (`pets.cpp:300-339`), and running buffs keep applying at their stored caster level (`bonuses.cpp:1882-1897`). So a level-1 body keeps its 65 pet until it dies or is dismissed, and its 65 buffs until they expire; neither can be recast above level. The owner accepted that as part of the lighter tax. No Hero-specific depop or fade code. |
-| D17 | **`CanAddExtraClass(class_id, flag)` returns a reason code; `AddExtraClass` uses it; Perl and the Hero tab read it.** | Ayonae picks random classes without a race check (`Vision_of_Ayonae.pl:61-69`); with a race lock in C++ its loop would spin or half-apply. Selection filters through the reason code; charges, lockouts, announcements and counters happen only after a true result. |
+| D17 | **`CanAddExtraClass(class_id, flag)` returns a reason code; `AddExtraClass` uses it; Perl and the Hero tab read it.** | Ayonae picks random classes through the reason code (`Vision_of_Ayonae.pl:61-69`). Selection filters through the reason code; charges, lockouts, announcements and counters happen only after a true result. |
 | D18 | **Quest and Lua `SetLevel` on a client set every row.** Raw `SetLevel(level, false)` is internal only. | Both overloads are exported (`perl_mob.cpp:159-166`, `lua_mob.cpp:61-68`); only `quest::level` uses the command form (`questmgr.cpp:1228-1237`). The non-command form changes `Mob::level` without exp (`exp.cpp:1348-1426`) and would break the invariant. |
 | D19 | **`Character:UseOldClassExpPenalties` must be false.** `AddExtraClass` refuses while it is on and logs why. | That rule makes the exp curve depend on every held class (`exp.cpp:1539-1556`), so adding a class would move every row's level. Default is false (`ruletypes.h:126`). |
 | D20 | **`level2` is untouched.** | It is the historical high-water level and only increases (`exp.cpp:1359-1381`); quest and API surfaces expose it (`client.h:579`, `questmgr.cpp:3216`, `api_service.cpp:729`). During catch-up it stays 65. Never use it for eligibility or display. |
@@ -50,7 +52,7 @@ DRU  StormWarden
 BER  Fury
 ```
 
-Player opens Hero, adds Enchanter (race-legal). Header becomes:
+Player opens Hero and adds Enchanter. Header becomes:
 
 ```
 Level: 1
@@ -69,7 +71,7 @@ This is the Inventory class list (`IW_Level` / `IW_Class` / `IW_ClassAbbr` in `E
 - Per-class **switching** (one class live, others parked).
 - Per-class **independent** adventuring.
 - Raising character-select icon columns in the first ship. Tracked as a follow-up (§11.4).
-- Deity re-checks when adding a class. **Race only.**
+- Deity or race re-checks when adding a class.
 - Soft catch-up (header says 1 but you fight as 65). Rejected.
 - A per-kill experience brake (D7).
 - Supporting `Character:UseOldClassExpPenalties` (D19).
@@ -83,10 +85,10 @@ This is the Inventory class list (`IW_Level` / `IW_Class` / `IW_ClassAbbr` in `E
 | Effective level | level of the lowest-exp class in the bitmask |
 | Watermark | level of the highest-exp class in the bitmask |
 | XP routing | water-filling from the lowest rows (D2) |
-| Race lock | Same matrix as character create (`ClassRaceLookupTable`, `world/client.cpp:2312`) on **base race** |
-| Cannot remove | your last class (D8); any class whose exp is below the watermark |
-| Can remove | any other class once caught up; the row is kept for resume |
-| Cannot add | at the cap; a class already held; race-illegal; in combat, feigning or dueling; where zone `min_level` exceeds the start level (D10); while the old class-penalty rule is on (D19) |
+| Race | No add-time lock; any race may add any class |
+| Cannot remove | your last class (D8) |
+| Can remove | any other class at any time; the row is kept for resume and the pool follows the remaining rows |
+| Cannot add | at the cap; a class already held; in combat, feigning or dueling; where zone `min_level` exceeds the start level (D10); while the old class-penalty rule is on (D19) |
 | On add that lowers level | pet and buffs are kept (D16) |
 | Confirm | single step, as today; the trainer hail text and the Hero tab state the cost up front |
 | Group / raid / EoM / bots / merc | eligibility and re-level from the watermark (D6) |
@@ -140,7 +142,7 @@ uint8   Group::GetHighestRewardLevel(); uint8 Raid::GetHighestRewardLevel();
 
 Pure helper, unit-tested (D13): `RouteClassExp(std::vector<uint64>& rows, int64 delta, uint64 cap) -> uint64 new_min`.
 
-`CanAddExtraClass` reasons, in order, all fail-closed: multiclassing off; class-penalty rule on (D19); class id outside 1–16; bit already set; popcount at `MaxMulticlasses`; race not allowed (§7); `GetAggroCount() > 0`, feigning, or dueling; zone minimum level above the start level unless `join_at_watermark` (D10). `AddExtraClass` calls it first and also fails if the row insert fails.
+`CanAddExtraClass` reasons, in order, all fail-closed: multiclassing off; class-penalty rule on (D19); class id outside 1–16; bit already set; popcount at `MaxMulticlasses`; `GetAggroCount() > 0`, feigning, or dueling; zone minimum level above the start level unless `join_at_watermark` (D10). `RaceNotAllowed` remains an unused reason code so script-facing values do not shift. `AddExtraClass` calls it first and also fails if the row insert fails.
 
 On success, in this order so a set bit never exists without a row:
 
@@ -149,7 +151,7 @@ On success, in this order so a set bit never exists without a row:
 3. Call `SetEXP` with the current pool value. The delta is zero, but routing returns the minimum row (§6), so the pool drops and the stock loop levels the character down and fires `EVENT_LEVEL_DOWN`. `SetEXP` has no early return on an unchanged value (`exp.cpp:1065-1067` only rejects an invalid curve).
 4. `CalcBonuses()`, AA table refresh, guild roster update (existing `+1000` path), `SendBulkStatsUpdate()` (D11). Pet and buffs are not touched (D16).
 
-`RemoveExtraClass`: reject if it would leave zero classes; reject if the row's exp is below the watermark. Otherwise the existing body runs (it already unscribes, ejects class-locked gear, refunds AAs, `client.cpp:14587-14653`) and the row is **kept**. Re-add does not restore spells or gear. Then `SetEXP` with the pool value so the new minimum takes effect.
+`RemoveExtraClass`: reject only if it would leave zero classes. Otherwise the existing body runs (it already unscribes, ejects class-locked gear, refunds AAs, `client.cpp:14587-14653`) and the row is **kept**. Re-add does not restore spells or gear. The pool follows the lowest remaining row in either direction before `SetEXP`, so the effective level follows the remaining classes.
 
 `GetLevel()` stays `Mob::level`. Do not scatter `min()` at call sites.
 
@@ -182,11 +184,9 @@ set_exp = new_min                                          // pool becomes the t
 
 **Reward gates** (D6): `Group::GetHighestRewardLevel` replaces the effective-level max at `groups.cpp:1144-1156` and `raids.cpp:1107-1117` for XP splitting and for the Echo-of-Memory gate at `attack.cpp:3044-3074`; the member argument at `exp.cpp:1640` and `1684` is `GetRewardLevel()`. Awards still use `GetLevel()`. Bots and the merc read `GetRewardLevel()` at the four sites listed in D6.
 
-## 7. Race lock
+## 7. Race (no lock)
 
-Reuse `ClassRaceLookupTable` (`world/client.cpp:2312`), not a new content table. Lookup key is **base race**, not illusion. Extract the table and its race-index mapping into a shared helper under `common/` so world create-validation and `CanAddExtraClass` call the same function. One adapter, two callers. Zone must not include `world/client.cpp`.
-
-Deity is ignored on add.
+Any race may add any class. The server had no add-time race check before this design, and existing characters already hold race-illegal combinations, so the owner dropped the proposed lock on 2026-09-06. The shared race helper remains for character creation only. `RaceNotAllowed` is kept as an unused reason code so script-facing values do not shift. Deity is ignored on add.
 
 ## 8. What the tax removes
 
@@ -211,14 +211,14 @@ Add to `RULE_CATEGORY(Custom)` and cluster **Multiclass / client contract** in `
 | Rule | Type | Default | Note |
 | --- | --- | --- | --- |
 | `MaxMulticlasses` | INT | `4` | Cap enforced in `CanAddExtraClass`; Perl reads it via `quest::get_rule`. |
-| `HeroCatchupEnabled` | BOOL | `true` | When false, new classes join at the watermark. Rows stay in lockstep so turning it on later invents no debt. |
+| `HeroCatchupEnabled` | BOOL | `false` | Off (default): new classes join at the watermark and rows stay in lockstep. On: new classes start at `NewClassStartLevel` and catch up. |
 | `NewClassStartLevel` | INT | `1` | Ignored when catch-up is off. |
 
 All three are inert unless `MulticlassingEnabled` is true. Header note for the first: requires `Character:UseOldClassExpPenalties` false (D19).
 
 ## 10. Quest and plugin surfaces
 
-`AddExtraClass` / `RemoveExtraClass` / `HasClassID` / `GetClassesBitmask` stay; `CanAddExtraClass` is new. Cap, race and catch-up live in C++; the only script-side affordance is `join_at_watermark` (D9).
+`AddExtraClass` / `RemoveExtraClass` / `HasClassID` / `GetClassesBitmask` stay; `CanAddExtraClass` is new. Cap and catch-up live in C++; the only script-side affordance is `join_at_watermark` (D9).
 
 Perl to update (D14, D17):
 
@@ -298,8 +298,8 @@ Integration (`#hero`):
 
 - Backfill: 3-class level 65 character produces three rows at 65 exp, effective 65, not catching up. Re-running the backfill entry inserts nothing.
 - Add 4th: new row at level-1 exp, effective 1, watermark 65, four bits, pet and buffs still present, header titles still 65 for the old three.
-- Add 5th, illegal race, in combat, in a `min_level` 60 zone, with the old class-penalty rule on: each rejected with its reason.
-- Remove the new class at 1: rejected. Remove the last class: rejected.
+- Add 5th, in combat, in a `min_level` 60 zone, with the old class-penalty rule on: each rejected with its reason.
+- Remove the new class at 1: allowed; the pool and level return to the remaining classes. Remove the last class: rejected.
 - Remove a caught-up non-last class: allowed; effective stays 65; row kept; re-add resumes at 65 with no debt.
 - XP while behind: only the trailing row moves. XP when equal: all four move.
 - Group: level-1 body in a group of 65s receives a share; a group of four catching-up bodies still receives shares; EoM eligibility matches.
@@ -308,7 +308,7 @@ Integration (`#hero`):
 - Skills: while behind, a 250 skill reports the level-1 cap and returns when caught up; tradeskills unchanged. AAs: a 65-only rank still applies and activates at effective level 1.
 - Stats packet: count equals the number of real keys, key 0 absent, last key present.
 - `HeroCatchupEnabled false`: add joins at 65, four rows at 65.
-- Ayonae reroll on a 65: new random classes are race-legal and join at 65; a failed add charges nothing.
+- Ayonae reroll on a 65: new random classes join at 65; a failed add charges nothing.
 
 ## 14. Why this shape
 
