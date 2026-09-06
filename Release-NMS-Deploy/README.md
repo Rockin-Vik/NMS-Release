@@ -8,6 +8,7 @@ Build and install automation for the NMS server on a fresh Windows box.
 | [`FABLED-ENCOUNTERS.md`](FABLED-ENCOUNTERS.md) | The Fabled season: why the old `Custom:EnableFabledMobs` toggle was a no-op, the push-based C++ design as implemented (`#fabled`, `fabled_npcs`, `fabled_season`), and what remains to build and test. |
 | [`build-scripts/1-Install-Prerequisites.ps1`](build-scripts/1-Install-Prerequisites.ps1) | Audits the box and installs what is missing. |
 | [`build-scripts/2-Setup-NMSServer.ps1`](build-scripts/2-Setup-NMSServer.ps1) | Clone → database → build → configure → run. |
+| [`build-scripts/Update-Server.ps1`](build-scripts/Update-Server.ps1) | Roll a new `main` onto an installed server: pull → build → runtime → migrate → patches → health → export → start. |
 
 Copy the whole `build-scripts/` folder to the server and run from inside it — the scripts
 take all their paths from parameters, so they work from any location.
