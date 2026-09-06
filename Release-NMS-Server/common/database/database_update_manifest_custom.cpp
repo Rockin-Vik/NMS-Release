@@ -942,6 +942,146 @@ WHERE ((IF(db.character_id IS NOT NULL, CAST(db.`value` AS UNSIGNED), IF(cd.`cla
 		.content_schema_update = false,
 	},
 
+	ManifestEntry{
+		.version = 31,
+		.description = "2026_09_06_gm_starter_box_item",
+		.check = "SELECT id FROM items WHERE id = 9011012",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+-- GM Starter Box (#gmpack): a 40-slot NO DROP / NO RENT container cloned from the NMS custom
+-- Satchel of the Hero (9011010: giant bag, weight reduction 100, bag type 5). The clone goes
+-- through a temporary table so it copies every column whatever the live items schema looks like;
+-- an explicit column list would silently fail (and still be stamped) on a schema that has drifted.
+-- 'nodrop = 0' is NO DROP in this schema. Idempotent: INSERT IGNORE on the primary key. If 9011010
+-- is missing on a database, nothing is inserted and #gmpack reports the missing box item.
+DROP TEMPORARY TABLE IF EXISTS nms_gm_starter_box_tmp;
+CREATE TEMPORARY TABLE nms_gm_starter_box_tmp AS SELECT * FROM items WHERE id = 9011010;
+UPDATE nms_gm_starter_box_tmp
+SET id = 9011012, Name = 'GM Starter Box', lore = 'A GM starter box',
+    bagslots = 40, nodrop = 0, norent = 1, weight = 1, size = 3;
+INSERT IGNORE INTO items SELECT * FROM nms_gm_starter_box_tmp;
+DROP TEMPORARY TABLE IF EXISTS nms_gm_starter_box_tmp;
+)",
+		.content_schema_update = true,
+	},
+
+	ManifestEntry{
+		.version = 32,
+		.description = "2026_09_06_gm_starter_pack_table_and_seed",
+		.check = "SHOW TABLES LIKE 'nms_gm_starter_pack'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+-- Contents of the GM Starter Boxes summoned by #gmpack. Every id is Legendary (base + 2,000,000)
+-- and was confirmed against the item database on 2026-09-06. Each item id is seeded once (three
+-- clickies that are also worn pieces live under 'worn'); the command skips lore duplicates.
+-- charges -1 = max charges for the item. count 2 = two copies of a non-lore item (wrists, rings).
+-- The 'box' row names the container; the command never hard-codes the bag id. Idempotent.
+CREATE TABLE IF NOT EXISTS nms_gm_starter_pack (
+  id       INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  bag      ENUM('box','worn','extras','weapons','clickies') NOT NULL,
+  item_id  INT UNSIGNED NOT NULL,
+  charges  SMALLINT NOT NULL DEFAULT -1,
+  count    SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+  sort     SMALLINT NOT NULL DEFAULT 0,
+  note     VARCHAR(64) NOT NULL DEFAULT '',
+  PRIMARY KEY (id),
+  UNIQUE KEY bag_item (bag, item_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT IGNORE INTO nms_gm_starter_pack (bag, item_id, charges, count, sort, note) VALUES
+('box', 9011012, -1, 1, 0, 'GM Starter Box'),
+-- worn: sheet melee set
+('worn', 2021995, -1, 1, 1, 'Armguards of the Brute'),
+('worn', 2015805, -1, 1, 2, 'Shroud of Eternity'),
+('worn', 2035001, -1, 1, 3, 'Intricate Wooden Figurine'),
+('worn', 2047642, -1, 1, 4, 'Raex''s Chestplate of Destruction'),
+('worn', 2016255, -1, 1, 5, 'Signet of Might'),
+('worn', 2007123, -1, 1, 6, 'Silver Hoop of Speed'),
+('worn', 2026983, -1, 1, 7, 'Faceguard of Frenzy'),
+('worn', 2025995, -1, 1, 8, 'Boots of Despair'),
+('worn', 2026990, -1, 1, 9, 'Band of Primordial Energy'),
+('worn', 2026989, -1, 1, 10, 'Prismatic Ring of Resistance'),
+('worn', 2012595, -1, 1, 11, 'Raex''s Gauntlets of Destruction'),
+('worn', 2028647, -1, 1, 12, 'Helm of Flowing Time'),
+('worn', 2028650, -1, 1, 13, 'Greaves of Furious Might'),
+('worn', 2008977, -1, 1, 14, 'Collar of Catastrophe'),
+('worn', 2026987, -1, 1, 15, 'Stone of Flowing Time'),
+('worn', 2028659, -1, 1, 16, 'Pauldrons of Devastation'),
+('worn', 2016156, -1, 1, 17, 'Cord of Temporal Weavings'),
+('worn', 2032100, -1, 2, 18, 'Earthen Bracer of Fortitude'),
+('worn', 2020627, -1, 1, 19, 'Hammer of Holy Vengeance'),
+-- extras: the alt cards
+('extras', 2009629, -1, 1, 1, 'Raex''s Helm of Destruction'),
+('extras', 2011429, -1, 1, 2, 'Raex''s Armplates of Destruction'),
+('extras', 2019440, -1, 1, 3, 'Raex''s Boots of Destruction'),
+('extras', 2012592, -1, 1, 4, 'Great Mask of Flame'),
+('extras', 2047650, -1, 1, 5, 'Ton Po''s Chestwraps'),
+('extras', 2021997, -1, 1, 6, 'Cloak of Wishes'),
+('extras', 2032110, -1, 2, 7, 'Wristband of Icy Vengeance'),
+('extras', 2028652, -1, 1, 8, 'Pants of Furious Might'),
+('extras', 2012627, -1, 1, 9, 'Trydan''s Gauntlets'),
+('extras', 2010654, -1, 2, 10, 'Moss Encrusted Band'),
+('extras', 2026982, -1, 1, 11, 'Visor of the Berserker'),
+('extras', 2009289, -1, 1, 12, 'Necklace of Eternal Visions'),
+('extras', 2026991, -1, 2, 13, 'Band of Prismatic Focus'),
+('extras', 2027990, -1, 1, 14, 'Gauntlets of Disruption'),
+-- weapons
+('weapons', 2005160, -1, 1, 1, 'Fayguard Bladecatcher'),
+('weapons', 2005410, -1, 1, 2, 'Painbringer'),
+('weapons', 2022998, -1, 1, 3, 'Ethereal Destroyer'),
+('weapons', 2026585, -1, 1, 4, 'Acrylia Handled Broadsword'),
+('weapons', 2031241, -1, 1, 5, 'Gharn''s Rock of Smashing'),
+('weapons', 2027298, -1, 1, 6, 'Shield of Strife'),
+('weapons', 2022894, -1, 1, 7, 'Hammer of the Timeweaver'),
+('weapons', 2022883, -1, 1, 8, 'Cudgel of Wrecking'),
+('weapons', 2031243, -1, 1, 9, 'Jaelen''s Katana'),
+('weapons', 2023498, -1, 1, 10, 'Hopebringer'),
+('weapons', 2027818, -1, 1, 11, 'Bow of the Tempest'),
+('weapons', 2014733, -1, 1, 12, 'Shuriken of Eternity'),
+-- clickies
+('clickies', 2015842, -1, 1, 1, 'Cloak of Retribution'),
+('clickies', 2011551, -1, 1, 2, 'Shield of the Immaculate'),
+('clickies', 2020507, -1, 1, 3, 'Blackflame Sphere'),
+('clickies', 2005461, -1, 1, 4, 'Wild Lord''s Tunic'),
+('clickies', 2015119, -1, 1, 5, 'Kizrak''s Chestplate of Battle'),
+('clickies', 2020625, -1, 1, 6, 'Serrated Dart of Energy'),
+('clickies', 2009574, -1, 1, 7, 'Eye of Dreams'),
+('clickies', 2021886, -1, 1, 8, 'Hammer of Hours'),
+('clickies', 2002463, -1, 1, 9, 'Pegasus Feather Cloak'),
+('clickies', 2005452, -1, 1, 10, 'Savage Boots'),
+('clickies', 2031242, -1, 1, 11, 'Abashi''s Rod of Disempowerment'),
+('clickies', 2011608, -1, 1, 12, 'Staff of Forbidden Rites'),
+('clickies', 2054934, -1, 1, 13, 'War Bear Saddle'),
+('clickies', 2004299, -1, 1, 14, 'Blazing Vambraces'),
+('clickies', 2028664, -1, 1, 15, 'Girdle of Intense Durability'),
+('clickies', 2026899, -1, 1, 16, 'Wand of the Vortex'),
+('clickies', 2001531, -1, 1, 17, 'Pauldrons of Ferocity'),
+('clickies', 2007825, -1, 1, 18, 'Breastplate of the Void'),
+('clickies', 2028661, -1, 1, 19, 'Shawl of Eternal Forces'),
+('clickies', 2010908, -1, 1, 20, 'Jagged Blade of War'),
+('clickies', 2011612, -1, 1, 21, 'Blazing Greaves of Fennin Ro'),
+('clickies', 2020898, -1, 1, 22, 'Symbol of the Planemasters'),
+('clickies', 2026774, -1, 1, 23, 'Gloves of the Crimson Sigil'),
+('clickies', 2004573, -1, 1, 24, 'Elder Spiritist''s Vambraces'),
+('clickies', 2004133, -1, 1, 25, 'Incarnadine Breastplate'),
+('clickies', 2028984, -1, 1, 26, 'Ring of Immobilization'),
+('clickies', 2031047, -1, 1, 27, 'Greaves of Forbidden Rites'),
+('clickies', 2050854, -1, 1, 28, 'Visage of the Dark Arachnids');
+
+-- Sword of Truth, Reforged has no stable id across databases; resolve the Legendary row by name.
+-- If nothing matches, the row is simply absent and #gmpack summons the set without it.
+INSERT IGNORE INTO nms_gm_starter_pack (bag, item_id, charges, count, sort, note)
+SELECT 'worn', id, -1, 1, 20, 'Sword of Truth, Reforged'
+FROM items
+WHERE Name LIKE 'Sword of Truth, Reforged%' AND id >= 2000000
+ORDER BY id DESC
+LIMIT 1;
+)",
+		.content_schema_update = true,
+	},
+
 	// Used for testing
 	//	ManifestEntry{
 	//		.version = 9229,

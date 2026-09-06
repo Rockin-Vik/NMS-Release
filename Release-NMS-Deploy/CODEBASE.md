@@ -197,7 +197,7 @@ purchasable with EoM. Opcodes `OP_CharacterSetRequest/Create/Move/Unlock`,
 - **Custom instances** — `Custom:StaticInstanceVersion` (255, no respawns),
   `Custom:FarmingInstanceVersion` (254)
 - **Custom GM commands** in `zone/gm_commands/`: `award`, `castspellnms`, `corpsefix`,
-  `gearup`, `lootsim`, `zoneshard`, `alttoggle`, `illusion_block`, `feature`
+  `gearup`, `gmpack`, `lootsim`, `zoneshard`, `alttoggle`, `illusion_block`, `feature`
 - **Discord webhooks** — `zone->SendDiscordMessage`, used by `#award` and GM audit
 - **Combat/spell rework** — `Custom:SuppressDispels` (replaces `SE_CancelMagic` with a
   "SuppressBuff" SPA 527 + `OP_SuppressBuffNameInfo`), heroic stat scaling,
@@ -216,7 +216,7 @@ NMS runs a **second migration manifest in parallel with stock EQEmu's**:
 | Manifest | File | Version column | Current |
 | --- | --- | --- | --- |
 | Stock | `database_update_manifest.cpp` | `db_version.version` | 9325 |
-| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **25** |
+| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **31** |
 | Bots | `database_update_manifest_bots.cpp` | `db_version.bots_database_version` | |
 
 Both are `#include`d directly into `common/database/database_update.cpp` (lines 9–11) and run
@@ -237,8 +237,8 @@ ALTER TABLE db_version ADD COLUMN custom_version INT UNSIGNED NOT NULL DEFAULT 0
 
 ### 4.2 What is actually in the custom manifest
 
-25 entries declared, **22 live**. Numbering is a plain 1..25 sequence, independent of the 9325
-stock number. Entries carry `content_schema_update` to target the content DB rather than the
+28 entries declared (v1–v26 and v30–v31; 27–29 are held by branches still in review), **25 live**.
+Numbering is a plain sequence independent of the 9325 stock number. Entries carry `content_schema_update` to target the content DB rather than the
 player DB.
 
 | Range | Contents | Status |
@@ -247,6 +247,9 @@ player DB.
 | v2–v14 | Schema: waypoint tables, `zone.npc_update_range`, `global_buffs`, `account_kill_counts`, `character_pet_name.class_id`, `account_alt_currency`, `familiar_names`, `character_aa_disabled`, `character_pet_command_states`, `character_dynamic_aa_timers` | Live |
 | **v15–v17** | The three `account_character_set*` tables | **Commented out** — lines 273–334 |
 | v18–v25 | Content payloads: Beastlord spell merchant + 38 scrolls, faction fixes, Bazaar spawns, AA339 whitelist | Live |
+| v26 | Waypoint categories aligned with the client DLL tabs; expansion hub rune circles | Live |
+| v27–v29 | Held by branches still in review; whichever lands last renumbers above the highest merged version | In flight |
+| v30–v31 | GM Starter Box item `9011012` and the `nms_gm_starter_pack` seed behind `#gmpack` | Live |
 
 ### 4.3 ⚠️ The version number is a claim, not a fact
 

@@ -371,6 +371,7 @@ set(gm_command_sources
     gm_commands/gearup.cpp
     gm_commands/giveitem.cpp
     gm_commands/givemoney.cpp
+    gm_commands/gmpack.cpp
     gm_commands/gmzone.cpp
     gm_commands/goto.cpp
     gm_commands/grantaa.cpp
