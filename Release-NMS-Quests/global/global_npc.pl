@@ -33,6 +33,23 @@ sub EVENT_SAY {
             my $greeting = $class_greetings{$player_class_id} // "Greetings, traveler. Are you seeking guidance or knowledge?";
             if (!($classes & plugin::GetClassBitmask($player_class_id)) && plugin::GetClassesCount($client) < plugin::MaxMulticlasses() && plugin::CanAddClass($client, $player_class_id) == 0) {
                 plugin::NPCTell("$greeting A new class begins at level 1 and your effective level becomes the lowest of your classes until it catches up.");
+                my %class_map = plugin::GetClassMap();
+                my (@class_levels, $catchup_class_name, $catchup_class_level);
+                foreach my $class_id (sort { $a <=> $b } keys %class_map) {
+                    if ($classes & plugin::GetClassBitmask($class_id)) {
+                        my $class_level = plugin::GetClassLevel($client, $class_id);
+                        push @class_levels, "$class_map{$class_id} $class_level";
+                        if (!defined($catchup_class_level) || $class_level < $catchup_class_level) {
+                            $catchup_class_name = $class_map{$class_id};
+                            $catchup_class_level = $class_level;
+                        }
+                    }
+                }
+                my $class_summary = "Your classes: " . join(", ", @class_levels) . ".";
+                if (plugin::IsCatchingUp($client)) {
+                    $class_summary .= " You fight as level $catchup_class_level until $catchup_class_name reaches " . plugin::GetRewardLevel($client) . ".";
+                }
+                plugin::NPCTell($class_summary);
             }
         }        
 
