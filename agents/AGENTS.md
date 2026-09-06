@@ -23,12 +23,10 @@ Everything agent- or tooling-related lives here; nothing else at the repo root i
 | Path | What it is |
 | --- | --- |
 | `agents/AGENTS.md` | This file. Root `CLAUDE.md` is a one-line `@agents/AGENTS.md` import — edit here, not there. |
-| `agents/skills/` | Project skills (`diagnose`, `verify-this`). Source of truth. |
-| `agents/hooks/` | Git commit/push guards (secret scan + PII scan) and the shared `secrets-lib.mjs`. |
-| `agents/setup.mjs` | Run once after cloning: sets `core.hooksPath`, links `.claude/skills` → `agents/skills`. |
+| `agents/skills/` | Project skills (`diagnose`, `verify-this`). Source of truth; `.claude/` is local and gitignored. |
 
-Local-only, gitignored, never committed: `.claude/` (generated link) and `.mcp.json` (machine-specific
-MCP config, if any).
+No git hooks, no setup scripts, no editor config: the maintainer uses Claude only, and nothing in
+this folder needs Node or any other runtime. The rules below are followed by hand and by the agent.
 
 ## Operating model
 
@@ -51,10 +49,8 @@ assets, a live DB), say so and why.
 - `credentials.txt`, `Release-NMS-Server/eqemu_config.json` and `Release-NMS-Server/login.json`
   (the ones the deploy script writes with real passwords) are **never** committed. The tracked
   templates under `.devcontainer/base/` and `loginserver/login_util/` are fine.
-- Guards: `agents/hooks/pre-commit` (secret scan, wired via `core.hooksPath`) applies to every commit,
-  including ones an agent makes.
 - **Never** paste DB passwords or connection strings into chat or tracked files.
-- **Never** use `git commit --no-verify` or `git push --no-verify` — they skip the secret and PII scans.
+- Before every commit, check `git diff --cached` for credentials, connection strings, and tokens.
 
 ## Push hygiene — no identifiable information leaves this machine
 
@@ -64,23 +60,15 @@ addresses, user-profile paths (`C:\Users\<name>`, `/home/<name>`), machine names
 the maintainers' other private projects or clients. Attribute tooling generically ("the sibling
 repo", "a local install", "the reviewer") and use `users.noreply.github.com` addresses.
 
-- Enforced by `agents/hooks/`: the pre-commit scan checks staged content, `commit-msg` checks the
-  message, `pre-push` checks every commit message and changed file in the push range. Generic
-  patterns are in the hooks; the personal terms live **only** in the developer's global git config
-  (`git config --global --add pii.term <term>`) and must never be written into a tracked file.
-- Before `gh pr create` / `gh pr edit` / `gh issue comment`, run the body through
-  `node agents/hooks/pii-scan.mjs --file <body.md>` (or `--text "..."`) and fix any hit. PR bodies do
-  not pass through git hooks, so this step is on the agent.
+- Not enforced by tooling: before every commit, PR body, or issue comment, the agent reads what it
+  is about to publish (added lines, the message, the title) for names, emails, and profile paths.
 - Commit identity: the author name may be a GitHub handle, but the email must be that account's
-  `users.noreply.github.com` address, never a personal one. The pre-commit hook rejects any author
-  or committer whose email is not a noreply address or whose name/email matches a local
-  `pii.term`; `node agents/hooks/pii-scan.mjs --ident` checks it on demand.
+  `users.noreply.github.com` address, never a personal one (`git config user.email`).
 - Merges made in the GitHub web UI are authored with the account's public email unless the GitHub
   setting **Keep my email addresses private** (and **Block command line pushes that expose my
   email**) is on. Turn both on at github.com/settings/emails before merging a PR through the
   browser; a merge commit that exposed a personal email is only removable by rewriting history.
-- After cloning on a new machine: `node agents/setup.mjs`, re-add the `pii.term` entries, and make
-  sure `git config user.email` is your GitHub noreply address, or the guards are not active.
+- After cloning on a new machine: set `git config user.email` to your GitHub noreply address.
 
 ## Lessons (self-maintained)
 
@@ -93,16 +81,15 @@ newest at the bottom.
   broad ignore rule actually excludes (`git check-ignore -v`) before trusting a "vendored" folder.
 - A commit message and a PR body on this public repo named a private sibling project, and the agent
   instructions carried a first name and a private toolkit path — nobody was checking prose, only
-  secrets. Push hygiene is now a hook plus a pre-PR scan; run the scan on anything that bypasses git hooks.
+  secrets. Read every commit message and PR body for names and private project references before publishing.
 - A delegated worker committed a `__pycache__/*.pyc` because it ran the generator before staging the
   folder. Review `git diff --cached --stat` for build artifacts before every commit, not just secrets.
 - I changed the welcome popup's "maximum available expansion is Kunark" line while opening later
   expansions; the repo owner pointed out it describes a NEW account's default reach, not the server
   max. Player-facing copy encodes intent that is not in the code: leave it alone unless the change
   request names it, and ask the owner when a string looks stale.
-- The PII pre-commit scan read whole staged files, so the first edit to a stock upstream header
-  carrying an old contact address was refused outright. Guards must judge what a change adds, not
-  what a file already held; the hooks now scan added lines only.
+- A PII scan that read whole staged files refused the first edit to a stock upstream header carrying
+  an old contact address. Judge what a change adds, not what a file already held.
 - I proposed a Perl design with 60 s polling and per-spawn rule lookups for Fabled spawns because
   "plugins first" is the convention — the maintainer wants performance-first architecture. For
   anything on a per-entity path, design push-based C++ state (world pushes, zone caches, O(1) hook)
@@ -111,6 +98,10 @@ newest at the bottom.
   `.mcp.json`, plus config for an editor the maintainer does not use) and the clutter was noise.
   Everything agent-related lives in `agents/`; hidden dirs are local, generated, and gitignored.
   The maintainer does not use Cursor — do not add Cursor config, rules, or references.
+- I moved the git hooks into `agents/` and a setup script switched them on; the maintainer's first
+  push then failed on `node: not found` — he never asked for hooks, only for the clutter to go, and
+  Node is not on his machine. No hooks, no setup scripts, no runtime dependencies for tooling: the
+  repo must commit and push with plain git. Ask before adding anything that runs automatically.
 
 ## Project skills
 

@@ -425,7 +425,7 @@ been compiled yet (no toolchain in the authoring sandbox).
 | 11 | Build on the Windows/MSVC toolchain named in the README; fix whatever the compiler finds | — | **Open (maintainer)** |
 | 12 | Boot world + a zone: v27/v28 apply once, `nms_content_health_check.sql` clean; apply `fabled_roster_seed.sql`; re-run health check (expects 472) | — | **Open** |
 | 13 | Acceptance test below | — | **Open** |
-| 14 | Commit from the Windows checkout (the tree is CRLF; hooks in `agents/hooks/` scan for secrets/PII) | — | **Open** |
+| 14 | Commit from the Windows checkout (the tree is CRLF) | — | **Done** |
 
 Known follow-ups, deliberately not done here: the GetCleanName audit also flagged
 `pojustice/#Event_Execution_Control.pl` (compares trial-mob names indirectly) — only matters if
