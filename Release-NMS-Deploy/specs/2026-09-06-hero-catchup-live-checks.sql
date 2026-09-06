@@ -78,3 +78,11 @@ WHERE rule_name = 'Character:UseOldClassExpPenalties';
 -- 6. Confirm the character receives its group experience share.
 -- 7. Remove the new class and confirm the effective level does not change.
 -- 8. Confirm an Ayonae reroll joins replacement classes at the watermark.
+
+-- ---------------------------------------------------------------------------------------------
+-- D. Mastery of the Past ranks 7-9 (custom v34). Before: 7059-7061 at level_req 80, expansion -1.
+--    After migrate + #reload aa_data: level_req 67 / 69 / 70, expansion 8; effects 265 -> 67 / 69 / 71.
+-- ---------------------------------------------------------------------------------------------
+SELECT r.id, r.cost, r.level_req, r.expansion, e.base1 AS no_fizzle_below_level
+FROM aa_ranks r LEFT JOIN aa_rank_effects e ON e.rank_id = r.id AND e.effect_id = 265
+WHERE r.id IN (7058, 7059, 7060, 7061, 7066) ORDER BY r.id;

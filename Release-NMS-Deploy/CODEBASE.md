@@ -221,7 +221,7 @@ NMS runs a **second migration manifest in parallel with stock EQEmu's**:
 | Manifest | File | Version column | Current |
 | --- | --- | --- | --- |
 | Stock | `database_update_manifest.cpp` | `db_version.version` | 9325 |
-| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **33** |
+| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **34** |
 | Bots | `database_update_manifest_bots.cpp` | `db_version.bots_database_version` | |
 
 Both are `#include`d directly into `common/database/database_update.cpp` (lines 9–11) and run
@@ -242,7 +242,7 @@ ALTER TABLE db_version ADD COLUMN custom_version INT UNSIGNED NOT NULL DEFAULT 0
 
 ### 4.2 What is actually in the custom manifest
 
-33 entries declared (v1–v33), **30 live**. Numbering is a plain sequence independent of the 9325
+34 entries declared (v1–v34), **31 live**. Numbering is a plain sequence independent of the 9325
 stock number. Entries carry `content_schema_update` to target the content DB rather than the
 player DB.
 
@@ -257,6 +257,7 @@ player DB.
 | v29–v30 | `character_class_exp` table and backfill for per-class experience (`#hero`) | Live |
 | v31–v32 | GM Starter Box item `9011012` and the `nms_gm_starter_pack` seed behind `#gmpack` | Live |
 | v33 | Shared-bucket loot schema: `nms_loot_buckets`, `nms_loot_bucket_npcs`, `nms_loot_bucket_items` (gated by `Custom:RandomLootBuckets`) | Live |
+| v34 | Mastery of the Past ranks 7–9 opened at levels 67 / 69 / 70 (`aa_ranks` 7059–7061; they shipped at level 80, expansion -1) | Live |
 
 ### 4.3 ⚠️ The version number is a claim, not a fact
 
