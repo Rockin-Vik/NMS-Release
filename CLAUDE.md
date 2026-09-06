@@ -107,3 +107,4 @@ Goal: never dump noisy output or whole files into context.
 - **>3 source files** seem needed? Summarize + justify before expanding scope.
 - **Thinking budget:** low for routine edits and mechanical refactors; escalate for anything touching
   the migration manifest, `rule_values`, opcodes / the client contract, or DB imports.
+- The PII pre-commit scan read whole staged files, so the first edit to a stock upstream header carrying an old contact address was refused outright. Guards must judge what a change adds, not what a file already held; the hooks now scan added lines only.
