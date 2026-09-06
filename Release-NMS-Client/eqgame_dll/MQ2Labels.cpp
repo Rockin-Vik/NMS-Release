@@ -318,8 +318,24 @@ typedef enum eStatEntry
 	eStatCapCR,
 	eStatCapDR,
 	eStatCapPR,
-	eStatDummyValue,
-	eStatMax
+	eStatClassLevel1 = 131,
+	eStatClassLevel2 = 132,
+	eStatClassLevel3 = 133,
+	eStatClassLevel4 = 134,
+	eStatClassLevel5 = 135,
+	eStatClassLevel6 = 136,
+	eStatClassLevel7 = 137,
+	eStatClassLevel8 = 138,
+	eStatClassLevel9 = 139,
+	eStatClassLevel10 = 140,
+	eStatClassLevel11 = 141,
+	eStatClassLevel12 = 142,
+	eStatClassLevel13 = 143,
+	eStatClassLevel14 = 144,
+	eStatClassLevel15 = 145,
+	eStatClassLevel16 = 146,
+	eStatDummyValue = 147,
+	eStatMax = 148
 };
 
 typedef enum EQLabelTypes {
@@ -889,7 +905,7 @@ typedef enum EQLabelTypes {
 		if (!pLocalPlayer || !pLocalPlayer->Data.pSpawn)
 			return "None";
 
-		uint8_t level = pLocalPlayer->Data.pSpawn->Level;
+		uint8_t default_level = pLocalPlayer->Data.pSpawn->Level;
 		std::string result;
 
 		for (int class_id = 1; class_id <= 16; ++class_id)
@@ -899,6 +915,11 @@ typedef enum EQLabelTypes {
 			{
 				if (!result.empty())
 					result += "\n";
+
+				uint8_t level = default_level;
+				auto level_itr = statEntries.find(static_cast<eStatEntry>(eStatClassLevel1 + class_id - 1));
+				if (level_itr != statEntries.end() && level_itr->second != 0)
+					level = static_cast<uint8_t>(level_itr->second);
 
 				// ONLY the title here
 				result += GetClassTitle(class_id, level);
