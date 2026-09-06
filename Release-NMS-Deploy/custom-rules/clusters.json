@@ -6,6 +6,9 @@
       "rules": [
         "ServerAuthStats",
         "MulticlassingEnabled",
+        "MaxMulticlasses",
+        "HeroCatchupEnabled",
+        "NewClassStartLevel",
         "UseDynamicAATimers",
         "BypassMulticlassStackConflict",
         "ServerAuthKey"

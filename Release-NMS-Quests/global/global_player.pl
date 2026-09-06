@@ -182,11 +182,12 @@ sub EVENT_LEVEL_UP {
     my $new_level = $client->GetLevel();
     my $char_max_level = $client->GetBucket("CharMaxLevel");
     
-    if ($new_level == $char_max_level) {
+    if ($new_level == $char_max_level && !$client->GetBucket("MaxLevelAnnounced")) {
         my $name = $client->GetCleanName();
         my $full_class_name = plugin::GetPrettyClassString($client);
 
         plugin::WorldAnnounce("$name ($full_class_name) has reached Level $new_level.");
+        $client->SetBucket("MaxLevelAnnounced", 1);
     }
 }
 

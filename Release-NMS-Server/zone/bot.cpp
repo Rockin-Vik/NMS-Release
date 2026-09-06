@@ -3961,9 +3961,10 @@ void Bot::LevelBotWithClient(Client* c, uint8 new_level, bool send_appearance) {
 
 	if (c) {
 		const auto &l = entity_list.GetBotsByBotOwnerCharacterID(c->CharacterID());
+		const auto owner_level = c->GetRewardLevel();
 
 		for (const auto &e : l) {
-			if (e && (e->GetLevel() != c->GetLevel())) {
+			if (e && (e->GetLevel() != owner_level)) {
 				int levels_change = (new_level - e->GetLevel());
 
 				if (levels_change < 0) {
@@ -7304,8 +7305,11 @@ void Bot::CalcBotStats(bool showtext) {
 		GetBotOwner()->Message(Chat::Yellow, "Unless you are experiencing heavy lag, you should delete and remake this bot.");
 	}*/
 
-	if (GetBotOwner()->GetLevel() != GetLevel())
-		SetLevel(GetBotOwner()->GetLevel());
+	// The owner's reward level (highest class) so a catching-up owner does not drag the bot to 1.
+	auto *owner = GetBotOwner();
+	const uint8 owner_level = (owner && owner->IsClient()) ? owner->CastToClient()->GetRewardLevel() : (owner ? owner->GetLevel() : GetLevel());
+	if (owner_level != GetLevel())
+		SetLevel(owner_level);
 
 	for (int sindex = 0; sindex <= EQ::skills::HIGHEST_SKILL; ++sindex) {
 		skills[sindex] = SkillCaps::Instance()->GetSkillCap(GetClass(), (EQ::skills::SkillType)sindex, GetLevel()).cap;

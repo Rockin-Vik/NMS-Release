@@ -1116,6 +1116,23 @@ uint32 Raid::GetHighestLevel()
 	return highlvl;
 }
 
+uint8 Raid::GetHighestRewardLevel()
+{
+	uint8 highlvl = 1;
+	for (const auto& m : members) {
+		if (strlen(m.member_name)) {
+			const uint8 member_level = m.member && !m.is_bot ?
+				m.member->GetRewardLevel() :
+				m.level;
+			if (member_level > highlvl) {
+				highlvl = member_level;
+			}
+		}
+	}
+
+	return highlvl;
+}
+
 uint32 Raid::GetLowestLevel()
 {
 	uint32 lowlvl = 1000;

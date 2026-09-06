@@ -16,6 +16,7 @@
 	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 */
 #include "../common/global_define.h"
+#include <algorithm>
 #include <iostream>
 #include <string.h>
 #include <stdlib.h> 
@@ -43,6 +44,7 @@ extern volatile bool RunLoops;
 #include "../common/profanity_manager.h"
 #include "../common/data_bucket.h"
 #include "../common/data_bucket.h"
+#include "../common/race_class.h"
 #include "dynamic_zone.h"
 #include "expedition_request.h"
 #include "position.h"
@@ -83,6 +85,7 @@ extern volatile bool RunLoops;
 #include "../common/repositories/character_pet_name_repository.h"
 #include "../common/repositories/account_alt_currency_repository.h"
 #include "../common/repositories/account_character_set_limits_repository.h"
+#include "../common/repositories/character_class_exp_repository.h"
 #include "../common/events/player_events.h"
 #include "../common/events/player_event_logs.h"
 #include "dialogue_window.h"
@@ -1170,6 +1173,10 @@ bool Client::Save(uint8 iCommitNow) {
 		else {
 			SetNextInvSnapshot(RuleI(Character, InvSnapshotMinRetryM));
 		}
+	}
+
+	if (m_class_exp_dirty && !m_class_exp_save_deferred) {
+		SaveClassExp(); /* Save the class rows alongside the pool they cache */
 	}
 
 	database.SaveCharacterData(this, &m_pp, &m_epp); /* Save Character Data */
@@ -6836,7 +6843,7 @@ bool Client::IsLeadershipEXPOn() {
 
 }
 
-uint32 Client::GetAggroCount() {
+uint32 Client::GetAggroCount() const {
 	return AggroCount;
 }
 
@@ -14517,38 +14524,167 @@ uint32 Client::GetClassesBits() const
 	}
 }
 
-bool Client::AddExtraClass(int class_id) {
-	if (RuleB(Custom, MulticlassingEnabled) && class_id >= Class::Warrior && class_id <= Class::Berserker) {
-		int classes_bits = GetClassesBits();
+AddClassResult Client::CanAddExtraClass(int class_id, bool join_at_watermark) const
+{
+	if (!RuleB(Custom, MulticlassingEnabled)) {
+		return AddClassResult::MulticlassingDisabled;
+	}
 
-		// Manual popcount implementation
-		int value = classes_bits;
-		int class_count = 0;
-		while (value) {
-			class_count += value & 1;
-			value >>= 1;
-		}
+	if (RuleB(Character, UseOldClassExpPenalties)) {
+		LogError("Cannot add a class while Character:UseOldClassExpPenalties is enabled");
+		return AddClassResult::OldClassPenaltyRuleOn;
+	}
 
-		int n_class_bit = GetPlayerClassBit(class_id);
+	if (class_id < Class::Warrior || class_id > Class::Berserker) {
+		return AddClassResult::InvalidClass;
+	}
 
-		if (class_count > 2 || (classes_bits & n_class_bit)) {
-			return false;
-		}
-		else {
-			SetBucket("GestaltClasses", std::to_string(classes_bits | n_class_bit));
-			m_pp.classes = classes_bits | n_class_bit;
-			CalcBonuses();
-			SendAlternateAdvancementTable();
+	const uint32 classes_bits = GetClassesBits();
+	const uint32 class_bit = GetPlayerClassBit(class_id);
 
-			if (IsInAGuild()) {
-				guild_mgr.SendToWorldMemberLevelUpdate(GuildID(), GetLevel(), std::string(GetCleanName()));
-				DoGuildTributeUpdate();
+	if (classes_bits & class_bit) {
+		return AddClassResult::AlreadyHeld;
+	}
+
+	uint32 class_count = 0;
+	for (uint32 value = classes_bits; value; value >>= 1) {
+		class_count += value & 1;
+	}
+
+	const int max_classes = RuleI(Custom, MaxMulticlasses);
+	if (max_classes <= 0 || class_count >= static_cast<uint32>(max_classes)) {
+		return AddClassResult::AtCap;
+	}
+
+	if (!IsClassRaceCombinationAllowed(static_cast<uint8>(class_id), GetBaseRace())) {
+		return AddClassResult::RaceNotAllowed;
+	}
+
+	if (GetAggroCount() > 0 || GetFeigned() || IsDueling()) {
+		return AddClassResult::InCombat;
+	}
+
+	if (
+		!join_at_watermark &&
+		ZoneStore::Instance()->GetZoneMinimumLevel(zone->GetZoneID(), zone->GetInstanceVersion()) >
+			RuleI(Custom, NewClassStartLevel)
+	) {
+		return AddClassResult::ZoneTooHigh;
+	}
+
+	return AddClassResult::Ok;
+}
+
+const char* Client::AddClassResultMessage(AddClassResult result)
+{
+	switch (result) {
+	case AddClassResult::Ok: return "That class can be added.";
+	case AddClassResult::MulticlassingDisabled: return "Multiclassing is disabled.";
+	case AddClassResult::OldClassPenaltyRuleOn: return "Classes cannot be added while old class experience penalties are enabled.";
+	case AddClassResult::InvalidClass: return "That class is invalid.";
+	case AddClassResult::AlreadyHeld: return "You already hold that class.";
+	case AddClassResult::AtCap: return "You have reached the class limit.";
+	case AddClassResult::RaceNotAllowed: return "Your race cannot become that class.";
+	case AddClassResult::InCombat: return "You cannot add a class while fighting, feigning, or dueling.";
+	case AddClassResult::ZoneTooHigh: return "You cannot begin that class in this zone.";
+	case AddClassResult::RowInsertFailed: return "Your class progress could not be saved.";
+	}
+
+	return "That class could not be added.";
+}
+
+// Persist the class row first, then the bit and bucket, so no bit exists without progress.
+// Route a zero-delta SetEXP last so the stock level path adopts the new minimum.
+bool Client::AddExtraClass(int class_id, bool join_at_watermark)
+{
+	const AddClassResult result = CanAddExtraClass(class_id, join_at_watermark);
+	if (result != AddClassResult::Ok) {
+		Message(Chat::Red, "%s", AddClassResultMessage(result));
+		return false;
+	}
+
+	const uint8 class_id_u8 = static_cast<uint8>(class_id);
+	const uint32 classes_bits = GetClassesBits();
+	const uint32 new_classes = classes_bits | GetPlayerClassBit(class_id);
+	const auto existing_row = m_class_exp.find(class_id_u8);
+	const bool inserted_row = existing_row == m_class_exp.end();
+	bool database_row_inserted = false;
+
+	if (inserted_row) {
+		uint64 join_exp = m_pp.exp;
+
+		if (RuleB(Custom, HeroCatchupEnabled) && !join_at_watermark) {
+			const int max_level = std::max(
+				1,
+				static_cast<int>(GetClientMaxLevel() ? GetClientMaxLevel() : RuleI(Character, MaxLevel))
+			);
+			const int start_level = std::clamp(RuleI(Custom, NewClassStartLevel), 1, max_level);
+			join_exp = GetEXPForLevel(start_level);
+		} else {
+			bool found = false;
+			for (const auto &row : m_class_exp) {
+				if (classes_bits & GetPlayerClassBit(row.first)) {
+					join_exp = found ? std::max(join_exp, row.second) : row.second;
+					found = true;
+				}
 			}
 		}
 
-		return true;
+		CharacterClassExpRepository::CharacterClassExp entry{};
+		entry.character_id = CharacterID();
+		entry.class_id = class_id_u8;
+		entry.class_exp = join_exp;
+
+		if (!CharacterClassExpRepository::InsertIgnoreOne(database, entry, &database_row_inserted)) {
+			Message(Chat::Red, "%s", AddClassResultMessage(AddClassResult::RowInsertFailed));
+			return false;
+		}
+
+		if (!database_row_inserted) {
+			const auto rows = CharacterClassExpRepository::GetWhere(
+				database,
+				fmt::format("`character_id` = {} AND `class_id` = {}", CharacterID(), class_id)
+			);
+			if (rows.empty()) {
+				Message(Chat::Red, "%s", AddClassResultMessage(AddClassResult::RowInsertFailed));
+				return false;
+			}
+
+			join_exp = rows.front().class_exp;
+		}
+
+		m_class_exp[class_id_u8] = join_exp;
 	}
-	return false;
+
+	const std::string bucket_value = std::to_string(new_classes);
+	SetBucket("GestaltClasses", bucket_value);
+	if (GetBucket("GestaltClasses") != bucket_value) {
+		if (database_row_inserted) {
+			CharacterClassExpRepository::DeleteWhere(
+				database,
+				fmt::format("`character_id` = {} AND `class_id` = {}", CharacterID(), class_id)
+			);
+			m_class_exp.erase(class_id_u8);
+		}
+
+		Message(Chat::Red, "%s", AddClassResultMessage(AddClassResult::RowInsertFailed));
+		return false;
+	}
+
+	m_pp.classes = new_classes;
+	m_catchup_skill_caps_valid = false;
+	SetEXP(ExpSource::Quest, m_pp.exp, GetAAXP());
+	CalcBonuses();
+	SendAlternateAdvancementTable();
+
+	if (IsInAGuild()) {
+		guild_mgr.SendToWorldMemberLevelUpdate(GuildID(), GetLevel(), std::string(GetCleanName()));
+		DoGuildTributeUpdate();
+	}
+
+	SendBulkStatsUpdate();
+	Save();
+	return true;
 }
 
 bool Client::RemoveExtraClass(int class_id) {
@@ -14564,6 +14700,22 @@ bool Client::RemoveExtraClass(int class_id) {
 
     // Calculate new class bitmask after removal
     auto new_classes = m_pp.classes & ~GetPlayerClassBit(class_id);
+	if (!new_classes) {
+		Message(Chat::Red, "You cannot remove your last class.");
+		return false;
+	}
+
+	uint64 highest_exp = 0;
+	for (const auto &row : m_class_exp) {
+		if (GetClassesBits() & GetPlayerClassBit(row.first)) {
+			highest_exp = std::max(highest_exp, row.second);
+		}
+	}
+
+	if (GetClassExp(static_cast<uint8>(class_id)) < highest_exp) {
+		Message(Chat::Red, "You cannot remove a class while it is behind your other classes.");
+		return false;
+	}
 
     // Lambda to check if a spell is usable by any of the given classes
     auto is_spell_usable_by_classes = [this, new_classes](int spell_id) {
@@ -14579,6 +14731,7 @@ bool Client::RemoveExtraClass(int class_id) {
 
     // Update classes bitmask
     m_pp.classes = new_classes;
+	m_catchup_skill_caps_valid = false;
 
 	// Update bucket and recalculate bonuses
     SetBucket("GestaltClasses", std::to_string(m_pp.classes));
@@ -14648,6 +14801,8 @@ bool Client::RemoveExtraClass(int class_id) {
     SendAlternateAdvancementStats();
 
     // Save changes
+	SetEXP(ExpSource::Quest, m_pp.exp, GetAAXP());
+	SendBulkStatsUpdate();
     SaveAA();
     SaveCurrency();
     Save();
@@ -14659,10 +14814,26 @@ bool Client::RemoveExtraClass(int class_id) {
 uint16 Client::GetSkill(EQ::skills::SkillType skill_id) const
 {
 	if (skill_id <= EQ::skills::HIGHEST_SKILL) {
-		return (itembonuses.skillmod[skill_id] > 0 ? (itembonuses.skillmodmax[skill_id] > 0 ? std::min(
+		const uint16 skill_value = (itembonuses.skillmod[skill_id] > 0 ? (itembonuses.skillmodmax[skill_id] > 0 ? std::min(
 			m_pp.skills[skill_id] + itembonuses.skillmodmax[skill_id],
 			m_pp.skills[skill_id] * (100 + itembonuses.skillmod[skill_id]) / 100
 		) : m_pp.skills[skill_id] * (100 + itembonuses.skillmod[skill_id]) / 100) : m_pp.skills[skill_id]);
+
+		if (!IsCatchingUp()) {
+			return skill_value;
+		}
+
+		const uint8 level = GetLevel();
+		if (!m_catchup_skill_caps_valid || m_catchup_skill_caps_level != level) {
+			for (int skill = EQ::skills::Skill1HBlunt; skill <= EQ::skills::HIGHEST_SKILL; ++skill) {
+				const auto cached_skill = static_cast<EQ::skills::SkillType>(skill);
+				m_catchup_skill_caps[skill] = MaxSkill(cached_skill, GetClass(), level);
+			}
+			m_catchup_skill_caps_level = level;
+			m_catchup_skill_caps_valid = true;
+		}
+
+		return std::min(skill_value, m_catchup_skill_caps[skill_id]);
 	}
 	return 0;
 }

@@ -35,7 +35,7 @@ sub EVENT_SAY {
     if ($text=~/blind fate/i) {
         if (plugin::GetClassesCount($client) == 1) {
             plugin::NPCTell("You will be put upon an irrevocable path, impossible to predict. Are you certain that you wish to do this?");
-            plugin::YellowText("WARNING: If you [".quest::saylink('randomize_me_bitch', 1, 'continue')."], you will be assigned three random classes. This decision cannot be reversed.");
+            plugin::YellowText("WARNING: If you [".quest::saylink('randomize_me_bitch', 1, 'continue')."], you will be assigned ".plugin::MaxMulticlasses()." random classes. This decision cannot be reversed.");
         } else {
             plugin::NPCTell("Mortal. You are unsuitable, your fate has already been tainted by your pathetic free will. Begone.");
         }
@@ -46,6 +46,13 @@ sub EVENT_SAY {
         
         if (plugin::GetClassesCount($client) == 1) {
             my @all_classes = (1..16);
+            my @eligible_classes = grep { plugin::CanAddClass($client, $_) == 0 } @all_classes;
+            my $target_classes = plugin::MaxMulticlasses();
+
+            if (!@eligible_classes || @eligible_classes < $target_classes) {
+                plugin::NPCTell("Fate cannot offer enough classes that your race may follow. Nothing has changed.");
+                return;
+            }
             
             # Store the client's original class
             my $original_class_id = 0;
@@ -60,27 +67,40 @@ sub EVENT_SAY {
             
             # Add two random classes first
             my $classes_added = 0;
+            my $attempts = 0;
             while ($classes_added < 2) {
-                my $random_class = $all_classes[int(rand(@all_classes))];
+                last if ++$attempts > 64;
+                my $random_class = $eligible_classes[int(rand(@eligible_classes))];
                 
                 # Make sure we don't add the original class or a class we already added
                 if (!plugin::HasClass($client, $random_class)) {
-                    plugin::AddClass($random_class, $client);
-                    $classes_added++;
+                    $classes_added++ if plugin::AddClass($random_class, $client, 1);
                 }
+            }
+
+            if ($classes_added < 2) {
+                plugin::NPCTell("Fate cannot complete your new path. Nothing further changed.");
+                return;
             }
             
             # Now remove the original class
-            plugin::RemoveClass($original_class_id, $client);
+            return unless plugin::RemoveClass($original_class_id, $client);
             
             # Add a third random class
-            while (plugin::GetClassesCount($client) < 3) {
-                my $random_class = $all_classes[int(rand(@all_classes))];
+            $attempts = 0;
+            while (plugin::GetClassesCount($client) < plugin::MaxMulticlasses()) {
+                last if ++$attempts > 64;
+                my $random_class = $eligible_classes[int(rand(@eligible_classes))];
                 
                 # Make sure we don't add a class we already have
                 if (!plugin::HasClass($client, $random_class)) {
-                    plugin::AddClass($random_class, $client);
+                    plugin::AddClass($random_class, $client, 1);
                 }
+            }
+
+            if (plugin::GetClassesCount($client) < plugin::MaxMulticlasses()) {
+                plugin::NPCTell("Fate cannot complete your new path. Nothing further changed.");
+                return;
             }
             
             my $full_class_name = plugin::GetPrettyClassString($client);
@@ -278,8 +298,8 @@ sub EVENT_SAY {
         }
 
         if (!$client->HasExpeditionLockout("Class Removal Lockout", "") && plugin::HasClass($client, $class_id)) {
-            if (plugin::SpendEOM($client, $remove_class_cost)) {
-                plugin::RemoveClass($class_id, $client);
+            if (plugin::GetEOM($client) >= $remove_class_cost && plugin::RemoveClass($class_id, $client)) {
+                plugin::SpendEOM($client, $remove_class_cost);
                 $client->AddExpeditionLockout("Class Removal Lockout", "", $remove_class_lockout * 24 * 60 * 60);
             }
         }
@@ -290,8 +310,9 @@ sub EVENT_SAY {
         my $class_id = $1; 
         my $free_class_remove = ($client->GetBucket("free_remove_class_used") || 0);
         if (!$free_class_remove && plugin::HasClass($client, $class_id)) {
-            plugin::RemoveClass($class_id, $client);
-            $client->SetBucket("free_remove_class_used", 1);            
+            if (plugin::RemoveClass($class_id, $client)) {
+                $client->SetBucket("free_remove_class_used", 1);
+            }
         }
     }   
 

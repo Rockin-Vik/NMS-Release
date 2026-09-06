@@ -72,11 +72,14 @@ Lookup index for every `Custom` rule (type, default, related rules, note): [`cus
 
 The single most important design decision in the codebase, and the one most likely to surprise.
 
-A character can hold up to **3 classes**. This is **not** stored as `class2`/`class3` columns.
+A character can hold up to `Custom:MaxMulticlasses` classes (default **4**). This is **not** stored as `class2`/`class3` columns.
 It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `PlayerProfile_Struct`
 (`common/eq_packet_structs.h` ~line 1190), and **persisted as a data bucket** named
 `GestaltClasses` — not a table of its own.
 
+- Per-class experience is persisted in `character_class_exp`. The profile experience pool and
+  displayed level cache the lowest class; `Client::SetEXP` routes delta experience by
+  water-filling the lowest rows until they catch up.
 - Write: `common/database.cpp:532`, `zone/client.cpp:14536` / `:14582`
 - Read: `zone/client_packet.cpp:644` loads it into `m_pp.classes`
 - Accessors: `Client::GetClassesBits()` (`zone/client.cpp:14509`) returns the mask when
@@ -86,8 +89,8 @@ It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `Player
   branches on class, use `HasClass`, never `GetClass()`.** This is the most common way to
   introduce a multiclass bug.
 - Quest API: `AddExtraClass` / `RemoveExtraClass` / `HasClassID` / `GetClassesBitmask` in
-  Perl (`zone/perl_client.cpp:3769-3773`) and Lua (`zone/lua_client.cpp:3947-3951`); the cap is
-  enforced in `Client::AddExtraClass()`. Full table in QUEST-API.md §0.2.
+  Perl (`zone/perl_client.cpp`) and Lua (`zone/lua_client.cpp`); the cap is enforced in
+  `Client::CanAddExtraClass()` / `Client::AddExtraClass()`. Full table in QUEST-API.md §0.2.
 
 **Two ugly-but-load-bearing hacks** you must not "clean up" without understanding them:
 
@@ -100,8 +103,8 @@ It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `Player
 
 Supporting rules: `Custom:ServerAuthStats` (server-authoritative stats, requires the DLL),
 `Custom:UseDynamicAATimers` (+ `character_dynamic_aa_timers` table, deconflicts AA timers that
-collide across classes), `Custom:BypassMulticlassStackConflict`, and the `character_aa_disabled`
-table.
+collide across classes), `Custom:BypassMulticlassStackConflict`, `Custom:MaxMulticlasses`,
+`Custom:HeroCatchupEnabled`, `Custom:NewClassStartLevel`, and the `character_aa_disabled` table.
 
 ### 3.2 Multiple pets
 
@@ -483,6 +486,9 @@ Quick reference. Each links to the section above.
 | 22 | `launcher` table ships empty — without a 'zone' row, zero zones boot, silently | 8 |
 | 23 | `lua_modules` defaults to the server root; `zone.exe` exits 1 without the config key | 8 |
 | 24 | Defender quarantines the compiled binaries after they are copied | 8 |
+| 25 | The exp pool caches the trailing class; only `SetEXP` and `SetLevel(command)` write it | 3.1 |
+| 26 | `level2` is a high-water mark, not the effective multiclass level | 3.1 |
+| 27 | Server-auth stat keys are sent from 1 through `statMax - 1`; key 0 is invalid | 3.1 |
 
 ---
 

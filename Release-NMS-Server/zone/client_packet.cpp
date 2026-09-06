@@ -640,10 +640,6 @@ void Client::ReapplyBuff(uint32 index, bool from_suppress)
 void Client::CompleteConnect()
 {
 
-	if (RuleB(Custom, MulticlassingEnabled)) {
-		m_pp.classes = Strings::ToInt(GetBucket("GestaltClasses"), GetPlayerClassBit(m_pp.class_));
-	}
-
 	// Load Kill Counters
 	auto kdb = AccountKillCountsRepository::GetWhere(database, fmt::format("account_id = {}", account_id));
 	for (auto kinfo : kdb) {
@@ -1564,6 +1560,14 @@ void Client::Handle_Connect_OP_ZoneEntry(const EQApplicationPacket *app)
 		client_max_level = GetCharMaxLevelFromBucket();
 	}
 	SetClientMaxLevel(client_max_level);
+
+	// Needs the data bucket cache above for the class bitmask and the per-character max level
+	// for the exp clamps, and has to run before innates, AA loading, CalcBonuses and the
+	// player profile packet, all of which read m_pp.exp / m_pp.level / level.
+	if (RuleB(Custom, MulticlassingEnabled)) {
+		m_pp.classes = Strings::ToInt(GetBucket("GestaltClasses"), GetPlayerClassBit(m_pp.class_));
+		LoadClassExp();
+	}
 
 	// we know our class now, so we might have to fix our consume timer!
 	if (class_ == Class::Monk)

@@ -151,6 +151,26 @@ export function listStagedPathsZ(cwd) {
   }
 }
 
+/**
+ * The lines a change ADDS to one file, joined with newlines. Only those lines are ours
+ * to police: stock upstream files carry old contact addresses in their headers, and
+ * editing such a file must not be blocked by text that was already there. Paths and
+ * commit messages are still checked in full by the callers. Returns null when git
+ * cannot produce the diff, and "" when the change adds no text (binary or delete).
+ */
+export function addedLinesInDiff(cwd, diffArgs, relPath) {
+  try {
+    const out = git(cwd, ["diff", "-U0", "--no-color", ...diffArgs, "--", relPath]);
+    return out
+      .split("\n")
+      .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+      .map((line) => line.slice(1))
+      .join("\n");
+  } catch {
+    return null;
+  }
+}
+
 export function readStagedContent(cwd, relPath) {
   try {
     return gitBuffer(cwd, ["show", `:${relPath}`]);
@@ -170,13 +190,10 @@ export function auditStagedForPii(cwd = process.cwd()) {
 
     if (isPiiSkippedPath(relPath)) continue;
 
-    const content = readStagedContent(cwd, relPath);
-    if (content === null) continue;
-    if (isBinaryBuffer(content)) continue;
+    const added = addedLinesInDiff(cwd, ["--cached"], relPath);
+    if (added === null || added.length === 0) continue;
 
-    const textHit = findPiiInText(content.toString("utf8"), {
-      filePath: relPath,
-    });
+    const textHit = findPiiInText(added, { filePath: relPath });
     if (textHit) {
       return { file: relPath, kind: textHit.kind, hit: textHit.masked };
     }
@@ -243,10 +260,12 @@ export function auditRefForPii(cwd, ref) {
   if (msgHit) return msgHit;
 
   let paths = [];
+  let hasParent = true;
   try {
     git(cwd, ["rev-parse", "--verify", `${ref}^`]);
     paths = listChangedPathsInRange(cwd, `${ref}^`, ref);
   } catch {
+    hasParent = false;
     try {
       const out = git(cwd, [
         "show",
@@ -268,13 +287,13 @@ export function auditRefForPii(cwd, ref) {
 
     if (isPiiSkippedPath(relPath)) continue;
 
-    const content = readBlobAtRef(cwd, ref, relPath);
-    if (content === null) continue;
-    if (isBinaryBuffer(content)) continue;
+    // A root commit has no parent to diff against; everything in it is added text.
+    const added = hasParent
+      ? addedLinesInDiff(cwd, [`${ref}^`, ref], relPath)
+      : readBlobAtRef(cwd, ref, relPath)?.toString("utf8") ?? null;
+    if (added === null || added.length === 0) continue;
 
-    const textHit = findPiiInText(content.toString("utf8"), {
-      filePath: relPath,
-    });
+    const textHit = findPiiInText(added, { filePath: relPath });
     if (textHit) {
       return { label: relPath, kind: textHit.kind, hit: textHit.masked };
     }
@@ -304,13 +323,10 @@ export function auditRangeForPii(cwd, range) {
 
     if (isPiiSkippedPath(relPath)) continue;
 
-    const content = readBlobAtRef(cwd, head, relPath);
-    if (content === null) continue;
-    if (isBinaryBuffer(content)) continue;
+    const added = addedLinesInDiff(cwd, [base, head], relPath);
+    if (added === null || added.length === 0) continue;
 
-    const textHit = findPiiInText(content.toString("utf8"), {
-      filePath: relPath,
-    });
+    const textHit = findPiiInText(added, { filePath: relPath });
     if (textHit) {
       return { label: relPath, kind: textHit.kind, hit: textHit.masked };
     }

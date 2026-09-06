@@ -61,7 +61,7 @@ Everything in this section is specific to this fork. The rest of the document is
 
 1. **Hand-ins must normalise item ids with `% 1000000`.** Item upgrade tiers are encoded in the id (`base`, `base + 1000000` Enchanted, `base + 2000000` Legendary). A player handing in a Legendary quest item will be rejected by a naive `$itemcount{1001}` check. Use `plugin::GetBaseID` (`NMS_item_utils.pl`) or `id % 1000000`. See `zone/cli/tests/npc_handins_multiquest.cpp`.
 2. **`SummonItem()` rolls an upgrade tier.** Both the Lua and Perl `Client:SummonItem` bindings are rerouted to `Client::SummonApocItem` (`lua_client.cpp:968`, `perl_client.cpp:845`), which — with `Custom:DoItemUpgrades` on — may hand out `+1000000`/`+2000000` versions. For an exact item use `SummonFixedItem()` (both languages) or `quest::summonfixeditem()` (Perl). For giving a player back what they gave you use `ReturnItem()` / `ReturnHandinItems()`.
-3. **Branch on class with `HasClassID()` / `HasClass()`, never `GetClass()`.** A character holds up to three classes as a bitmask. `GetClass()` returns one of them.
+3. **Branch on class with `HasClassID()` / `HasClass()`, never `GetClass()`.** A character holds up to `Custom:MaxMulticlasses` classes as a bitmask. `GetClass()` returns one of them.
 4. **Lua wins over Perl** when both `foo.lua` and `foo.pl` exist for the same NPC/player/zone (`zone/main.cpp:447,452`, LuaParser registered first).
 
 ### 0.2 Custom bindings
@@ -72,14 +72,23 @@ Registration lines are in `zone/lua_client.cpp`, `zone/perl_client.cpp`, `zone/l
 
 | Method | Lua | Perl | Description |
 |---|---|---|---|
-| `HasClassID(class_id)` | ✓ | ✓ | Does the character hold this class (any of up to 3)? |
+| `HasClassID(class_id)` | ✓ | ✓ | Does the character hold this class (any of up to `Custom:MaxMulticlasses`)? |
 | `HasClass("Warrior")` | — | ✓ | Same, by class name |
 | `GetClassesBitmask()` | ✓ | ✓ | The class bitmask (`1 << (class_id - 1)` per class) |
 | `GetClassBitmask()` | ✓ | — | Alias of the above |
-| `AddExtraClass(class_id)` | ✓ | ✓ | Add a class; the 3-class cap is enforced in `Client::AddExtraClass()` |
+| `CanAddExtraClass(class_id)` | ✓ | ✓ | Returns reason code: 0 is allowed; nonzero covers disabled, invalid/already held, cap, race, combat, zone, or row-insert rejection |
+| `AddExtraClass(class_id [, join_at_watermark])` | ✓ | ✓ | Add a class; `join_at_watermark` is a trusted system-script flag that skips hard catch-up |
 | `RemoveExtraClass(class_id)` | ✓ | ✓ | Remove a class |
+| `GetClassLevel(class_id)` | ✓ | ✓ | Level of one stored class row |
+| `GetClassExp(class_id)` | ✓ | ✓ | Experience of one stored class row |
+| `GetRewardLevel()` | ✓ | ✓ | Highest class level used for group, raid, and EoM eligibility |
+| `IsCatchingUp()` | ✓ | ✓ | True while any class row is below the watermark |
 
-Perl helpers in `NMS_multiclass_utils.pl`: `plugin::MultiClassingEnabled()`, `AddClass`, `RemoveClass`, `HasClass`, `GrantClassesAA`, `CommonCharacterUpdate`.
+Perl helpers in `NMS_multiclass_utils.pl`: `plugin::MultiClassingEnabled()`, `MaxMulticlasses()`,
+`GetClassLevel($client, $class_id)`, `GetClassExp($client, $class_id)`,
+`GetRewardLevel($client)`, `IsCatchingUp($client)`, `CanAddClass($client, $class_id)`,
+`AddClass`, `RemoveClass`, `HasClass`, `GrantClassesAA`, `CommonCharacterUpdate`. `CanAddClass`
+returns the server reason code; 0 is allowed.
 
 **Multiple pets (Mob)**
 

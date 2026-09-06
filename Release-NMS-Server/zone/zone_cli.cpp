@@ -33,6 +33,7 @@ void ZoneCLI::CommandHandler(int argc, char **argv)
 	function_map["sidecar:serve-http"]           = &ZoneCLI::SidecarServeHttp;
 	function_map["instances:purge-expired"] = &ZoneCLI::PurgeExpiredInstances;
 	function_map["tests:databuckets"]            = &ZoneCLI::TestDataBuckets;
+	function_map["tests:class-exp-routing"]      = &ZoneCLI::TestClassExpRouting;
 	function_map["tests:npc-handins"]            = &ZoneCLI::TestNpcHandins;
 	function_map["tests:npc-handins-multiquest"] = &ZoneCLI::TestNpcHandinsMultiQuest;
 	function_map["tests:zone-state"]             = &ZoneCLI::TestZoneState;
@@ -46,6 +47,7 @@ void ZoneCLI::CommandHandler(int argc, char **argv)
 
 // tests
 #include "cli/tests/_test_util.cpp"
+#include "cli/tests/class_exp_routing.cpp"
 #include "cli/tests/databuckets.cpp"
 #include "cli/tests/npc_handins.cpp"
 #include "cli/tests/npc_handins_multiquest.cpp"

@@ -100,6 +100,9 @@ newest at the bottom.
   expansions; the repo owner pointed out it describes a NEW account's default reach, not the server
   max. Player-facing copy encodes intent that is not in the code: leave it alone unless the change
   request names it, and ask the owner when a string looks stale.
+- The PII pre-commit scan read whole staged files, so the first edit to a stock upstream header
+  carrying an old contact address was refused outright. Guards must judge what a change adds, not
+  what a file already held; the hooks now scan added lines only.
 - I proposed a Perl design with 60 s polling and per-spawn rule lookups for Fabled spawns because
   "plugins first" is the convention — the maintainer wants performance-first architecture. For
   anything on a per-entity path, design push-based C++ state (world pushes, zone caches, O(1) hook)

@@ -3044,7 +3044,7 @@ bool NPC::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::SkillTy
 		// to be worth something to the roller) and by the same level-range rule as the XP split.
 		if (killer && killer->IsClient()) {
 			auto TryEOMAward = [this](Client* c, int reference_level) {
-				if (!c || !Mob::IsWithinRewardLevelRange(c->GetLevel(), reference_level)) {
+				if (!c || !Mob::IsWithinRewardLevelRange(c->GetRewardLevel(), reference_level)) {
 					return;
 				}
 				const uint32 con_color = c->GetLevelCon(GetLevel());
@@ -3062,7 +3062,7 @@ bool NPC::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::SkillTy
 
 			Client* kc = killer->CastToClient();
 			if (Raid* r = entity_list.GetRaidByClient(kc)) {
-				const int raid_top = (int)r->GetHighestLevel();
+				const int raid_top = (int)r->GetHighestRewardLevel();
 				for (const auto& m : r->members) {
 					if (m.member && m.member->IsClient()) {
 						TryEOMAward(m.member->CastToClient(), raid_top);
@@ -3070,7 +3070,7 @@ bool NPC::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::SkillTy
 				}
 			}
 			else if (Group* g = entity_list.GetGroupByClient(kc)) {
-				const int grp_top = (int)g->GetHighestLevel();
+				const int grp_top = (int)g->GetHighestRewardLevel();
 				for (const auto& mm : g->members) {
 					if (mm && mm->IsClient()) {
 						TryEOMAward(mm->CastToClient(), grp_top);
@@ -3078,7 +3078,7 @@ bool NPC::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::SkillTy
 				}
 			}
 			else {
-				TryEOMAward(kc, kc->GetLevel());
+				TryEOMAward(kc, kc->GetRewardLevel());
 			}
 		}
 
