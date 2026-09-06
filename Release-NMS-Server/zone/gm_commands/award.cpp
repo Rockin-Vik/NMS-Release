@@ -14,10 +14,13 @@ void command_award(Client *c, const Seperator *sep)
 
     std::string character_name = Strings::Escape(sep->arg[1]);
 
-    if (!Strings::IsNumber(sep->arg[2])) {
-        c->Message(Chat::White, "Specify an award amount.");
+    if (!Strings::IsNumber(sep->arg[2]) || Strings::ToInt(sep->arg[2]) <= 0) {
+        c->Message(Chat::White, "Specify a positive award amount.");
         c->Message(Chat::White, "Usage: #award [Character Name] [Amount] [Reason]");
+        return;
     }
+
+    const int award_amount = Strings::ToInt(sep->arg[2]);
 
     const auto& l = CharacterDataRepository::GetWhere(
         database,
@@ -50,17 +53,31 @@ void command_award(Client *c, const Seperator *sep)
         return;
     }
 
+    // The award is parked in the character's "EoM-Award" bucket and consumed by
+    // plugin::UpdateEoMAward (NMS_custom_events.pl) the next time the character
+    // zones or logs in, so this works for offline characters too. Awards issued
+    // before the bucket is consumed must ACCUMULATE, not overwrite each other.
     DataBucketKey k;
     k.character_id = e.id;
     k.key = "EoM-Award";
 
-	DataBucket::GetData(k);
+    const auto existing = DataBucket::GetData(k);
+    int pending = 0;
+    if (!existing.value.empty() && Strings::IsNumber(existing.value)) {
+        pending = Strings::ToInt(existing.value);
+    }
 
-	k.value += sep->arg[2];
-
+    k.value = std::to_string(pending + award_amount);
     DataBucket::SetData(k);
 
-    c->Message(Chat::White, "Awarded %d EoM to %s. Reason: %s", Strings::ToInt(sep->arg[2]), character_name.c_str(), reason.c_str());
+    c->Message(
+        Chat::White,
+        "Awarded %d EoM to %s (pending total %s). Reason: %s",
+        award_amount,
+        character_name.c_str(),
+        k.value.c_str(),
+        reason.c_str()
+    );
     zone->SendDiscordMessage("admin", fmt::to_string(c->GetCleanName()) + " awarded " + sep->arg[2] + " EoM to " + character_name + " Reason: " + reason);
 
 	quest_manager.CrossZoneSignal(CZUpdateType_Expedition, 0, 666, character_name.c_str());

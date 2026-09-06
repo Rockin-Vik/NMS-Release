@@ -6969,7 +6969,10 @@ luabind::scope lua_register_events() {
 			luabind::value("entity_variable_set", static_cast<int>(EVENT_ENTITY_VARIABLE_SET)),
 			luabind::value("entity_variable_update", static_cast<int>(EVENT_ENTITY_VARIABLE_UPDATE)),
 			luabind::value("aa_loss", static_cast<int>(EVENT_AA_LOSS)),
-			luabind::value("read", static_cast<int>(EVENT_READ_ITEM))
+			luabind::value("read", static_cast<int>(EVENT_READ_ITEM)),
+			luabind::value("spell_effect_bot", static_cast<int>(EVENT_SPELL_EFFECT_BOT)),
+			luabind::value("spell_effect_buff_tic_bot", static_cast<int>(EVENT_SPELL_EFFECT_BUFF_TIC_BOT)),
+			luabind::value("item_generate", static_cast<int>(EVENT_ITEM_GENERATE))
 		)];
 }
 

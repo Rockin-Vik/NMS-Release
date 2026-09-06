@@ -189,7 +189,7 @@ Season-wide toggles, GM audit, and command behavior. These are the levers you fl
 | `EnableGlobalLoot` | BOOL | `true` | — | Enable or disable global loot tables dynamically |
 | `PermanentServerBuffsEnabled` | BOOL | `false` | — | Enable or disable permanent server buffs (spells 43002, 43005, 36856, 17779) |
 | `GuideAudit` | BOOL | `true` | — | Enable command auditing for guides/GMs of status 80 or higher. |
-| `EnableFabledMobs` | BOOL | `false` | — | Enable Fabled Season globally (true to enable 100% Fabled spawns, false to disable). |
+| `FabledDefaultChance` | INT | `50` | — | Percent chance used by #fabled on when no chance is given. Read only at command time, never per spawn. |
 
 ## Declared inside the Custom block, but not `Custom:`
 

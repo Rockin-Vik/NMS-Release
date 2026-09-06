@@ -145,7 +145,7 @@
         "EnableGlobalLoot",
         "PermanentServerBuffsEnabled",
         "GuideAudit",
-        "EnableFabledMobs",
+        "FabledDefaultChance",
         "CorpseFixSummonsCorpses",
         "CampTimerMs",
         "FastCampBlockedInCombat",

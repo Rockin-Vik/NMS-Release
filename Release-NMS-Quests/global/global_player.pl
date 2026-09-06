@@ -16,10 +16,6 @@ sub EVENT_SIGNAL {
 }
 
 sub EVENT_ENTERZONE {
-    # NMS: Fabled Season Synchronization. Automatically turns on/off 100% Fabled spawns based on rule.
-    my $fabled_active = quest::get_rule("Custom:EnableFabledMobs") eq "true" ? 2 : 1;
-    quest::spawn_condition($zonesn, $instanceid, 99, $fabled_active);
-
     my $default_size = $client->GetDefaultRaceSize();
     $client->ChangeSize($default_size);
 

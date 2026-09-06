@@ -172,8 +172,9 @@ $script:BinDir      = Join-Path $script:BuildDir  'bin\Release'
 $script:MapsRepo = 'https://github.com/EQEmu/maps.git'
 $script:MapsSubdirs = @('base', 'water', 'nav')
 
-# The ten loose .sql files. Nothing in the codebase applies these - grep confirms zero
-# references. See CODEBASE.md 4.4.
+# The loose .sql files. Nothing in the codebase applies these - grep confirms zero
+# references. See CODEBASE.md 4.4. The Fabled roster seed is the eleventh: it needs the
+# fabled_npcs table that manifest v26 creates, which is why Patches runs after Migrate.
 $script:LoosePatches = @(
     'Release-NMS-Server\baztradeskills.sql',
     'Release-NMS-Server\environmentdoodads.sql',
@@ -184,10 +185,11 @@ $script:LoosePatches = @(
     'Release-NMS-Server\tranquilitydebris.sql',
     'Release-NMS-Quests\akanonfixyetanotherlamp.sql',
     'Release-NMS-Quests\overlordngrub.sql',
-    'Release-NMS-Quests\skyfiredoodads.sql'
+    'Release-NMS-Quests\skyfiredoodads.sql',
+    'Release-NMS-Server\utils\sql\fabled_roster_seed.sql'
 )
 
-# Patches runs AFTER Migrate, deliberately. The ten loose .sql files are UPDATEs against
+# Patches runs AFTER Migrate, deliberately. The loose .sql files are UPDATEs against
 # doors/object/npc_types rows; if a manifest entry rewrites any of those rows, running the
 # patches first means the manifest silently clobbers them and we would report success.
 $script:StageOrder = @('Clone','Database','Build','Runtime','Maps','Config',

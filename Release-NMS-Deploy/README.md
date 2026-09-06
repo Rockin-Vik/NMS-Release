@@ -5,6 +5,7 @@ Build and install automation for the NMS server on a fresh Windows box.
 | File | What it is |
 | --- | --- |
 | [`CODEBASE.md`](CODEBASE.md) | **Read this first.** Working understanding of the codebase — architecture, what is custom vs stock EQEmu, the migration system, and a gotchas index. |
+| [`FABLED-ENCOUNTERS.md`](FABLED-ENCOUNTERS.md) | The Fabled season: why the old `Custom:EnableFabledMobs` toggle was a no-op, the push-based C++ design as implemented (`#fabled`, `fabled_npcs`, `fabled_season`), and what remains to build and test. |
 | [`build-scripts/1-Install-Prerequisites.ps1`](build-scripts/1-Install-Prerequisites.ps1) | Audits the box and installs what is missing. |
 | [`build-scripts/2-Setup-NMSServer.ps1`](build-scripts/2-Setup-NMSServer.ps1) | Clone → database → build → configure → run. |
 
@@ -95,7 +96,7 @@ database driver. Every check is skip-if-present, so re-running is safe.
 | 5 | Maps | Fetches zone pathing/LOS maps. **Not in the repo, in no README.** |
 | 6 | Config | `eqemu_config.json` + `login.json` with real credentials and the public IP. |
 | 7 | Migrate | `shared_memory`, then boots world until both manifests reach target. |
-| 8 | Patches | The 10 loose `.sql` files nothing else applies. Runs *after* Migrate. |
+| 8 | Patches | The 11 loose `.sql` files nothing else applies (incl. the Fabled roster seed). Runs *after* Migrate. |
 | 9 | Login | Loginserver schema + `launcher` seed. In no manifest, not in the dump. |
 | 10 | Health | `nms_content_health_check.sql`, because `custom_version` lies. |
 | 11 | Export | `export_client_files` → the four client files + `eqhost.txt`. |

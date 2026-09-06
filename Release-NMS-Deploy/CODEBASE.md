@@ -276,11 +276,13 @@ content.** The seed data lives in the 540 MB dump. Specifically:
 2. **`account_character_set*` tables have no migration** (v15–17 are commented out), but
    `world/client.cpp` and `worlddb.cpp` query them at character select. They must come from
    the dump or character select errors.
-3. **Ten loose `.sql` files are referenced nowhere in code** and must be applied by hand:
+3. **Eleven loose `.sql` files are referenced nowhere in code** and must be applied by hand:
    - `Release-NMS-Server/`: `baztradeskills.sql`, `environmentdoodads.sql`, `holedoor.sql`,
      `kaesoradoors.sql`, `pojdoors.sql`, `pomdoors.sql`, `tranquilitydebris.sql`
    - `Release-NMS-Quests/`: `akanonfixyetanotherlamp.sql`, `overlordngrub.sql`,
      `skyfiredoodads.sql`
+   - `Release-NMS-Server/utils/sql/`: `fabled_roster_seed.sql` (the Fabled roster; needs manifest v26
+     first, see FABLED-ENCOUNTERS.md §6.8)
 
 ---
 
@@ -464,7 +466,7 @@ Quick reference. Each links to the section above.
 | 7 | `db_version.custom_version` is a claim — audit with the health-check SQL | 4.3 |
 | 8 | Migrations create schema only; content comes from the dump | 4.4 |
 | 9 | Waypoint seed data exists **only** as a comment in `nms_waypoints.h` | 4.4 |
-| 10 | Ten loose `.sql` files must be applied by hand | 4.4 |
+| 10 | Eleven loose `.sql` files must be applied by hand | 4.4 |
 | 11 | v1 creates a junk `new_table` on every fresh DB — harmless | 4.2 |
 | 12 | `CAuth` disconnects clients without the DLL when `ServerAuthStats` is on | 5 |
 | 13 | The four exported client files go in **both** client root and `Resources/` | 5 |

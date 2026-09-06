@@ -28,6 +28,7 @@ SET(zone_sources
     doors.cpp
     dialogue_window.cpp
     dynamic_zone.cpp
+    fabled.cpp
     effects.cpp
     embparser.cpp
     embparser_api.cpp
@@ -145,6 +146,7 @@ SET(zone_headers
     doors.h
     dialogue_window.h
     dynamic_zone.h
+    fabled.h
     embparser.h
     embperl.h
     encounter.h
@@ -354,6 +356,7 @@ set(gm_command_sources
     gm_commands/enablerecipe.cpp
     gm_commands/entityvariable.cpp
     gm_commands/exptoggle.cpp
+    gm_commands/fabled.cpp
     gm_commands/faction.cpp
     gm_commands/evolving_items.cpp
     gm_commands/feature.cpp

@@ -118,6 +118,13 @@ Stock `GetPet()` / `HasPet()` / `SetPet()` still exist and act on the active pet
 
 Not the same thing as the stock grid-waypoint functions on NPC (`GetWaypointX`, `AssignWaypoints`…). Waypoint NPC type is `26999`; seed rows must exist in `nms_waypoints*` (CODEBASE.md §4.4).
 
+**Fabled season (Mob / NPC)** — design in `Release-NMS-Deploy/FABLED-ENCOUNTERS.md` §6
+
+| Method | Lua | Perl | Description |
+|---|---|---|---|
+| `mob:GetOrigName()` | ✓ | ✓ | The spawn-time name (underscored, e.g. `Lord_Nagafen`) before any `TempName()` rename. **Use this, not `GetCleanName()`, for any kill or target check keyed on a named's name** — a Fabled spawn is renamed `The_Fabled_<name>`. `plugin::CleanNpcName($n)` (`NMS_progression_utils.pl`) turns it into the `GetCleanName()` form |
+| `npc:IsFabled()` | ✓ | ✓ | True when this spawn was promoted to a Fabled. Flavour only; nothing on the spawn path should call into scripts. The entity variable `fabled` = `1` is also set |
+
 **Seasonal, instances, global buffs, misc**
 
 | Function | Lua | Perl | Description |

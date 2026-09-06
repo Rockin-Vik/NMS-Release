@@ -857,6 +857,17 @@ sub ValidProgInstance {
     }
 }
 
+# Mirrors the server's CleanMobName(): "_" -> space, then drop everything that is not a letter,
+# a backtick or a space (trailing spawn digits, "#", etc.). Feed it GetOrigName() so a mob that was
+# renamed after spawning (a Fabled promotion) still resolves to its normal name.
+sub CleanNpcName {
+    my $n = shift // '';
+    $n =~ s/_/ /g;
+    $n =~ s/[^A-Za-z` ]//g;
+    $n =~ s/^[#\s]+|[#\s]+$//g;
+    return $n;
+}
+
 sub handle_death {
     my ($npc, $x, $y, $z, $entity_list) = @_;
 
@@ -870,7 +881,8 @@ sub handle_death {
         }
     }
 
-    my $npc_name = lc($npc->GetCleanName());
+    # Original (spawn-time) name, not the live one: a Fabled kill must still flag the normal named.
+    my $npc_name = lc(CleanNpcName($npc->GetOrigName()));
 
     quest::debug("CleanName: $npc_name");
 
