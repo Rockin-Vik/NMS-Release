@@ -1399,7 +1399,11 @@ void Client::PurchaseAlternateAdvancementRank(int rank_id) {
 		return;
 	}
 
-	if(!CanPurchaseAlternateAdvancementRank(rank, true, true)) {
+	std::string reason;
+	if(!CanPurchaseAlternateAdvancementRank(rank, true, true, &reason)) {
+		if (!reason.empty()) {
+			Message(Chat::Red, "%s", reason.c_str());
+		}
 		return;
 	}
 
@@ -1924,7 +1928,7 @@ bool Mob::SetAA(uint32 rank_id, uint32 new_value, uint32 charges)
 }
 
 
-bool Mob::CanUseAlternateAdvancementRank(AA::Rank *rank)
+bool Mob::CanUseAlternateAdvancementRank(AA::Rank *rank, std::string *reason)
 {
 	if (!rank) {
 		return false;
@@ -1944,14 +1948,29 @@ bool Mob::CanUseAlternateAdvancementRank(AA::Rank *rank)
 
 		// Restrict Fury of Magic rank 6+ to only be available to Pure Casters
 		if (rank->base_ability->first_rank_id == aaFuryofMagic && rank->id > 772 && rank->id <= 4751) {
-			return (GetClassesBits() & 15906);
+			if (!(GetClassesBits() & 15906)) {
+				if (reason) {
+					*reason = "That ability is not available to your classes.";
+				}
+				return false;
+			}
+
+			// Pure-caster bits passed: usable. This branch returned early before the reason
+			// strings were added, so the general class mask below must not apply to these ranks.
+			return true;
 		}
 
 		if (!(IsClient() && ((a->classes >> 1) & this->CastToClient()->GetClassesBits()))) {
+			if (reason) {
+				*reason = "That ability is not available to your classes.";
+			}
 			return false;
 		}
 	} else {
 		if (!(a->classes & (1 << GetClass()))) {
+			if (reason) {
+				*reason = "That ability is not available to your classes.";
+			}
 			return false;
 		}
 	}
@@ -1961,6 +1980,9 @@ bool Mob::CanUseAlternateAdvancementRank(AA::Rank *rank)
 		a->category == AACategory::ShroudPassive ||
 		a->category == AACategory::ShroudActive
 	) {
+		if (reason) {
+			*reason = "That ability cannot be trained.";
+		}
 		return false;
 	}
 
@@ -1969,6 +1991,9 @@ bool Mob::CanUseAlternateAdvancementRank(AA::Rank *rank)
 	//we'll exclude any expendable ones
 	if (IsClient() && CastToClient()->ClientVersionBit() & EQ::versions::maskTitaniumAndEarlier) {
 		if (a->charges > 0) {
+			if (reason) {
+				*reason = "Your client cannot use that ability.";
+			}
 			return false;
 		}
 	}
@@ -1977,6 +2002,9 @@ bool Mob::CanUseAlternateAdvancementRank(AA::Rank *rank)
 	const bool use_expansion_aa = RuleB(Expansion, UseCurrentExpansionAAOnly);
 	if (use_expansion_aa && expansion >= 0) {
 		if (rank->expansion > expansion) {
+			if (reason) {
+				*reason = "That ability is not available in the current expansion.";
+			}
 			return false;
 		}
 	}
@@ -1984,14 +2012,23 @@ bool Mob::CanUseAlternateAdvancementRank(AA::Rank *rank)
 
 	if (IsClient()) {
 		if (rank->expansion && !(CastToClient()->GetPP().expansions & (1 << (rank->expansion - 1)))) {
+			if (reason) {
+				*reason = "That ability is not available in the current expansion.";
+			}
 			return false;
 		}
 	} else if (IsBot()) {
 		if (rank->expansion && !(CastToBot()->GetExpansionBitmask() & (1 << (rank->expansion - 1)))) {
+			if (reason) {
+				*reason = "That ability is not available in the current expansion.";
+			}
 			return false;
 		}
 	} else {
 		if (rank->expansion && !(RuleI(World, ExpansionSettings) & (1 << (rank->expansion - 1)))) {
+			if (reason) {
+				*reason = "That ability is not available in the current expansion.";
+			}
 			return false;
 		}
 	}
@@ -2001,20 +2038,32 @@ bool Mob::CanUseAlternateAdvancementRank(AA::Rank *rank)
 	race = race > PLAYER_RACE_COUNT ? Race::Human : race;
 
 	if (!(a->races & (1 << (race - 1)))) {
+		if (reason) {
+			*reason = "You do not meet the requirements for that ability.";
+		}
 		return false;
 	}
 
 	const auto deity = GetDeityBit();
 	if (!(a->deities & deity)) {
+		if (reason) {
+			*reason = "You do not meet the requirements for that ability.";
+		}
 		return false;
 	}
 
 	if (IsClient() && CastToClient()->Admin() < a->status) {
+		if (reason) {
+			*reason = "You do not meet the requirements for that ability.";
+		}
 		return false;
 	}
 
 	if (GetBaseRace() == Race::Drakkin) {
 		if (!(a->drakkin_heritage & (1 << GetDrakkinHeritage()))) {
+			if (reason) {
+				*reason = "You do not meet the requirements for that ability.";
+			}
 			return false;
 		}
 	}
@@ -2022,19 +2071,26 @@ bool Mob::CanUseAlternateAdvancementRank(AA::Rank *rank)
 	return true;
 }
 
-bool Mob::CanPurchaseAlternateAdvancementRank(AA::Rank *rank, bool check_price, bool check_grant)
+bool Mob::CanPurchaseAlternateAdvancementRank(AA::Rank *rank, bool check_price, bool check_grant, std::string *reason)
 {
+	if (!rank) {
+		return false;
+	}
+
 	auto a = rank->base_ability;
 
 	if (!a) {
 		return false;
 	}
 
-	if (!CanUseAlternateAdvancementRank(rank)) {
+	if (!CanUseAlternateAdvancementRank(rank, reason)) {
 		return false;
 	}
 
 	if (IsClient() && CastToClient()->HasAlreadyPurchasedRank(rank)) {
+		if (reason) {
+			*reason = "You already have that rank.";
+		}
 		return false;
 	}
 
@@ -2043,6 +2099,9 @@ bool Mob::CanPurchaseAlternateAdvancementRank(AA::Rank *rank, bool check_price, 
 		check_grant = false; // such a hack lol
 	}
 	if (check_grant && a->grant_only) {
+		if (reason) {
+			*reason = "That ability is granted automatically and cannot be trained.";
+		}
 		return false;
 	}
 
@@ -2051,6 +2110,9 @@ bool Mob::CanPurchaseAlternateAdvancementRank(AA::Rank *rank, bool check_price, 
 	}
 
 	if (rank->level_req > GetLevel()) {
+		if (reason) {
+			*reason = fmt::format("You must be level {} to train {}.", rank->level_req, a->name);
+		}
 		return false;
 	}
 
@@ -2061,12 +2123,18 @@ bool Mob::CanPurchaseAlternateAdvancementRank(AA::Rank *rank, bool check_price, 
 	//grant ignores the req to own the previous rank.
 	if (check_grant && rank->prev) {
 		if (points != rank->prev->current_value) {
+			if (reason) {
+				*reason = "You must train the previous rank first.";
+			}
 			return false;
 		}
 	}
 
 	//check that we aren't already on this rank or one ahead of us
 	if (points >= rank->current_value) {
+		if (reason) {
+			*reason = "You already have that rank.";
+		}
 		return false;
 	}
 
@@ -2074,6 +2142,9 @@ bool Mob::CanPurchaseAlternateAdvancementRank(AA::Rank *rank, bool check_price, 
 	//not quite sure on how this functions client side atm
 	//I intend to look into it later to make sure the behavior is right
 	if (a->charges > 0 && current_charges > 0) {
+		if (reason) {
+			*reason = "You still have charges of that ability.";
+		}
 		return false;
 	}
 
@@ -2084,6 +2155,9 @@ bool Mob::CanPurchaseAlternateAdvancementRank(AA::Rank *rank, bool check_price, 
 		if (prereq_ability) {
 			auto ranks = GetAA(prereq_ability->first_rank_id);
 			if (ranks < prereq.second) {
+				if (reason) {
+					*reason = fmt::format("{} requires {} first.", a->name, prereq_ability->name);
+				}
 				return false;
 			}
 		}
@@ -2092,6 +2166,14 @@ bool Mob::CanPurchaseAlternateAdvancementRank(AA::Rank *rank, bool check_price, 
 	//check price, if client
 	if (check_price && IsClient()) {
 		if (rank->cost > CastToClient()->GetAAPoints()) {
+			if (reason) {
+				*reason = fmt::format(
+					"You need {} ability points to train {}; you have {}.",
+					rank->cost,
+					a->name,
+					CastToClient()->GetAAPoints()
+				);
+			}
 			return false;
 		}
 	}

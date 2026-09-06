@@ -1116,6 +1116,26 @@ CREATE TABLE nms_loot_bucket_items (
 		.content_schema_update = true,
 	},
 
+	ManifestEntry{
+		.version = 34,
+		.description = "2026_09_07_mastery_of_the_past_ranks_7_to_9",
+		.check = "SELECT id FROM aa_ranks WHERE id = 7061 AND level_req <= 70 AND expansion = 8",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+-- Mastery of the Past (aa_ability 251) ranks 7-9 (aa_ranks 7059-7061) carry no-fizzle to spell
+-- levels 67, 69 and 71 (aa_rank_effects 265) but shipped with level_req 80 and expansion -1, so
+-- Ability::GetMaxLevel stopped at rank 6 and a level-70 character fizzled its level 67+ spells
+-- with nothing left to buy. Open them at 67 / 69 / 70 (the server cap is 70, so rank 9 cannot
+-- require 71) under Omens of War like ranks 4-6. Costs stay stock (7 points each). Idempotent.
+-- After migrating on a running server: #reload aa_data, or restart zone processes.
+UPDATE aa_ranks SET level_req = 67, expansion = 8 WHERE id = 7059;
+UPDATE aa_ranks SET level_req = 69, expansion = 8 WHERE id = 7060;
+UPDATE aa_ranks SET level_req = 70, expansion = 8 WHERE id = 7061;
+)",
+		.content_schema_update = true,
+	},
+
 	// Used for testing
 	//	ManifestEntry{
 	//		.version = 9229,
