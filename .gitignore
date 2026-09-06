@@ -42,3 +42,6 @@ credentials.txt
 # Generator bytecode
 __pycache__/
 *.pyc
+
+# Portable Perl that cmake/DependencyHelperMSVC.cmake downloads on first configure (CODEBASE.md gotcha 21)
+Release-NMS-Server/perl/

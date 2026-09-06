@@ -100,6 +100,7 @@ void command_forage(Client* c, const Seperator* sep);
 void command_gearup(Client *c, const Seperator *sep);
 void command_giveitem(Client *c, const Seperator *sep);
 void command_givemoney(Client *c, const Seperator *sep);
+void command_gmpack(Client *c, const Seperator *sep);
 void command_gmzone(Client *c, const Seperator *sep);
 void command_goto(Client *c, const Seperator *sep);
 void command_grantaa(Client* c, const Seperator* sep);

@@ -145,6 +145,7 @@ int command_init(void)
 		command_add("gearup", "Developer tool to quickly equip yourself or your target", AccountStatus::GMMgmt, command_gearup) ||
 		command_add("giveitem", "[itemid] [charges] - Summon an item onto your target's cursor. Charges are optional.", AccountStatus::GMMgmt, command_giveitem) ||
 		command_add("givemoney", "[Platinum] [Gold] [Silver] [Copper] - Gives specified amount of money to you or your player target", AccountStatus::GMMgmt, command_givemoney) ||
+		command_add("gmpack", "[all|worn|extras|weapons|clickies] - Summon GM Starter Boxes of Legendary gear from nms_gm_starter_pack (default: worn, weapons, clickies)", AccountStatus::GMMgmt, command_gmpack) ||
 		command_add("gmzone", "[Zone ID|Zone Short Name] [Version] [Instance Identifier] - Zones to a private GM instance (Version defaults to 0 and Instance Identifier defaults to 'gmzone' if not used)", AccountStatus::GMAdmin, command_gmzone) ||
 		command_add("goto", "[playername] or [x y z] [h] - Teleport to the provided coordinates or to your target", AccountStatus::Steward, command_goto) ||
 		command_add("grantaa", "[level] - Grants a player all available AA points up the specified level, all AAs are granted if no level is specified.", AccountStatus::GMMgmt, command_grantaa) ||
