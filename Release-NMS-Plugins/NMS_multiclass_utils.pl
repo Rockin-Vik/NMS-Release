@@ -277,6 +277,35 @@ sub GetClassBitmask {
     return $bitmask;
 }
 
+sub GetClassLevel {
+    my ($client, $class_id) = @_;
+    return $client->GetClassLevel($class_id);
+}
+
+sub GetClassExp {
+    my ($client, $class_id) = @_;
+    return $client->GetClassExp($class_id);
+}
+
+sub GetRewardLevel {
+    my ($client) = @_;
+    return $client->GetRewardLevel();
+}
+
+sub IsCatchingUp {
+    my ($client) = @_;
+    return $client->IsCatchingUp();
+}
+
+sub CanAddClass {
+    my ($client, $class_id) = @_;
+    return $client->CanAddExtraClass($class_id);
+}
+
+sub MaxMulticlasses {
+    return quest::get_rule("Custom:MaxMulticlasses") || 4;
+}
+
 sub IsMeleeClass {
     my $class_id = shift;
     my @melee_classes = (1, 3, 4, 5, 7, 8, 9, 15, 16);
@@ -309,11 +338,12 @@ sub HasMeleeClass {
 sub AddClass {
     my $class_id = shift;
     my $client = shift || plugin::val('$client');
+    my $join_at_watermark = shift || 0;
 
-    if ($class_id && $class_id > 0 && $class_id < 17 && GetClassesCount($client) < 3) {
-        $client->AddExtraClass($class_id);
+    if ($class_id && $class_id > 0 && $class_id < 17 && GetClassesCount($client) < plugin::MaxMulticlasses()) {
+        return 0 unless $client->AddExtraClass($class_id, $join_at_watermark ? 1 : 0);
+
         quest::ding();
-
         my $name = $client->GetCleanName();
         my $class_name = quest::getclassname($class_id);
         my $full_class_name = GetPrettyClassString();        
@@ -325,12 +355,16 @@ sub AddClass {
             $client->UpdateTaskActivity(3, 2, 1);
         }
 
-        if (GetClassesCount() > 2 && CheckUniqueClass($client->GetClassesBitmask())) {
+        if (GetClassesCount() >= plugin::MaxMulticlasses() && CheckUniqueClass($client->GetClassesBitmask())) {
             my $class_bits          = $client->GetClassesBitmask();
             quest::set_data("class-$class_bits", $class_bits);
             plugin::WorldAnnounce("$name has become the FIRST $full_class_name.");            
         }
+
+        return 1;
     }    
+
+    return 0;
 }
 
 sub RemoveClass {
@@ -344,8 +378,10 @@ sub RemoveClass {
 
         $client->Message(15, "You are NO LONGER a $class_name, and have lost access to all Spells, Disciplines, Skills, and Abilities of that class.");
         $client->BuffFadeAll();
+        return 1;
     } else {
         $client->Message(13, "Remove Class Operation Failed.");
+        return 0;
     }
 }
 
@@ -449,8 +485,8 @@ sub IsValidToAddClass {
     # Check if the client already has this class
     my $has_class_already = ($class_bits & (1 << ($class_id_to_add - 1))) ? 1 : 0;
 
-    # Determine if eligible to add: less than 3 classes and doesn't already have this class
-    return ($classes_count < 3 && !$has_class_already);
+    # Determine if eligible to add: below the configured cap and accepted by the server.
+    return ($classes_count < plugin::MaxMulticlasses() && !$has_class_already && plugin::CanAddClass($client, $class_id_to_add) == 0);
 }
 
 sub HasClass {

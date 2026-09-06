@@ -8,8 +8,8 @@
 >
 > Narrative and gotchas stay in [CODEBASE.md](../CODEBASE.md). This file is the lookup index.
 
-- Custom rules parsed: **106**
-- With an inline note: **106**
+- Custom rules parsed: **109**
+- With an inline note: **109**
 - Unclustered: **0**
 
 Regenerate:
@@ -20,7 +20,7 @@ python Release-NMS-Deploy/custom-rules/generate.py
 
 ## Clusters
 
-- [Multiclass / client contract](#multiclass--client-contract) — 5 rules
+- [Multiclass / client contract](#multiclass--client-contract) — 8 rules
 - [Pets](#pets) — 16 rules
 - [Echo of Memory / character sets](#echo-of-memory--character-sets) — 8 rules
 - [Item tiers / Power Source / mutations](#item-tiers--power-source--mutations) — 9 rules
@@ -37,6 +37,9 @@ Turning one of these off often looks like a C++ or client bug. `MulticlassingEna
 | --- | --- | --- | --- | --- |
 | `ServerAuthStats` | BOOL | `true` | `BypassMulticlassStackConflict` `MulticlassingEnabled` `UseDynamicAATimers` | Enable this rule in order to send explicit client updates. Requires client dll. |
 | `MulticlassingEnabled` | BOOL | `true` | `BypassMulticlassStackConflict` `ServerAuthStats` `UseDynamicAATimers` | Enable this to enable all multiclass-related tweaks. Requires ServerAuthStats and UseDynamicAATimers for full functionality. |
+| `MaxMulticlasses` | INT | `4` | — | Cap on multiclasses; inert unless MulticlassingEnabled and requires Character:UseOldClassExpPenalties false. |
+| `HeroCatchupEnabled` | BOOL | `true` | — | New classes hard-catch-up from the configured start; when false they join at the watermark; inert unless MulticlassingEnabled. |
+| `NewClassStartLevel` | INT | `1` | — | New class start level; ignored when catch-up is off and inert unless MulticlassingEnabled. |
 | `UseDynamicAATimers` | BOOL | `true` | `BypassMulticlassStackConflict` `MulticlassingEnabled` `ServerAuthStats` | Enable using dynamic AA timers. Required to deconflict multiclass AA timers |
 | `BypassMulticlassStackConflict` | BOOL | `true` | `MulticlassingEnabled` `ServerAuthStats` `UseDynamicAATimers` | Allow all of your class spells to stack |
 | `ServerAuthKey` | INT | `352236586` | — | Value used to verify patch serial number |
@@ -197,4 +200,4 @@ These macros sit between `RULE_CATEGORY(Custom)` and `RULE_CATEGORY_END()` but n
 
 | Line | Category | Rule | Type | Default | Notes |
 | --- | --- | --- | --- | --- | --- |
-| 1304 | Spells | `NecroDotCritChance` | INT | `7` | Necromancer inherent dot critical percentage chance |
+| 1307 | Spells | `NecroDotCritChance` | INT | `7` | Necromancer inherent dot critical percentage chance |
