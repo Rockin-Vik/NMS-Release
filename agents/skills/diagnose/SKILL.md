@@ -3,7 +3,7 @@ name: diagnose
 description: Disciplined diagnosis loop for hard bugs and performance regressions in the NMS server / client add-on / quests. Reproduce → minimise → hypothesise → instrument → fix → regression-test. Use when the user says "diagnose this" / "debug this", reports a bug, says something is broken/crashing/failing, or describes a performance regression.
 ---
 
-<!-- Adapted from cursor-team-kit `diagnose` (MIT) for NMS-Release. -->
+<!-- Adapted from the MIT-licensed cursor-team-kit `diagnose` skill for NMS-Release. -->
 
 # Diagnose
 
@@ -69,6 +69,6 @@ Write the regression test **before the fix** if a correct seam exists (one that 
 - [ ] All `[DEBUG-...]` instrumentation removed (`git grep` the prefix)
 - [ ] Throwaway quests / NPCs / SQL deleted
 - [ ] The confirmed hypothesis is stated in the commit message
-- [ ] If the root cause was a rule or migration gap, add a one-liner to the CLAUDE.md **Lessons** section
+- [ ] If the root cause was a rule or migration gap, add a one-liner to the `agents/AGENTS.md` **Lessons** section
 
 Then ask: what would have prevented this bug? Make that recommendation **after** the fix is in.

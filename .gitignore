@@ -36,6 +36,11 @@ credentials.txt
 /Release-NMS-Server/eqemu_config.json
 /Release-NMS-Server/login.json
 
+# Local agent tooling. The tracked source of truth is agents/ (see agents/AGENTS.md);
+# .claude/ is a link that `node agents/setup.mjs` generates, .mcp.json is machine-specific.
+.claude/
+.mcp.json
+
 # Compact-wrapper logs
 .logs/
 

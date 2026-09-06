@@ -10,7 +10,7 @@ import {
 
 function usage() {
   console.error(
-    "usage: node .githooks/pii-scan.mjs --staged | --text <string> | --file <path> | --range <base>..<head>",
+    "usage: node agents/hooks/pii-scan.mjs --staged | --text <string> | --file <path> | --range <base>..<head>",
   );
   process.exit(2);
 }

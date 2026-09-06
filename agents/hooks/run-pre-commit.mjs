@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { auditStagedForPreCommit } from "../.cursor/hooks/secrets-lib.mjs";
+import { auditStagedForPreCommit } from "./secrets-lib.mjs";
 import { auditStagedForPii } from "./pii-lib.mjs";
 
 const cwd = process.cwd();

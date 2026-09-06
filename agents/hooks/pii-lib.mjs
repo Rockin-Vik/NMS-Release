@@ -35,7 +35,6 @@ export const PII_PATTERNS = [
       const lower = match.toLowerCase();
       if (lower.endsWith("@users.noreply.github.com")) return true;
       if (lower === "noreply@anthropic.com") return true;
-      if (lower === "cursoragent@cursor.com") return true;
       if (lower.endsWith("@example.com")) return true;
       return false;
     },
