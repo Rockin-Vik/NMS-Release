@@ -157,6 +157,11 @@ base_id + 2,000,000     → Tier 2 (Legendary)
 - Perl mirror: `NMS_item_utils.pl` — `GetBaseID`, `IsItemTier0/1/2`, all using `id % 1000000`
 - Drop rates: `Custom:Tier1ItemDropRate` (25%), `Custom:Tier2ItemDropRate` (5%), gated by
   `Custom:DoItemUpgrades`
+- Shared-bucket loot (`Custom:RandomLootBuckets`, compiled default **false**): mapped
+  named/raid NPCs skip stock drops whose base id is in the bucket pool, then roll one
+  shared drop through the existing `AddLootDrop` / `DoUpgradeLoot` hook. Seed is
+  `utils/sql/nms_loot_buckets_seed.sql` (not a migration). Empty tables fail closed to
+  stock loot. Do not use `global_loot` for this.
 - **Quest hand-ins must normalize with `id % 1000000`** or a Legendary version of a quest item
   will not be recognized. See `zone/cli/tests/npc_handins_multiquest.cpp`.
 - Separately, `Custom:PowerSourceItemUpgrade` turns the Power Source slot into an item-XP slot:
@@ -213,7 +218,7 @@ NMS runs a **second migration manifest in parallel with stock EQEmu's**:
 | Manifest | File | Version column | Current |
 | --- | --- | --- | --- |
 | Stock | `database_update_manifest.cpp` | `db_version.version` | 9325 |
-| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **25** |
+| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **27** |
 | Bots | `database_update_manifest_bots.cpp` | `db_version.bots_database_version` | |
 
 Both are `#include`d directly into `common/database/database_update.cpp` (lines 9–11) and run
@@ -276,11 +281,12 @@ content.** The seed data lives in the 540 MB dump. Specifically:
 2. **`account_character_set*` tables have no migration** (v15–17 are commented out), but
    `world/client.cpp` and `worlddb.cpp` query them at character select. They must come from
    the dump or character select errors.
-3. **Ten loose `.sql` files are referenced nowhere in code** and must be applied by hand:
+3. **Loose `.sql` files are referenced nowhere in code** and must be applied by hand:
    - `Release-NMS-Server/`: `baztradeskills.sql`, `environmentdoodads.sql`, `holedoor.sql`,
      `kaesoradoors.sql`, `pojdoors.sql`, `pomdoors.sql`, `tranquilitydebris.sql`
    - `Release-NMS-Quests/`: `akanonfixyetanotherlamp.sql`, `overlordngrub.sql`,
      `skyfiredoodads.sql`
+   - Shared-bucket loot seed (after custom v27): `Release-NMS-Server/utils/sql/nms_loot_buckets_seed.sql`
 
 ---
 
@@ -508,7 +514,7 @@ The full sequence, which `build-scripts/2-Setup-NMSServer.ps1` automates:
    `CheckUcsConfigConversion()` rewrites the config in place on load and drops a `.bak`
    copy of your cleartext DB password with inherited ACLs
 8. Run `shared_memory`, then boot `world` to apply migrations
-9. **Apply the 10 loose SQL patches** — *after* migrations, so manifest entries touching
+9. **Apply the loose SQL patches** — *after* migrations, so manifest entries touching
    `doors` / `object` / `npc_types` cannot clobber them
 10. Run the health check and read the output
 11. Run `export_client_files`; ship the four files to players with the client overlay

@@ -817,6 +817,40 @@ ON DUPLICATE KEY UPDATE name = VALUES(name);
 		.content_schema_update = true,
 	},
 
+	ManifestEntry{
+		.version = 27,
+		.description = "2026_09_05_nms_loot_buckets_schema",
+		.check = "SHOW TABLES LIKE 'nms_loot_buckets'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+CREATE TABLE nms_loot_buckets (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    code VARCHAR(64) NOT NULL,
+    kind ENUM('named','raid') NOT NULL,
+    expansion VARCHAR(16) NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_nms_loot_buckets_code (code)
+);
+
+CREATE TABLE nms_loot_bucket_npcs (
+    bucket_id INT UNSIGNED NOT NULL,
+    npc_id INT UNSIGNED NOT NULL,
+    zone_sn VARCHAR(32) NOT NULL DEFAULT '',
+    PRIMARY KEY (bucket_id, npc_id, zone_sn),
+    KEY idx_nms_loot_bucket_npcs_npc (npc_id, zone_sn)
+);
+
+CREATE TABLE nms_loot_bucket_items (
+    bucket_id INT UNSIGNED NOT NULL,
+    item_id INT UNSIGNED NOT NULL,
+    PRIMARY KEY (bucket_id, item_id),
+    KEY idx_nms_loot_bucket_items_item (item_id)
+);
+)",
+		.content_schema_update = true,
+	},
+
 	// Used for testing
 	//	ManifestEntry{
 	//		.version = 9229,

@@ -33,6 +33,7 @@
 
 #include <deque>
 #include <list>
+#include <unordered_set>
 
 
 #ifdef _WINDOWS
@@ -222,7 +223,7 @@ public:
 	);
 	void AddLootTable();
 	void AddLootTable(uint32 loottable_id, bool is_global = false);
-	void AddLootDropTable(uint32 lootdrop_id, uint8 drop_limit, uint8 min_drop);
+	void AddLootDropTable(uint32 lootdrop_id, uint8 drop_limit, uint8 min_drop, const std::unordered_set<uint32> *skip_base_ids = nullptr);
 	void CheckGlobalLootTables();
 	void RemoveItemByPercent(float percent, int min_delete = 1, int max_delete = -1);
 	void RemoveItem(uint32 item_id, uint16 quantity = 0, uint16 slot = 0);

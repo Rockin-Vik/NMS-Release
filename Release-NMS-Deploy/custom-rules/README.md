@@ -8,8 +8,8 @@
 >
 > Narrative and gotchas stay in [CODEBASE.md](../CODEBASE.md). This file is the lookup index.
 
-- Custom rules parsed: **107**
-- With an inline note: **107**
+- Custom rules parsed: **110**
+- With an inline note: **110**
 - Unclustered: **0**
 
 Regenerate:
@@ -23,7 +23,7 @@ python Release-NMS-Deploy/custom-rules/generate.py
 - [Multiclass / client contract](#multiclass--client-contract) — 5 rules
 - [Pets](#pets) — 16 rules
 - [Echo of Memory / character sets](#echo-of-memory--character-sets) — 8 rules
-- [Item tiers / Power Source / mutations](#item-tiers--power-source--mutations) — 9 rules
+- [Item tiers / Power Source / mutations](#item-tiers--power-source--mutations) — 12 rules
 - [Combat / spells](#combat--spells) — 47 rules
 - [Instances](#instances) — 5 rules
 - [Economy / bags](#economy--bags) — 5 rules
@@ -87,6 +87,9 @@ Tier is arithmetic on item id (`+1e6` / `+2e6`). Item-stat mutations apply at sh
 | --- | --- | --- | --- | --- |
 | `UseNMSItemMutations` | BOOL | `true` | — | Rename items according to NMS standards and apply other mutations |
 | `DoItemUpgrades` | BOOL | `true` | `Tier1ItemDropRate` `Tier2ItemDropRate` | Retribution item upgrades |
+| `RandomLootBuckets` | BOOL | `false` | `RandomLootBucketNamedLimit` `RandomLootBucketRaidLimit` | When true, mapped named/raid NPCs share a notable loot pool per bucket (Mischief/Teek style). Stock commons stay on the original table. Off = stock PEQ loot. |
+| `RandomLootBucketNamedLimit` | INT | `1` | `RandomLootBucketRaidLimit` `RandomLootBuckets` | How many shared-pool items a mapped named NPC can roll. Used only when RandomLootBuckets is on. |
+| `RandomLootBucketRaidLimit` | INT | `2` | `RandomLootBucketNamedLimit` `RandomLootBuckets` | How many shared-pool items a mapped raid NPC can roll. Used only when RandomLootBuckets is on. |
 | `Tier2ItemDropRate` | REAL | `5.0` | `DoItemUpgrades` `Tier1ItemDropRate` | Percentage chance that a drop will be upgraded to Tier 2. These percentages are independent of one another, but Tier2 is rolled first. Default value is twice as rare as Tier2. |
 | `Tier1ItemDropRate` | REAL | `25.0` | `DoItemUpgrades` `Tier2ItemDropRate` | Percentage chance that a drop will be upgraded to Tier 1. These percentages are independent of one another, but Tier2 is rolled first. Default value is twice as rare as Unmodified |
 | `PowerSourceItemUpgrade` | BOOL | `true` | `PowerSourceItemTier1RateFloor` `PowerSourceItemTier2RateFloor` `PowerSourceItemUpgradeRateScale` | Enable to add Power Source to all items which can be equipped by some race and class. |
@@ -198,4 +201,4 @@ These macros sit between `RULE_CATEGORY(Custom)` and `RULE_CATEGORY_END()` but n
 
 | Line | Category | Rule | Type | Default | Notes |
 | --- | --- | --- | --- | --- | --- |
-| 1304 | Spells | `NecroDotCritChance` | INT | `7` | Necromancer inherent dot critical percentage chance |
+| 1307 | Spells | `NecroDotCritChance` | INT | `7` | Necromancer inherent dot critical percentage chance |

@@ -1221,6 +1221,9 @@ RULE_INT(Custom,	EoMUnlockCharacterSlotCost,				5,		"EoM Cost to unlock a charac
 
 // Item Upgrades
 RULE_BOOL(Custom, 	DoItemUpgrades, 						true, "Retribution item upgrades")
+RULE_BOOL(Custom,	RandomLootBuckets,						false, "When true, mapped named/raid NPCs share a notable loot pool per bucket (Mischief/Teek style). Stock commons stay on the original table. Off = stock PEQ loot.")
+RULE_INT(Custom,	RandomLootBucketNamedLimit,				1, "How many shared-pool items a mapped named NPC can roll. Used only when RandomLootBuckets is on.")
+RULE_INT(Custom,	RandomLootBucketRaidLimit,				2, "How many shared-pool items a mapped raid NPC can roll. Used only when RandomLootBuckets is on.")
 RULE_REAL(Custom, 	Tier2ItemDropRate, 						5.0, "Percentage chance that a drop will be upgraded to Tier 2. These percentages are independent of one another, but Tier2 is rolled first. Default value is twice as rare as Tier2.")
 RULE_REAL(Custom, 	Tier1ItemDropRate, 						25.0, "Percentage chance that a drop will be upgraded to Tier 1. These percentages are independent of one another, but Tier2 is rolled first. Default value is twice as rare as Unmodified")
 RULE_BOOL(Custom, 	PowerSourceItemUpgrade, 		 		true, "Enable to add Power Source to all items which can be equipped by some race and class.")

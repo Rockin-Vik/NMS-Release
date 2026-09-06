@@ -54,6 +54,7 @@
 #include "npc_scale_manager.h"
 #include "../common/data_verification.h"
 #include "zone_reload.h"
+#include "nms_loot_buckets.h"
 #include "../common/repositories/criteria/content_filter_criteria.h"
 #include "../common/repositories/character_exp_modifiers_repository.h"
 #include "../common/repositories/merchantlist_repository.h"
@@ -1191,6 +1192,7 @@ bool Zone::Init(bool is_static) {
 	DynamicZone::CacheAllFromDatabase();
 
 	content_db.LoadGlobalLoot();
+	NmsLoadLootBuckets();
 
 	npc_scale_manager->LoadScaleData();
 
@@ -1265,6 +1267,7 @@ bool Zone::Init(bool is_static) {
 
 void Zone::ReloadStaticData() {
 	LogInfo("Reloading Zone Static Data");
+	NmsLoadLootBuckets();
 	entity_list.RemoveAllObjects(); //Ground spawns are also objects we clear list then fill it
 	entity_list.RemoveAllDoors(); //Some objects are also doors so clear list before filling
 

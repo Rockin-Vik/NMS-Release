@@ -11,6 +11,11 @@
 #include "../common/repositories/criteria/content_filter_criteria.h"
 #include "../common/repositories/global_loot_repository.h"
 #include "quest_parser_collection.h"
+#include "nms_loot_buckets.h"
+#include "zone.h"
+
+#include <unordered_set>
+#include <vector>
 
 #ifdef _WINDOWS
 #define snprintf	_snprintf
@@ -101,6 +106,27 @@ void NPC::AddLootTable(uint32 loottable_id, bool is_global)
 		m_loot_copper = cash;
 	}
 
+	const NmsLootBucketInfo *bucket = nullptr;
+	const std::unordered_set<uint32> *skip_base_ids = nullptr;
+	std::unordered_set<uint32> skip_pool;
+	if (!is_global && RuleB(Custom, RandomLootBuckets) && !IsPet() && MerchantType == 0) {
+		if (!NmsLootBucketsReady()) {
+			static bool logged_empty = false;
+			if (!logged_empty) {
+				LogError(
+					"Custom:RandomLootBuckets is on but nms_loot_bucket* tables are missing or empty; using stock loot"
+				);
+				logged_empty = true;
+			}
+		} else {
+			bucket = NmsGetLootBucket(GetNPCTypeID(), zone ? zone->GetShortName() : "");
+			if (bucket && !bucket->items.empty()) {
+				skip_pool.insert(bucket->items.begin(), bucket->items.end());
+				skip_base_ids = &skip_pool;
+			}
+		}
+	}
+
 	const uint32 global_loot_multiplier = RuleI(Zone, GlobalLootMultiplier);
 	for (auto    &lte: zone->GetLootTableEntries(loottable_id)) {
 		for (uint32 k = 1; k <= (lte.multiplier * global_loot_multiplier); k++) {
@@ -114,9 +140,39 @@ void NPC::AddLootTable(uint32 loottable_id, bool is_global)
 			}
 
 			if (probability != 0.0 && (probability == 100.0 || drop_chance <= probability)) {
-				AddLootDropTable(lte.lootdrop_id, drop_limit, minimum_drop);
+				AddLootDropTable(lte.lootdrop_id, drop_limit, minimum_drop, skip_base_ids);
 			}
 		}
+	}
+
+	if (bucket && !bucket->items.empty()) {
+		const int limit = bucket->raid
+			? RuleI(Custom, RandomLootBucketRaidLimit)
+			: RuleI(Custom, RandomLootBucketNamedLimit);
+		std::vector<uint32> remaining = bucket->items;
+		int added = 0;
+		while (added < limit && !remaining.empty()) {
+			const int idx = zone->random.Int(0, static_cast<int>(remaining.size()) - 1);
+			const uint32 item_id = remaining[idx];
+			remaining.erase(remaining.begin() + idx);
+			const EQ::ItemData *item = database.GetItem(item_id);
+			if (!item) {
+				continue;
+			}
+			auto entry = LootdropEntriesRepository::NewNpcEntity();
+			entry.item_id = static_cast<int32>(item_id);
+			entry.chance = 100;
+			entry.multiplier = 1;
+			AddLootDrop(item, entry);
+			++added;
+		}
+		LogLootDetail(
+			"NPC [{}] shared-bucket [{}] added [{}] of [{}] pool items",
+			GetCleanName(),
+			bucket->id,
+			added,
+			limit
+		);
 	}
 
 	LogLootDetail(
@@ -127,7 +183,7 @@ void NPC::AddLootTable(uint32 loottable_id, bool is_global)
 	);
 }
 
-void NPC::AddLootDropTable(uint32 lootdrop_id, uint8 drop_limit, uint8 min_drop)
+void NPC::AddLootDropTable(uint32 lootdrop_id, uint8 drop_limit, uint8 min_drop, const std::unordered_set<uint32> *skip_base_ids)
 {
 	const auto l  = zone->GetLootdrop(lootdrop_id);
 	const auto le = zone->GetLootdropEntries(lootdrop_id);
@@ -135,9 +191,16 @@ void NPC::AddLootDropTable(uint32 lootdrop_id, uint8 drop_limit, uint8 min_drop)
 		return;
 	}
 
+	const auto skip_pool_item = [&](uint32 item_id) {
+		return skip_base_ids && skip_base_ids->contains(item_id % 1000000);
+	};
+
 	// if this lootdrop is droplimit=0 and mindrop 0, scan list once and return
 	if (drop_limit == 0 && min_drop == 0) {
 		for (const auto &e: le) {
+			if (skip_pool_item(e.item_id)) {
+				continue;
+			}
 			for (int j = 0; j < e.multiplier; ++j) {
 				if (zone->random.Real(0.0, 100.0) <= e.chance && MeetsLootDropLevelRequirements(e, true)) {
 					const EQ::ItemData *database_item = database.GetItem(e.item_id);
@@ -171,6 +234,9 @@ void NPC::AddLootDropTable(uint32 lootdrop_id, uint8 drop_limit, uint8 min_drop)
 	bool  active_item_list         = false;
 
 	for (const auto &e: le) {
+		if (skip_pool_item(e.item_id)) {
+			continue;
+		}
 		const EQ::ItemData *db_item = database.GetItem(e.item_id);
 		if (db_item && MeetsLootDropLevelRequirements(e)) {
 			roll_t += e.chance;
@@ -202,6 +268,9 @@ void NPC::AddLootDropTable(uint32 lootdrop_id, uint8 drop_limit, uint8 min_drop)
 		if (drops < min_drop || roll_table_chance_bypass || (float) zone->random.Real(0.0, 1.0) >= no_loot_prob) {
 			float           roll = (float) zone->random.Real(0.0, roll_t);
 			for (const auto &e: le) {
+				if (skip_pool_item(e.item_id)) {
+					continue;
+				}
 				const auto *db_item = database.GetItem(e.item_id);
 				if (db_item) {
 					// if it doesn't meet the requirements do nothing
