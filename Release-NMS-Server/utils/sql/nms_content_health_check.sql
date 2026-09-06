@@ -1,6 +1,6 @@
 -- ============================================================================
 -- NMS content health check - verifies the DATA every custom-manifest version
--- (v18 through v27) is supposed to deliver, without trusting db_version.
+-- (v18 through v32) is supposed to deliver, without trusting db_version.
 --
 -- Why this exists: we have now twice found servers whose custom_version was
 -- stamped PAST an entry whose content never landed (a half-apply healed by a
@@ -17,7 +17,7 @@
 -- READ-ONLY: SELECT/SHOW only. Safe on any server, any number of times.
 -- ============================================================================
 
-SELECT 'db_version (expect 27 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
+SELECT 'db_version (expect 32 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
 
 -- ---- v18 / v23: Beastlord spell merchant + scrolls -------------------------
 SELECT 'v23 bl merchant npc (expect 1)' AS what, COUNT(*) AS value FROM npc_types WHERE id = 1120001300;
@@ -54,3 +54,52 @@ SELECT 'v27 nms_loot_bucket_npcs (expect 1)' AS what, COUNT(*) AS value
   FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'nms_loot_bucket_npcs';
 SELECT 'v27 nms_loot_bucket_items (expect 1)' AS what, COUNT(*) AS value
   FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'nms_loot_bucket_items';
+
+-- ---- v28: vault player table -----------------------------------------------
+SELECT 'v28 character_nms_vault (expect 1)' AS what, COUNT(*) AS value
+  FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'character_nms_vault';
+
+-- ---- v29: loot-offer player table ------------------------------------------
+SELECT 'v29 character_nms_loot_offers (expect 1)' AS what, COUNT(*) AS value
+  FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'character_nms_loot_offers';
+
+-- ---- v30: offer corpse_serial + required vault columns ---------------------
+SELECT 'v30 loot_offers.corpse_serial (expect 1)' AS what, COUNT(*) AS value
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'character_nms_loot_offers' AND column_name = 'corpse_serial';
+SELECT 'v28 vault.slot (expect 1)' AS what, COUNT(*) AS value
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'character_nms_vault' AND column_name = 'slot';
+SELECT 'v28 vault.bag_slot (expect 1)' AS what, COUNT(*) AS value
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'character_nms_vault' AND column_name = 'bag_slot';
+SELECT 'v28 vault primary key named cols (expect 3)' AS what, COUNT(*) AS value
+  FROM information_schema.statistics
+  WHERE table_schema = DATABASE() AND table_name = 'character_nms_vault'
+    AND index_name = 'PRIMARY'
+    AND column_name IN ('character_id', 'slot', 'bag_slot');
+SELECT 'v28 vault primary key total cols (expect 3)' AS what, COUNT(*) AS value
+  FROM information_schema.statistics
+  WHERE table_schema = DATABASE() AND table_name = 'character_nms_vault'
+    AND index_name = 'PRIMARY';
+SELECT 'v28 vault unique indexes (expect 1)' AS what, COUNT(DISTINCT index_name) AS value
+  FROM information_schema.statistics
+  WHERE table_schema = DATABASE() AND table_name = 'character_nms_vault'
+    AND non_unique = 0;
+
+-- ---- v31: durable corpse_serial --------------------------------------------
+SELECT 'v31 loot_offers.corpse_serial bigint unsigned (expect 1)' AS what, COUNT(*) AS value
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'character_nms_loot_offers'
+    AND column_name = 'corpse_serial' AND data_type = 'bigint'
+    AND column_type LIKE '%unsigned%';
+
+-- ---- v32: instance + pass tombstone ----------------------------------------
+SELECT 'v32 loot_offers.instance_id (expect 1)' AS what, COUNT(*) AS value
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'character_nms_loot_offers'
+    AND column_name = 'instance_id';
+SELECT 'v32 loot_offers.passed (expect 1)' AS what, COUNT(*) AS value
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'character_nms_loot_offers'
+    AND column_name = 'passed';

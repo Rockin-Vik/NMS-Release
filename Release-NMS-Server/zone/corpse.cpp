@@ -6,6 +6,9 @@
 #endif
 #define strncasecmp	_strnicmp
 #define strcasecmp	_stricmp
+#include <process.h>
+#else
+#include <unistd.h>
 #endif
 
 #include "../common/data_verification.h"
@@ -16,6 +19,7 @@
 #include "../common/say_link.h"
 
 #include "corpse.h"
+#include "nms_loot_offers.h"
 #include "dynamic_zone.h"
 #include "entity.h"
 #include "groups.h"
@@ -31,11 +35,35 @@
 #include "../common/events/player_event_logs.h"
 #include "../common/repositories/character_corpses_repository.h"
 #include "../common/repositories/character_corpse_items_repository.h"
+#include <chrono>
 #include <iostream>
+#include <random>
 #include "queryserv.h"
 #include "../common/json/json.hpp"
 
 using json = nlohmann::json;
+
+namespace {
+	uint64 NextNmsLootSerial()
+	{
+		static uint64 next = []() {
+			const uint64 ticks = static_cast<uint64>(
+				std::chrono::high_resolution_clock::now().time_since_epoch().count()
+			);
+#ifdef _WINDOWS
+			const uint64 pid = static_cast<uint64>(_getpid());
+#else
+			const uint64 pid = static_cast<uint64>(getpid());
+#endif
+			std::random_device rd;
+			const uint64 rnd = (static_cast<uint64>(rd()) << 32) ^ static_cast<uint64>(rd());
+			uint64 seed = ticks ^ (pid << 32) ^ rnd;
+			return seed ? seed : 0x9e3779b97f4a7c15ULL;
+		}();
+		const uint64 value = next++;
+		return value ? value : next++;
+	}
+}
 
 extern EntityList           entity_list;
 extern Zone                *zone;
@@ -184,6 +212,7 @@ Corpse::Corpse(
 	UpdateActiveLight();
 
 	m_loot_request_type = LootRequestType::Forbidden;
+	m_nms_loot_serial = NextNmsLootSerial();
 }
 
 Corpse::Corpse(Client *c, int32 rez_exp, KilledByTypes in_killed_by) : Mob(
@@ -285,6 +314,7 @@ Corpse::Corpse(Client *c, int32 rez_exp, KilledByTypes in_killed_by) : Mob(
 	m_remaining_rez_time        = 0;
 	m_is_owner_online           = false;
 	m_account_id                = c->AccountID();
+	m_nms_loot_serial           = NextNmsLootSerial();
 
 	// timers
 	m_corpse_decay_timer.SetTimer(RuleI(Character, CorpseDecayTime));
@@ -407,6 +437,7 @@ Corpse::Corpse(Client *c, int32 rez_exp, KilledByTypes in_killed_by) : Mob(
 	UpdateActiveLight();
 
 	m_loot_request_type = LootRequestType::Forbidden;
+	m_nms_loot_serial = NextNmsLootSerial();
 
 	IsRezzed(false);
 	Save();
@@ -601,6 +632,7 @@ Corpse::Corpse(
 	UpdateActiveLight();
 
 	m_loot_request_type = LootRequestType::Forbidden;
+	m_nms_loot_serial = NextNmsLootSerial();
 }
 
 Corpse::~Corpse()
@@ -900,13 +932,22 @@ void Corpse::RemoveItem(uint16 lootslot)
 	}
 }
 
-void Corpse::RemoveItem(LootItem *item_data)
+void Corpse::RemoveItem(LootItem *item_data, bool forget_offers)
 {
 	for (auto iter = m_item_list.begin(); iter != m_item_list.end(); ++iter) {
 		auto sitem = *iter;
 		if (sitem != item_data) { continue; }
 
 		m_is_corpse_changed = true;
+		if (forget_offers) {
+			uint32 looter_id = 0;
+			if (auto *looter = entity_list.GetClientByID(m_being_looted_by_entity_id)) {
+				looter_id = looter->CharacterID();
+			}
+			if (looter_id) {
+				NmsLootOfferForgetCorpseItem(looter_id, GetID(), sitem);
+			}
+		}
 		m_item_list.erase(iter);
 
 		uint8 material = EQ::InventoryProfile::CalcMaterialFromSlot(sitem->equip_slot); // autos to unsigned char

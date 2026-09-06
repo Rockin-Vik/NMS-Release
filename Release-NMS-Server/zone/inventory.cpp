@@ -25,6 +25,7 @@
 #include "zonedb.h"
 #include "../common/events/player_event_logs.h"
 #include "bot.h"
+#include "nms_vault.h"
 #include "../common/evolving_items.h"
 #include "../common/repositories/character_corpse_items_repository.h"
 #include "queryserv.h"
@@ -1955,7 +1956,7 @@ bool Client::SwapItem(MoveItem_Struct* move_in) {
 		uint32 distance = 0;
 		NPC *banker = entity_list.GetClosestBanker(this, distance);
 
-		if(!banker || distance > USE_NPC_RANGE2)
+		if(!NmsVaultBankAccess(this) && (!banker || distance > USE_NPC_RANGE2))
 		{
 			auto message = fmt::format(
 				"Player tried to make use of a banker (items) but banker [{}] is "

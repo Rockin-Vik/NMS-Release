@@ -102,6 +102,8 @@ SET(zone_sources
     titles.cpp
     nms_waypoints.cpp
     nms_loot_buckets.cpp
+    nms_vault.cpp
+    nms_loot_offers.cpp
     tradeskills.cpp
     trading.cpp
     trap.cpp
@@ -460,6 +462,7 @@ set(gm_command_sources
     gm_commands/unscribespells.cpp
     gm_commands/untraindisc.cpp
     gm_commands/untraindiscs.cpp
+    gm_commands/vault.cpp
     gm_commands/wc.cpp
     gm_commands/worldshutdown.cpp
     gm_commands/worldwide.cpp

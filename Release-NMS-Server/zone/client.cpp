@@ -89,6 +89,7 @@ extern volatile bool RunLoops;
 #include "../common/zone_store.h"
 #include "../common/skill_caps.h"
 #include "client.h"
+#include "nms_vault.h"
 
 
 extern QueryServ* QServ;
@@ -15159,6 +15160,7 @@ std::string Client::GetBandolierItemName(uint8 bandolier_slot, uint8 slot_id)
 
 void Client::SendMerchantEnd()
 {
+	NmsVaultOnMerchantEnd(this);
 	SetMerchantSessionEntityID(0);
 
 	if (ClientVersion() == EQ::versions::ClientVersion::RoF2 && RuleB(Parcel, EnableParcelMerchants)) {

@@ -1602,6 +1602,35 @@ struct WaypointRequest_Struct
     bool    autoconfirm_selected;
 };
 
+#pragma pack(push, 1)
+struct NmsLootOfferHeader_Struct
+{
+	uint32 count;
+	uint32 corpse_id;
+	uint32 expire_seconds;
+};
+
+struct NmsLootOfferEntry_Struct
+{
+	uint32 offer_id;
+	uint32 item_id;
+	uint32 icon;
+	int32  charges;
+	uint8  bonus;
+	char   name[64];
+};
+
+struct NmsLootDecision_Struct
+{
+	uint32 offer_id;
+	uint32 item_id;
+	uint32 corpse_id;
+	uint32 action;
+	uint32 quantity;
+	char   pass_to[64];
+};
+#pragma pack(pop)
+
 /*
 ** Consider Struct
 */
@@ -3873,7 +3902,7 @@ struct LogServer_Struct {
 /*112*/	char	unknown112[16];	// '64.37,148,36' on live
 /*126*/	uint8	unknown128[48];
 /*176*/	uint32	unknown176;	// htonl(0x00002695)
-/*180*/	char	unknown180[80];	// 'eqdataexceptions@mail.station.sony.com' on live
+/*180*/	char	unknown180[80];	// 'eqdataexceptions at mail.station.sony.com' on live
 /*260*/	uint8	enable_petition_wnd;
 /*261*/	uint8	enablevoicemacros;
 /*262*/	uint8	enablemail;
