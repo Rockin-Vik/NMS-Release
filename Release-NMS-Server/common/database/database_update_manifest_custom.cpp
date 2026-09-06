@@ -774,6 +774,49 @@ WHERE log_category_description NOT IN ('Error', 'Warning', 'Crash', 'MySQL Error
 		.content_schema_update = false,
 	},
 
+	ManifestEntry{
+		.version = 26,
+		.description = "2026_09_05_waypoint_categories_and_expansion_hubs",
+		.check = "SELECT 1 FROM nms_waypoints_categories WHERE id = 7 AND name = 'Discord'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+-- The manifest runner is not transactional and stamps custom_version after the run whether or not
+-- every statement succeeded, so: every statement below is idempotent, the statements most likely
+-- to fail (the INSERT ... SELECTs from zone) run first, and the check keys on the LAST statement's
+-- effect. If world logs a failure inside v26, re-run this block by hand; repeating it is safe.
+
+-- Rune circles for the expansion hubs opened by NMS_expansion_unlock.pl, placed at each zone's
+-- safe point so no coordinates are hard-coded. Gates and Omens hubs go under category 7; the
+-- Broodlands is geographically Antonica (0).
+INSERT INTO nms_waypoints (shortname, long_name, category, x, y, z, heading)
+SELECT z.short_name, z.long_name, 7, z.safe_x, z.safe_y, z.safe_z, z.safe_heading
+FROM zone z
+WHERE z.version = 0
+  AND z.short_name IN ('nedaria', 'draniksscar', 'bloodfields')
+  AND NOT EXISTS (SELECT 1 FROM nms_waypoints w WHERE w.shortname = z.short_name);
+
+INSERT INTO nms_waypoints (shortname, long_name, category, x, y, z, heading)
+SELECT z.short_name, z.long_name, 0, z.safe_x, z.safe_y, z.safe_z, z.safe_heading
+FROM zone z
+WHERE z.version = 0
+  AND z.short_name IN ('broodlands')
+  AND NOT EXISTS (SELECT 1 FROM nms_waypoints w WHERE w.shortname = z.short_name);
+
+-- The client DLL hard-codes the continent tabs: 7 = Discord, 8 = Special (waypoint_window.cpp).
+-- The seed had 7 = Taelosia and 8 = Discord, so Gates zones showed under Discord and Wall of
+-- Slaughter under Special. Align the data with the client instead of rebuilding the DLL.
+UPDATE nms_waypoints SET category = 7 WHERE shortname = 'wallofslaughter';
+
+-- Row 8 is renamed BEFORE row 7: name is UNIQUE, and on a seeded DB row 8 is 'Discord' until then.
+INSERT INTO nms_waypoints_categories (id, name) VALUES (8, 'Special')
+ON DUPLICATE KEY UPDATE name = VALUES(name);
+INSERT INTO nms_waypoints_categories (id, name) VALUES (7, 'Discord')
+ON DUPLICATE KEY UPDATE name = VALUES(name);
+)",
+		.content_schema_update = true,
+	},
+
 	// Used for testing
 	//	ManifestEntry{
 	//		.version = 9229,

@@ -149,6 +149,7 @@
         "CorpseFixSummonsCorpses",
         "CampTimerMs",
         "FastCampBlockedInCombat",
+        "GMUnlockMinStatus",
         "GroupIncentiveProgram",
         "UseAAEXPVeterancy",
         "AAConsumeBaseValue"

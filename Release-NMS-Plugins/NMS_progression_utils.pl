@@ -177,8 +177,8 @@ my %STAGE_PREREQUISITES = (
     'SoL' => ['Klandicar', 'Zlandicar', 'Wuoshi', 'Dozekar the Cursed', 'Kelorek`Dar'],
     'PoP' => ['Thought Horror Overfiend', 'The Insanity Crawler', 'Grieg Veneficus', 'Xerkizh the Creator', 'Emperor Ssraeshza'],
     'GoD' => ['Saryrn'],
-    'OoW' => ['Disabled'],
-    'DoN' => ['Disabled'],
+    'OoW' => ['Tunat`Muram Cuu Vauax'],   # Tacvi final boss; memory NPC spawned via NMS_expansion_unlock.pl
+    'DoN' => ['Overlord Mata Muram'],     # Anguish final boss; same
     'FNagafen' => ['Quarm'],
     # ... and so on for each stage
 );
@@ -388,6 +388,26 @@ sub SetSubflag {
     return 1;
 }
 
+# Grants every prerequisite of every stage without the lore messages. Idempotent; returns the
+# number of objectives that were newly set. Used for GM accounts on login.
+sub GrantAllProgression {
+    my ($client) = @_;
+    my $granted = 0;
+    foreach my $stage (keys %STAGE_PREREQUISITES) {
+        my %progress = plugin::DeserializeHash(GetProgressFlag($client, $stage));
+        my $changed = 0;
+        foreach my $objective (@{$STAGE_PREREQUISITES{$stage}}) {
+            my $key = lc($objective);
+            next if $progress{$key};
+            $progress{$key} = 1;
+            $changed = 1;
+            $granted++;
+        }
+        SetProgressFlag($client, $stage, plugin::SerializeHash(%progress)) if $changed;
+    }
+    return $granted;
+}
+
 # Returns 1 if the client has completed all objectives needed to unlock the indicated stage
 # Optional final parameter is used to inform player if they fail the check
 # Example; is_stage_complete($client, 'SoL') == 1 indicates that the player has unlocked access to Luclin.
@@ -475,23 +495,11 @@ sub is_time_locked {
     my $stage = shift;
     my $client = plugin::val('client');
 
-    if (plugin::IsNMS()) {  
-        if ($stage eq 'RoK') {       
-            return 0;
-        }
-
-        if ($stage eq 'SoV') {       
-            return 0;
-        }
-
-        if ($stage eq 'SoL') {       
-            return 0;
-        }
-
-        if ($stage eq 'PoP')  {
-            return 0;
-        }
-
+    if (plugin::IsNMS()) {
+        # The open list lives in NMS_expansion_unlock.pl and is read at call time. If that plugin
+        # is missing, fall back to the historical set so the lock never opens by accident.
+        return 0 if $plugin::UNLOCKED_STAGES{$stage};
+        return 0 if !%plugin::UNLOCKED_STAGES && $stage =~ /^(RoK|SoV|SoL|PoP)$/;
         return 1;
     }
 

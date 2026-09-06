@@ -85,6 +85,10 @@ newest at the bottom. These apply to Cursor too.
   hygiene is now a hook plus a pre-PR scan; run the scan on anything that bypasses git hooks.
 - A delegated worker committed a `__pycache__/*.pyc` because it ran the generator before staging the
   folder. Review `git diff --cached --stat` for build artifacts before every commit, not just secrets.
+- I changed the welcome popup's "maximum available expansion is Kunark" line while opening later
+  expansions; the repo owner pointed out it describes a NEW account's default reach, not the server
+  max. Player-facing copy encodes intent that is not in the code: leave it alone unless the change
+  request names it, and ask the owner when a string looks stale.
 
 ## Project skills
 
