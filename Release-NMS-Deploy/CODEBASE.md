@@ -160,6 +160,11 @@ base_id + 2,000,000     → Tier 2 (Legendary)
 - Perl mirror: `NMS_item_utils.pl` — `GetBaseID`, `IsItemTier0/1/2`, all using `id % 1000000`
 - Drop rates: `Custom:Tier1ItemDropRate` (25%), `Custom:Tier2ItemDropRate` (5%), gated by
   `Custom:DoItemUpgrades`
+- Shared-bucket loot (`Custom:RandomLootBuckets`, compiled default **false**): mapped
+  named/raid NPCs skip stock drops whose base id is in the bucket pool, then roll one
+  shared drop through the existing `AddLootDrop` / `DoUpgradeLoot` hook. Seed is
+  `utils/sql/nms_loot_buckets_seed.sql` (not a migration). Empty tables fail closed to
+  stock loot. Do not use `global_loot` for this.
 - **Quest hand-ins must normalize with `id % 1000000`** or a Legendary version of a quest item
   will not be recognized. See `zone/cli/tests/npc_handins_multiquest.cpp`.
 - Separately, `Custom:PowerSourceItemUpgrade` turns the Power Source slot into an item-XP slot:
@@ -216,7 +221,7 @@ NMS runs a **second migration manifest in parallel with stock EQEmu's**:
 | Manifest | File | Version column | Current |
 | --- | --- | --- | --- |
 | Stock | `database_update_manifest.cpp` | `db_version.version` | 9325 |
-| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **31** |
+| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **33** |
 | Bots | `database_update_manifest_bots.cpp` | `db_version.bots_database_version` | |
 
 Both are `#include`d directly into `common/database/database_update.cpp` (lines 9–11) and run
@@ -237,8 +242,8 @@ ALTER TABLE db_version ADD COLUMN custom_version INT UNSIGNED NOT NULL DEFAULT 0
 
 ### 4.2 What is actually in the custom manifest
 
-28 entries declared (v1–v26 and v30–v31; 27–29 are held by branches still in review), **25 live**.
-Numbering is a plain sequence independent of the 9325 stock number. Entries carry `content_schema_update` to target the content DB rather than the
+33 entries declared (v1–v33), **30 live**. Numbering is a plain sequence independent of the 9325
+stock number. Entries carry `content_schema_update` to target the content DB rather than the
 player DB.
 
 | Range | Contents | Status |
@@ -248,8 +253,10 @@ player DB.
 | **v15–v17** | The three `account_character_set*` tables | **Commented out** — lines 273–334 |
 | v18–v25 | Content payloads: Beastlord spell merchant + 38 scrolls, faction fixes, Bazaar spawns, AA339 whitelist | Live |
 | v26 | Waypoint categories aligned with the client DLL tabs; expansion hub rune circles | Live |
-| v27–v29 | Held by branches still in review; whichever lands last renumbers above the highest merged version | In flight |
-| v30–v31 | GM Starter Box item `9011012` and the `nms_gm_starter_pack` seed behind `#gmpack` | Live |
+| v27–v28 | Fabled season schema: `fabled_npcs` roster table (content DB) and the `fabled_season` state row (see FABLED-ENCOUNTERS.md) | Live |
+| v29–v30 | `character_class_exp` table and backfill for per-class experience (`#hero`) | Live |
+| v31–v32 | GM Starter Box item `9011012` and the `nms_gm_starter_pack` seed behind `#gmpack` | Live |
+| v33 | Shared-bucket loot schema: `nms_loot_buckets`, `nms_loot_bucket_npcs`, `nms_loot_bucket_items` (gated by `Custom:RandomLootBuckets`) | Live |
 
 ### 4.3 ⚠️ The version number is a claim, not a fact
 
@@ -282,13 +289,14 @@ content.** The seed data lives in the 540 MB dump. Specifically:
 2. **`account_character_set*` tables have no migration** (v15–17 are commented out), but
    `world/client.cpp` and `worlddb.cpp` query them at character select. They must come from
    the dump or character select errors.
-3. **Eleven loose `.sql` files are referenced nowhere in code** and must be applied by hand:
+3. **Twelve loose `.sql` files are referenced nowhere in code** and must be applied by hand:
    - `Release-NMS-Server/`: `baztradeskills.sql`, `environmentdoodads.sql`, `holedoor.sql`,
      `kaesoradoors.sql`, `pojdoors.sql`, `pomdoors.sql`, `tranquilitydebris.sql`
    - `Release-NMS-Quests/`: `akanonfixyetanotherlamp.sql`, `overlordngrub.sql`,
      `skyfiredoodads.sql`
    - `Release-NMS-Server/utils/sql/`: `fabled_roster_seed.sql` (the Fabled roster; needs manifest v27
-     first, see FABLED-ENCOUNTERS.md §6.8)
+     first, see FABLED-ENCOUNTERS.md §6.8) and `nms_loot_buckets_seed.sql` (shared-bucket loot;
+     needs manifest v33 first)
 
 ---
 
@@ -472,7 +480,7 @@ Quick reference. Each links to the section above.
 | 7 | `db_version.custom_version` is a claim — audit with the health-check SQL | 4.3 |
 | 8 | Migrations create schema only; content comes from the dump | 4.4 |
 | 9 | Waypoint seed data exists **only** as a comment in `nms_waypoints.h` | 4.4 |
-| 10 | Eleven loose `.sql` files must be applied by hand | 4.4 |
+| 10 | Twelve loose `.sql` files must be applied by hand | 4.4 |
 | 11 | v1 creates a junk `new_table` on every fresh DB — harmless | 4.2 |
 | 12 | `CAuth` disconnects clients without the DLL when `ServerAuthStats` is on | 5 |
 | 13 | The four exported client files go in **both** client root and `Resources/` | 5 |
@@ -519,7 +527,7 @@ The full sequence, which `build-scripts/2-Setup-NMSServer.ps1` automates:
    `CheckUcsConfigConversion()` rewrites the config in place on load and drops a `.bak`
    copy of your cleartext DB password with inherited ACLs
 8. Run `shared_memory`, then boot `world` to apply migrations
-9. **Apply the 10 loose SQL patches** — *after* migrations, so manifest entries touching
+9. **Apply the loose SQL patches** — *after* migrations, so manifest entries touching
    `doors` / `object` / `npc_types` cannot clobber them
 10. Run the health check and read the output
 11. Run `export_client_files`; ship the four files to players with the client overlay

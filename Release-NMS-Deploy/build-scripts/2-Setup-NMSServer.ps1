@@ -13,7 +13,7 @@
         Maps       Fetch zone pathing/LOS maps - NOT in the repo and in no README
         Config     Write eqemu_config.json and login.json with real credentials + public IP
         Migrate    Run shared_memory, then boot world to apply both manifests
-        Patches    Apply the 10 loose .sql files that nothing else applies (CODEBASE.md 4.4).
+        Patches    Apply the 12 loose .sql files that nothing else applies (CODEBASE.md 4.4).
                    Runs AFTER Migrate so manifest entries cannot clobber them.
         Login      Create the loginserver's five tables. Also in no manifest and not in
                    the dump - without them the login service exits on its first query.
@@ -173,8 +173,9 @@ $script:MapsRepo = 'https://github.com/EQEmu/maps.git'
 $script:MapsSubdirs = @('base', 'water', 'nav')
 
 # The loose .sql files. Nothing in the codebase applies these - grep confirms zero
-# references. See CODEBASE.md 4.4. The Fabled roster seed is the eleventh: it needs the
-# fabled_npcs table that manifest v27 creates, which is why Patches runs after Migrate.
+# references. See CODEBASE.md 4.4. The last two are seeds for tables the manifest creates
+# (fabled_npcs at v27, nms_loot_bucket* at v33), which is why Patches runs after Migrate. The
+# loot-bucket seed is inert until Custom:RandomLootBuckets is turned on.
 $script:LoosePatches = @(
     'Release-NMS-Server\baztradeskills.sql',
     'Release-NMS-Server\environmentdoodads.sql',
@@ -186,7 +187,8 @@ $script:LoosePatches = @(
     'Release-NMS-Quests\akanonfixyetanotherlamp.sql',
     'Release-NMS-Quests\overlordngrub.sql',
     'Release-NMS-Quests\skyfiredoodads.sql',
-    'Release-NMS-Server\utils\sql\fabled_roster_seed.sql'
+    'Release-NMS-Server\utils\sql\fabled_roster_seed.sql',
+    'Release-NMS-Server\utils\sql\nms_loot_buckets_seed.sql'
 )
 
 # Patches runs AFTER Migrate, deliberately. The loose .sql files are UPDATEs against

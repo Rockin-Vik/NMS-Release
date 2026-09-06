@@ -1,6 +1,6 @@
 -- ============================================================================
 -- NMS content health check - verifies the DATA every custom-manifest version
--- (v18 through v28) is supposed to deliver, without trusting db_version.
+-- (v18 through v33) is supposed to deliver, without trusting db_version.
 --
 -- Why this exists: we have now twice found servers whose custom_version was
 -- stamped PAST an entry whose content never landed (a half-apply healed by a
@@ -17,7 +17,7 @@
 -- READ-ONLY: SELECT/SHOW only. Safe on any server, any number of times.
 -- ============================================================================
 
-SELECT 'db_version (expect 27 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
+SELECT 'db_version (expect 33 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
 
 -- ---- v18 / v23: Beastlord spell merchant + scrolls -------------------------
 SELECT 'v23 bl merchant npc (expect 1)' AS what, COUNT(*) AS value FROM npc_types WHERE id = 1120001300;
@@ -54,3 +54,11 @@ SELECT 'v22 quegmor moved (expect -76.12)' AS what, ROUND(z,2) AS value FROM spa
 SELECT 'v28 fabled_season rows (expect 1)' AS what, COUNT(*) AS value FROM fabled_season;
 SELECT 'v28 fabled_season seed id (expect 1)' AS what, MIN(id) AS value FROM fabled_season;
 SELECT 'v27 fabled_npcs seeded (expect 472)' AS what, COUNT(*) AS value FROM fabled_npcs;
+
+-- ---- v33: shared-bucket loot schema (empty until seed is applied) -----------
+SELECT 'v33 nms_loot_buckets (expect 1)' AS what, COUNT(*) AS value
+  FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'nms_loot_buckets';
+SELECT 'v33 nms_loot_bucket_npcs (expect 1)' AS what, COUNT(*) AS value
+  FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'nms_loot_bucket_npcs';
+SELECT 'v33 nms_loot_bucket_items (expect 1)' AS what, COUNT(*) AS value
+  FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'nms_loot_bucket_items';

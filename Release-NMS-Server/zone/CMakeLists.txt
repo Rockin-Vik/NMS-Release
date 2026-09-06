@@ -103,6 +103,7 @@ SET(zone_sources
     tasks.cpp
     titles.cpp
     nms_waypoints.cpp
+    nms_loot_buckets.cpp
     tradeskills.cpp
     trading.cpp
     trap.cpp

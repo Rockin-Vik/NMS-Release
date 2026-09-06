@@ -96,7 +96,7 @@ database driver. Every check is skip-if-present, so re-running is safe.
 | 5 | Maps | Fetches zone pathing/LOS maps. **Not in the repo, in no README.** |
 | 6 | Config | `eqemu_config.json` + `login.json` with real credentials and the public IP. |
 | 7 | Migrate | `shared_memory`, then boots world until both manifests reach target. |
-| 8 | Patches | The 11 loose `.sql` files nothing else applies (incl. the Fabled roster seed). Runs *after* Migrate. |
+| 8 | Patches | The 12 loose `.sql` files nothing else applies (incl. the Fabled roster and loot-bucket seeds). Runs *after* Migrate. |
 | 9 | Login | Loginserver schema + `launcher` seed. In no manifest, not in the dump. |
 | 10 | Health | `nms_content_health_check.sql`, because `custom_version` lies. |
 | 11 | Export | `export_client_files` → the four client files + `eqhost.txt`. |

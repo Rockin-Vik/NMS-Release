@@ -62,7 +62,10 @@
         "PowerSourceItemUpgradeRateScale",
         "PowerSourceItemTier1RateFloor",
         "PowerSourceItemTier2RateFloor",
-        "UseDynamicItemDiscoveryTags"
+        "UseDynamicItemDiscoveryTags",
+        "RandomLootBuckets",
+        "RandomLootBucketNamedLimit",
+        "RandomLootBucketRaidLimit"
       ]
     },
     {
@@ -216,6 +219,11 @@
       "DoItemUpgrades",
       "Tier1ItemDropRate",
       "Tier2ItemDropRate"
+    ],
+    [
+      "RandomLootBuckets",
+      "RandomLootBucketNamedLimit",
+      "RandomLootBucketRaidLimit"
     ],
     [
       "PowerSourceItemUpgrade",
