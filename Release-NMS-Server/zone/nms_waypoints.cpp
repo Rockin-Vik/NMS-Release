@@ -1,3 +1,4 @@
+#include "../common/rulesys.h"
 #include "../common/repositories/nms_waypoints_repository.h"
 #include "../common/repositories/nms_waypoints_categories_repository.h"
 #include "../common/repositories/nms_waypoints_default_repository.h"
@@ -82,6 +83,14 @@ std::vector<NmsWaypointsRepository::NmsWaypoints> &Client::GetUnlockedWaypoints(
 	m_unlocked_waypoints.clear();
 
 	auto all_waypoints = NmsWaypointsRepository::All(content_db);
+
+	// GM accounts get the whole map; nothing is written to the unlock tables.
+	const int gm_unlock_status = RuleI(Custom, GMUnlockMinStatus);
+	if (gm_unlock_status > 0 && Admin() >= gm_unlock_status) {
+		m_unlocked_waypoints = all_waypoints;
+		return m_unlocked_waypoints;
+	}
+
 	std::set<int32> unlocked_ids;
 
 	// Load character or account waypoints

@@ -1309,6 +1309,7 @@ RULE_INT(Custom,    PetAssistRateLimit,                     1000, "Minimum time 
 RULE_BOOL(Custom, 	CorpseFixSummonsCorpses,				false, "Enable to cause #corpsefix to summon corpses to player")
 RULE_INT(Custom, 	CampTimerMs,							100, "Milliseconds after /camp before the server completes the logout for players outside the Bazaar. Below 29000 the server closes the connection itself so the client drops to character select at once; 29000 or more is stock behavior (client closes after its own 30 s countdown). GMs always camp instantly.")
 RULE_BOOL(Custom, 	FastCampBlockedInCombat,				true, "When true, a player that any NPC has on its hate list, is in a duel, or is feigning death gets the stock 29 second camp instead of Custom:CampTimerMs")
+RULE_INT(Custom, 	GMUnlockMinStatus,						100, "Accounts at or above this status see every waypoint on the map and receive every progression flag on login. 0 disables. 100 = GM-Admin.")
 
 // Seasonal
 RULE_INT(Custom,  	EnableSeasonalCharacters, 				0, "Set to Seasonal ID to track for current Seasonal characters, 0 to disable.")

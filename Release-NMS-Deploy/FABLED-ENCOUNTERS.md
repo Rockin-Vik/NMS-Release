@@ -193,7 +193,7 @@ sub-command.** One compile + restart to ship the code is accepted; nothing after
 
 ### 6.2 Data model
 
-Two tables, both via the custom migration manifest (v26, v27 — see 6.8 for the manifest rules).
+Two tables, both via the custom migration manifest (v27, v28 — see 6.8 for the manifest rules).
 
 **`fabled_npcs`** — content DB, the roster. One row per eligible `npc_types.id`.
 
@@ -356,7 +356,7 @@ RULE_INT(Custom, FabledDefaultChance, 50, "Percent chance used by #fabled on whe
 // RULE_BOOL(Custom, EnableFabledMobs, …)  — DELETED
 ```
 
-Migrations `v26` (`fabled_npcs`, `content_schema_update = true`) and `v27` (`fabled_season` +
+Migrations `v27` (`fabled_npcs`, `content_schema_update = true`) and `v28` (`fabled_season` +
 its single seed row); `CUSTOM_BINARY_DATABASE_VERSION` 25 → 27. Per CODEBASE.md §4.3: both use a
 `check` on the created artifact and `CREATE TABLE IF NOT EXISTS` / `INSERT … WHERE NOT EXISTS`, so
 they are idempotent; no bare `UPDATE`s. `utils/sql/nms_content_health_check.sql` asserts the
@@ -412,7 +412,7 @@ been compiled yet (no toolchain in the authoring sandbox).
 
 | # | Step | Files | Status |
 | --- | --- | --- | --- |
-| 1 | Schema: `fabled_npcs`, `fabled_season` + seed row; manifest v26/v27; `CUSTOM_BINARY_DATABASE_VERSION` 27; health check | `common/database/database_update_manifest_custom.cpp`, `common/version.h`, `utils/sql/nms_content_health_check.sql`, `common/repositories/{base/base_,}fabled_{npcs,season}_repository.h`, `common/CMakeLists.txt` | **Done** |
+| 1 | Schema: `fabled_npcs`, `fabled_season` + seed row; manifest v27/v28; `CUSTOM_BINARY_DATABASE_VERSION` 28; health check | `common/database/database_update_manifest_custom.cpp`, `common/version.h`, `utils/sql/nms_content_health_check.sql`, `common/repositories/{base/base_,}fabled_{npcs,season}_repository.h`, `common/CMakeLists.txt` | **Done** |
 | 2 | Shared struct + opcodes + reload type | `common/servertalk.h`, `common/server_reload_types.h` | **Done** |
 | 3 | World owner: load, broadcast, reply to zone request, minute tick, emotes | `world/fabled_season.{h,cpp}`, `world/zoneserver.cpp`, `world/main.cpp`, `world/CMakeLists.txt` | **Done** |
 | 4 | Zone cache: roster load, DB season read at boot, request/receive, `#reload fabled` | `zone/fabled.{h,cpp}`, `zone/zone.{h,cpp}`, `zone/worldserver.cpp`, `zone/CMakeLists.txt` | **Done** |
@@ -423,7 +423,7 @@ been compiled yet (no toolchain in the authoring sandbox).
 | 9 | Rules: `FabledDefaultChance` added, `EnableFabledMobs` deleted, `global_player.pl:19-21` deleted, index regenerated | `common/ruletypes.h`, `Release-NMS-Deploy/custom-rules/`, `global/global_player.pl` | **Done** |
 | 10 | Roster generator + seed (458 live rows → 472 ids; 8 unmatched listed in the seed footer) | `utils/scripts/fabled_roster.py`, `utils/sql/fabled_roster_seed.sql` | **Done** |
 | 11 | Build on the Windows/MSVC toolchain named in the README; fix whatever the compiler finds | — | **Open (maintainer)** |
-| 12 | Boot world + a zone: v26/v27 apply once, `nms_content_health_check.sql` clean; apply `fabled_roster_seed.sql`; re-run health check (expects 472) | — | **Open** |
+| 12 | Boot world + a zone: v27/v28 apply once, `nms_content_health_check.sql` clean; apply `fabled_roster_seed.sql`; re-run health check (expects 472) | — | **Open** |
 | 13 | Acceptance test below | — | **Open** |
 | 14 | Commit from the Windows checkout (the tree is CRLF; hooks in `agents/hooks/` scan for secrets/PII) | — | **Open** |
 

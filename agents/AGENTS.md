@@ -71,8 +71,16 @@ repo", "a local install", "the reviewer") and use `users.noreply.github.com` add
 - Before `gh pr create` / `gh pr edit` / `gh issue comment`, run the body through
   `node agents/hooks/pii-scan.mjs --file <body.md>` (or `--text "..."`) and fix any hit. PR bodies do
   not pass through git hooks, so this step is on the agent.
-- After cloning on a new machine: `node agents/setup.mjs` and re-add the `pii.term` entries, or the
-  guards are not active.
+- Commit identity: the author name may be a GitHub handle, but the email must be that account's
+  `users.noreply.github.com` address, never a personal one. The pre-commit hook rejects any author
+  or committer whose email is not a noreply address or whose name/email matches a local
+  `pii.term`; `node agents/hooks/pii-scan.mjs --ident` checks it on demand.
+- Merges made in the GitHub web UI are authored with the account's public email unless the GitHub
+  setting **Keep my email addresses private** (and **Block command line pushes that expose my
+  email**) is on. Turn both on at github.com/settings/emails before merging a PR through the
+  browser; a merge commit that exposed a personal email is only removable by rewriting history.
+- After cloning on a new machine: `node agents/setup.mjs`, re-add the `pii.term` entries, and make
+  sure `git config user.email` is your GitHub noreply address, or the guards are not active.
 
 ## Lessons (self-maintained)
 
@@ -88,6 +96,10 @@ newest at the bottom.
   secrets. Push hygiene is now a hook plus a pre-PR scan; run the scan on anything that bypasses git hooks.
 - A delegated worker committed a `__pycache__/*.pyc` because it ran the generator before staging the
   folder. Review `git diff --cached --stat` for build artifacts before every commit, not just secrets.
+- I changed the welcome popup's "maximum available expansion is Kunark" line while opening later
+  expansions; the repo owner pointed out it describes a NEW account's default reach, not the server
+  max. Player-facing copy encodes intent that is not in the code: leave it alone unless the change
+  request names it, and ask the owner when a string looks stale.
 - I proposed a Perl design with 60 s polling and per-spawn rule lookups for Fabled spawns because
   "plugins first" is the convention — the maintainer wants performance-first architecture. For
   anything on a per-entity path, design push-based C++ state (world pushes, zone caches, O(1) hook)

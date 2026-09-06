@@ -42,12 +42,12 @@ When safe to write artifacts:
 
 ```text
 /tmp/verify-this/<claim-slug>/
-├── claim.md
-├── timeline.md
-├── baseline/
-├── treatment/
-├── diff/
-└── verdict.md
+|-- claim.md
+|-- timeline.md
+|-- baseline/
+|-- treatment/
+|-- diff/
+`-- verdict.md
 ```
 
 If artifacts may contain sensitive code, prompts, screenshots, HTTP bodies, or heap data, keep only the minimal inline evidence unless the user agrees to disk storage.

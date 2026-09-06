@@ -1,6 +1,6 @@
 -- ============================================================================
 -- NMS content health check - verifies the DATA every custom-manifest version
--- (v18 through v27) is supposed to deliver, without trusting db_version.
+-- (v18 through v28) is supposed to deliver, without trusting db_version.
 --
 -- Why this exists: we have now twice found servers whose custom_version was
 -- stamped PAST an entry whose content never landed (a half-apply healed by a
@@ -47,10 +47,10 @@ SELECT 'v22 hastened AA (expect 1600,2000)' AS what, GROUP_CONCAT(base1) AS valu
 SELECT 'v22 aa next_id (expect -1)' AS what, next_id AS value FROM aa_ranks WHERE id = 12900;
 SELECT 'v22 quegmor moved (expect -76.12)' AS what, ROUND(z,2) AS value FROM spawn2 WHERE id = 14745;
 
--- ---- v26 / v27: Fabled season schema + roster seed ---------------------------
+-- ---- v27 / v28: Fabled season schema + roster seed ---------------------------
 -- fabled_season is the single operational row world owns; fabled_npcs is filled by the loose
 -- utils/sql/fabled_roster_seed.sql (not a migration - see CODEBASE.md 4.4), expected value is
 -- the row count printed in that file's header.
-SELECT 'v27 fabled_season rows (expect 1)' AS what, COUNT(*) AS value FROM fabled_season;
-SELECT 'v27 fabled_season seed id (expect 1)' AS what, MIN(id) AS value FROM fabled_season;
-SELECT 'v26 fabled_npcs seeded (expect 472)' AS what, COUNT(*) AS value FROM fabled_npcs;
+SELECT 'v28 fabled_season rows (expect 1)' AS what, COUNT(*) AS value FROM fabled_season;
+SELECT 'v28 fabled_season seed id (expect 1)' AS what, MIN(id) AS value FROM fabled_season;
+SELECT 'v27 fabled_npcs seeded (expect 472)' AS what, COUNT(*) AS value FROM fabled_npcs;

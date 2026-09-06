@@ -281,7 +281,7 @@ content.** The seed data lives in the 540 MB dump. Specifically:
      `kaesoradoors.sql`, `pojdoors.sql`, `pomdoors.sql`, `tranquilitydebris.sql`
    - `Release-NMS-Quests/`: `akanonfixyetanotherlamp.sql`, `overlordngrub.sql`,
      `skyfiredoodads.sql`
-   - `Release-NMS-Server/utils/sql/`: `fabled_roster_seed.sql` (the Fabled roster; needs manifest v26
+   - `Release-NMS-Server/utils/sql/`: `fabled_roster_seed.sql` (the Fabled roster; needs manifest v27
      first, see FABLED-ENCOUNTERS.md §6.8)
 
 ---

@@ -174,7 +174,7 @@ $script:MapsSubdirs = @('base', 'water', 'nav')
 
 # The loose .sql files. Nothing in the codebase applies these - grep confirms zero
 # references. See CODEBASE.md 4.4. The Fabled roster seed is the eleventh: it needs the
-# fabled_npcs table that manifest v26 creates, which is why Patches runs after Migrate.
+# fabled_npcs table that manifest v27 creates, which is why Patches runs after Migrate.
 $script:LoosePatches = @(
     'Release-NMS-Server\baztradeskills.sql',
     'Release-NMS-Server\environmentdoodads.sql',

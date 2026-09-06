@@ -325,3 +325,56 @@ export function stripCommitComments(message) {
     .filter((line) => !line.startsWith("#"))
     .join("\n");
 }
+
+function parseIdentString(ident) {
+  const match = ident.match(/^(.+?) <([^>]+)> /);
+  if (!match) return { name: ident.trim(), email: "" };
+  return { name: match[1].trim(), email: match[2].trim() };
+}
+
+function resolveIdent(cwd, role) {
+  const isAuthor = role === "author";
+  const envName = isAuthor
+    ? process.env.GIT_AUTHOR_NAME
+    : process.env.GIT_COMMITTER_NAME;
+  const envEmail = isAuthor
+    ? process.env.GIT_AUTHOR_EMAIL
+    : process.env.GIT_COMMITTER_EMAIL;
+  const varName = isAuthor ? "GIT_AUTHOR_IDENT" : "GIT_COMMITTER_IDENT";
+  const parsed = parseIdentString(git(cwd, ["var", varName]));
+
+  if (envName !== undefined || envEmail !== undefined) {
+    return {
+      name: envName ?? parsed.name,
+      email: envEmail ?? parsed.email,
+    };
+  }
+
+  return parsed;
+}
+
+function auditIdentity(name, email) {
+  const trimmedName = (name ?? "").trim();
+  const trimmedEmail = (email ?? "").trim();
+
+  if (!trimmedEmail.toLowerCase().endsWith("@users.noreply.github.com")) {
+    return { kind: "non-noreply-email", hit: maskHit(trimmedEmail) };
+  }
+
+  const nameHit = findPiiInText(trimmedName, { filePath: "" });
+  if (nameHit) return { kind: nameHit.kind, hit: nameHit.masked };
+
+  const emailHit = findPiiInText(trimmedEmail, { filePath: "" });
+  if (emailHit) return { kind: emailHit.kind, hit: emailHit.masked };
+
+  return null;
+}
+
+export function auditAuthorIdent(cwd = process.cwd()) {
+  for (const role of ["author", "committer"]) {
+    const { name, email } = resolveIdent(cwd, role);
+    const failure = auditIdentity(name, email);
+    if (failure) return failure;
+  }
+  return null;
+}

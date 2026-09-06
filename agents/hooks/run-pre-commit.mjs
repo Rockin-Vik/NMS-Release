@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { auditStagedForPreCommit } from "./secrets-lib.mjs";
-import { auditStagedForPii } from "./pii-lib.mjs";
+import { auditAuthorIdent, auditStagedForPii } from "./pii-lib.mjs";
 
 const cwd = process.cwd();
 
@@ -22,6 +22,17 @@ if (piiFailure) {
   );
   console.error(
     "pre-commit: remove personal names, emails, profile paths, or private project names.",
+  );
+  process.exit(1);
+}
+
+const identFailure = auditAuthorIdent(cwd);
+if (identFailure) {
+  console.error(
+    `pre-commit: blocked — commit author/committer identity ${identFailure.kind}: ${identFailure.hit}`,
+  );
+  console.error(
+    'pre-commit: use your GitHub noreply address: git config user.email "<id>+<handle>@users.noreply.github.com"',
   );
   process.exit(1);
 }

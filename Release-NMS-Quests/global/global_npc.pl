@@ -90,6 +90,7 @@ sub EVENT_SAY {
 
 sub EVENT_DEATH_COMPLETE {
     plugin::CustomEventNPCDeathEntry($killer_id);
+    plugin::SpawnProgressionFlagNPC($npc); # stage-flag bosses table in NMS_expansion_unlock.pl
 
     if (defined($killed_corpse_id)) {
         my $corpse = $entity_list->GetCorpseByID($killed_corpse_id);

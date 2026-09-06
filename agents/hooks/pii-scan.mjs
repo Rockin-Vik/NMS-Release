@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+  auditAuthorIdent,
   auditRangeForPii,
   auditStagedForPii,
   auditTextForPii,
@@ -10,7 +11,7 @@ import {
 
 function usage() {
   console.error(
-    "usage: node agents/hooks/pii-scan.mjs --staged | --text <string> | --file <path> | --range <base>..<head>",
+    "usage: node agents/hooks/pii-scan.mjs --staged | --text <string> | --file <path> | --range <base>..<head> | --ident",
   );
   process.exit(2);
 }
@@ -64,6 +65,12 @@ if (args[0] === "--range") {
   if (!range) usage();
   const failure = auditRangeForPii(cwd, range);
   if (failure) reportBlocked(failure.label, failure.kind, failure.hit);
+  reportClean();
+}
+
+if (args[0] === "--ident") {
+  const failure = auditAuthorIdent(cwd);
+  if (failure) reportBlocked("commit identity", failure.kind, failure.hit);
   reportClean();
 }
 
