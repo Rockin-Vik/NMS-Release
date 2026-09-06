@@ -77,9 +77,9 @@ It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `Player
 (`common/eq_packet_structs.h` ~line 1190), and **persisted as a data bucket** named
 `GestaltClasses` — not a table of its own.
 
-- Per-class experience is persisted in `character_class_exp`. The profile experience pool and
-  displayed level cache the lowest class; `Client::SetEXP` routes delta experience by
-  water-filling the lowest rows until they catch up.
+- Per-class experience is persisted in `character_class_exp`; with `HeroCatchupEnabled` off
+  (the default), every row shadows the profile pool, while on the pool and displayed level cache
+  the lowest class and `Client::SetEXP` water-fills the lowest rows until they catch up.
 - Write: `common/database.cpp:532`, `zone/client.cpp:14536` / `:14582`
 - Read: `zone/client_packet.cpp:644` loads it into `m_pp.classes`
 - Accessors: `Client::GetClassesBits()` (`zone/client.cpp:14509`) returns the mask when

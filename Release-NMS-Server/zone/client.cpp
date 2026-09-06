@@ -14563,6 +14563,7 @@ AddClassResult Client::CanAddExtraClass(int class_id, bool join_at_watermark) co
 	}
 
 	if (
+		RuleB(Custom, HeroCatchupEnabled) &&
 		!join_at_watermark &&
 		ZoneStore::Instance()->GetZoneMinimumLevel(zone->GetZoneID(), zone->GetInstanceVersion()) >
 			RuleI(Custom, NewClassStartLevel)

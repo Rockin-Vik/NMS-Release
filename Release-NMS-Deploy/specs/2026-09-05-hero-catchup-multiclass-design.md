@@ -1,5 +1,7 @@
 # Hero loadout — hard catch-up multiclass (design)
 
+2026-09-06, owner decision: shipped with `Custom:HeroCatchupEnabled` off. A new class joins at the character's current level; the catch-up machinery below stays behind the rule and off-mode keeps every class row in lockstep with the pool. Characters that already took the level-1 reset are restored to their highest class row on next load.
+
 Status: draft v5. Three code-grounded review passes (two adversarial; last verdict GO), then the owner resolved every decision on 2026-09-06. Not implemented.
 Date: 2026-09-05
 Governs: `Custom` multiclass layer (`CODEBASE.md` §3.1), Inventory header, a new Hero tab.
@@ -209,7 +211,7 @@ Add to `RULE_CATEGORY(Custom)` and cluster **Multiclass / client contract** in `
 | Rule | Type | Default | Note |
 | --- | --- | --- | --- |
 | `MaxMulticlasses` | INT | `4` | Cap enforced in `CanAddExtraClass`; Perl reads it via `quest::get_rule`. |
-| `HeroCatchupEnabled` | BOOL | `true` | When false, new classes join at the watermark. Rows stay in lockstep so turning it on later invents no debt. |
+| `HeroCatchupEnabled` | BOOL | `false` | Off (default): new classes join at the watermark and rows stay in lockstep. On: new classes start at `NewClassStartLevel` and catch up. |
 | `NewClassStartLevel` | INT | `1` | Ignored when catch-up is off. |
 
 All three are inert unless `MulticlassingEnabled` is true. Header note for the first: requires `Character:UseOldClassExpPenalties` false (D19).

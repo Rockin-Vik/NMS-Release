@@ -297,6 +297,10 @@ sub IsCatchingUp {
     return $client->IsCatchingUp();
 }
 
+sub HeroCatchupEnabled {
+    return quest::get_rule("Custom:HeroCatchupEnabled") eq "true" ? 1 : 0;
+}
+
 sub CanAddClass {
     my ($client, $class_id) = @_;
     return $client->CanAddExtraClass($class_id);

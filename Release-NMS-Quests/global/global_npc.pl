@@ -51,7 +51,10 @@ sub EVENT_SAY {
             }
 
             if (!$has_class && $reason == 0) {
-                plugin::NPCTell("$greeting A new class begins at level 1 and your effective level becomes the lowest of your classes until it catches up.");
+                my $class_join_message = plugin::HeroCatchupEnabled()
+                    ? "A new class begins at level 1 and your effective level becomes the lowest of your classes until it catches up."
+                    : "The new class joins you at your current level.";
+                plugin::NPCTell("$greeting $class_join_message");
             } elsif ($has_class) {
                 plugin::NPCTell("You already walk the path of the $class_name; there is nothing more I can teach you.");
             } else {

@@ -26,15 +26,16 @@ LEFT JOIN character_class_exp e ON e.character_id = cd.id AND e.class_id = class
 WHERE ((IF(db.character_id IS NOT NULL, CAST(db.`value` AS UNSIGNED), IF(cd.`class` BETWEEN 1 AND 16, 1 << (cd.`class` - 1), 0)) >> (classes.class_id - 1)) & 1) = 1
   AND e.character_id IS NULL;
 
--- Expect 0 rows: profile exp is the minimum held class exp. Any result is repaired by the login fallback on next zone-in.
-SELECT cd.id AS character_id, cd.exp AS profile_exp, MIN(e.class_exp) AS minimum_class_exp
+-- Expect 0 rows: profile exp equals every held class exp. Any result is repaired by the login fallback on next zone-in.
+SELECT cd.id AS character_id, cd.exp AS profile_exp, MIN(e.class_exp) AS minimum_class_exp, MAX(e.class_exp) AS maximum_class_exp
 FROM character_data cd
 JOIN character_class_exp e ON e.character_id = cd.id
 GROUP BY cd.id, cd.exp
-HAVING cd.exp <> MIN(e.class_exp);
+HAVING cd.exp <> MIN(e.class_exp) OR cd.exp <> MAX(e.class_exp);
 
 -- Expect these rows only when operators have explicitly overridden compiled defaults.
--- Absence means the compiled defaults apply: MaxMulticlasses=4, HeroCatchupEnabled=true, NewClassStartLevel=1.
+-- Absence means the compiled defaults apply: MaxMulticlasses=4, HeroCatchupEnabled=false, NewClassStartLevel=1.
+-- A Custom:HeroCatchupEnabled row set to true in rule_values re-enables the reset; remove it or set it to false.
 SELECT ruleset_id, rule_name, rule_value, notes
 FROM rule_values
 WHERE rule_name IN (
@@ -70,10 +71,10 @@ WHERE rule_name = 'Character:UseOldClassExpPenalties';
 
 -- VPS test with a non-GM 3-class character:
 -- 1. Add a fourth class at the guildmaster.
--- 2. Confirm the new class starts at level 1.
+-- 2. Confirm the new class joins at the character's current level.
 -- 3. Confirm the Inventory header shows the class list and effective level.
 -- 4. Kill for experience.
--- 5. As a GM on that target, use #hero show and confirm only the new class row advances.
+-- 5. As a GM on that target, use #hero show and confirm every class row shadows the pool.
 -- 6. Confirm the character receives its group experience share.
--- 7. Attempt to remove the new class and confirm it is refused.
+-- 7. Remove the new class and confirm the effective level does not change.
 -- 8. Confirm an Ayonae reroll joins replacement classes at the watermark.
