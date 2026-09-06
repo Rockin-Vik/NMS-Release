@@ -63,6 +63,7 @@ public:
 	bool AddExtraClass(int class_id);
 	bool AddExtraClass(int class_id, bool join_at_watermark);
 	int CanAddExtraClass(int class_id);
+	std::string CanAddExtraClassMessage(int class_id);
 	int GetClassLevel(int class_id);
 	uint64 GetClassExp(int class_id);
 	int GetRewardLevel();

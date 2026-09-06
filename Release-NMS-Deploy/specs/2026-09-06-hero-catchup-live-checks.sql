@@ -1,7 +1,7 @@
 -- Hero catch-up live database checks.
 -- Run after deploying this branch and starting world once.
 
--- Expect exactly one row with custom_version = 29 (CUSTOM_BINARY_DATABASE_VERSION).
+-- Expect exactly one row with custom_version = CUSTOM_BINARY_DATABASE_VERSION from common/version.h (33 as of 2026-09-06; the class-exp entries landed as v29/v30).
 SELECT custom_version
 FROM db_version;
 

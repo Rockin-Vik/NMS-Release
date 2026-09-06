@@ -302,6 +302,11 @@ sub CanAddClass {
     return $client->CanAddExtraClass($class_id);
 }
 
+sub CanAddClassMessage {
+    my ($client, $class_id) = @_;
+    return $client->CanAddExtraClassMessage($class_id);
+}
+
 sub MaxMulticlasses {
     return quest::get_rule("Custom:MaxMulticlasses") || 4;
 }

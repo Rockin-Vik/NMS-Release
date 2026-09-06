@@ -890,6 +890,17 @@ typedef enum EQLabelTypes {
 		return (const char*)GetClassDesc(class_id);
 	}
 
+	static int CountClassBits(uint32_t mask)
+	{
+		int count = 0;
+		while (mask)
+		{
+			count += mask & 1u;
+			mask >>= 1;
+		}
+
+		return count;
+	}
 
 	// NMS: Builds a multiline, class title list from the multiclass bitmask using player level.
 	std::string GetStringRepresentationOfClass()
@@ -901,6 +912,27 @@ typedef enum EQLabelTypes {
 		uint32_t mask = static_cast<uint32_t>(itr->second);
 		if (!mask)
 			return "None";
+
+		if (CountClassBits(mask) >= 4)
+		{
+			std::string result;
+			int class_count = 0;
+
+			for (int class_id = 1; class_id <= 16; ++class_id)
+			{
+				uint32_t bit = (1u << (class_id - 1));
+				if (mask & bit)
+				{
+					if (!result.empty())
+						result += (class_count % 2 == 0) ? "\n" : " / ";
+
+					result += ClassAbbr[class_id];
+					++class_count;
+				}
+			}
+
+			return result;
+		}
 
 		if (!pLocalPlayer || !pLocalPlayer->Data.pSpawn)
 			return "None";
@@ -950,6 +982,9 @@ static std::string GetClassAbbreviationString()
 
 	uint32_t mask = static_cast<uint32_t>(itr->second);
 	if (!mask)
+		return "";
+
+	if (CountClassBits(mask) >= 4)
 		return "";
 
 	std::string result;

@@ -76,7 +76,8 @@ Registration lines are in `zone/lua_client.cpp`, `zone/perl_client.cpp`, `zone/l
 | `HasClass("Warrior")` | — | ✓ | Same, by class name |
 | `GetClassesBitmask()` | ✓ | ✓ | The class bitmask (`1 << (class_id - 1)` per class) |
 | `GetClassBitmask()` | ✓ | — | Alias of the above |
-| `CanAddExtraClass(class_id)` | ✓ | ✓ | Returns reason code: 0 is allowed; nonzero covers disabled, invalid/already held, cap, race, combat, zone, or row-insert rejection |
+| `CanAddExtraClass(class_id)` | ✓ | ✓ | Returns reason code: 0 is allowed; nonzero covers disabled, invalid/already held, cap, combat, zone, or row-insert rejection |
+| `CanAddExtraClassMessage(class_id)` | ✓ | ✓ | Human-readable reason for the CanAddExtraClass code |
 | `AddExtraClass(class_id [, join_at_watermark])` | ✓ | ✓ | Add a class; `join_at_watermark` is a trusted system-script flag that skips hard catch-up |
 | `RemoveExtraClass(class_id)` | ✓ | ✓ | Remove a class |
 | `GetClassLevel(class_id)` | ✓ | ✓ | Level of one stored class row |
@@ -87,7 +88,8 @@ Registration lines are in `zone/lua_client.cpp`, `zone/perl_client.cpp`, `zone/l
 Perl helpers in `NMS_multiclass_utils.pl`: `plugin::MultiClassingEnabled()`, `MaxMulticlasses()`,
 `GetClassLevel($client, $class_id)`, `GetClassExp($client, $class_id)`,
 `GetRewardLevel($client)`, `IsCatchingUp($client)`, `CanAddClass($client, $class_id)`,
-`AddClass`, `RemoveClass`, `HasClass`, `GrantClassesAA`, `CommonCharacterUpdate`. `CanAddClass`
+`CanAddClassMessage($client, $class_id)`, `AddClass`, `RemoveClass`, `HasClass`, `GrantClassesAA`,
+`CommonCharacterUpdate`. `CanAddClass`
 returns the server reason code; 0 is allowed.
 
 **Multiple pets (Mob)**

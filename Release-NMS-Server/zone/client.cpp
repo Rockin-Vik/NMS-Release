@@ -44,7 +44,6 @@ extern volatile bool RunLoops;
 #include "../common/profanity_manager.h"
 #include "../common/data_bucket.h"
 #include "../common/data_bucket.h"
-#include "../common/race_class.h"
 #include "dynamic_zone.h"
 #include "expedition_request.h"
 #include "position.h"
@@ -14556,9 +14555,8 @@ AddClassResult Client::CanAddExtraClass(int class_id, bool join_at_watermark) co
 		return AddClassResult::AtCap;
 	}
 
-	if (!IsClassRaceCombinationAllowed(static_cast<uint8>(class_id), GetBaseRace())) {
-		return AddClassResult::RaceNotAllowed;
-	}
+	// No race lock: any character may add any class regardless of base race (owner decision, 2026-09-06).
+	// AddClassResult::RaceNotAllowed is kept so script-facing reason codes do not shift.
 
 	if (GetAggroCount() > 0 || GetFeigned() || IsDueling()) {
 		return AddClassResult::InCombat;
@@ -14591,6 +14589,11 @@ const char* Client::AddClassResultMessage(AddClassResult result)
 	}
 
 	return "That class could not be added.";
+}
+
+const char* Client::CanAddExtraClassMessage(int class_id, bool join_at_watermark) const
+{
+	return AddClassResultMessage(CanAddExtraClass(class_id, join_at_watermark));
 }
 
 // Persist the class row first, then the bit and bucket, so no bit exists without progress.
@@ -14672,6 +14675,11 @@ bool Client::AddExtraClass(int class_id, bool join_at_watermark)
 	}
 
 	m_pp.classes = new_classes;
+	// A class that joins below the current pool drags the pool down to it by design; set it here so
+	// SetEXP sees a consistent pool and the repair branch in exp.cpp stays a true inconsistency alarm.
+	if (inserted_row && m_class_exp[class_id_u8] < m_pp.exp) {
+		m_pp.exp = m_class_exp[class_id_u8];
+	}
 	m_catchup_skill_caps_valid = false;
 	SetEXP(ExpSource::Quest, m_pp.exp, GetAAXP());
 	CalcBonuses();
