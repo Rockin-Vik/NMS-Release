@@ -44,6 +44,19 @@ Consequences, and they are not optional:
 - The compiled default in `ruletypes.h` is **not** the value the server is running, and the tree
   here is **not** necessarily the code that is deployed. Both must be stated as assumptions.
 
+### A committed binary is a claim about source it cannot prove
+
+`Release-NMS-Client/ClientFiles/dinput8.dll` is built elsewhere and committed here, so the tree can
+ship a binary that does not match the source beside it. Before committing one, or accepting one:
+
+- **Grep the binary for strings only the new code introduces** — a ScreenID, a message, a log line —
+  and for strings the change *removed*. Both directions, or you cannot tell a new build from an old one.
+- **Compare it against every previously committed version of that path** (`git cat-file blob <rev>:<path>`,
+  then `cmp`). A real link is never byte-identical to an earlier one: the PE header carries a build
+  timestamp and the debug directory a fresh GUID. **Byte-identical means it was copied, not built.**
+- Size alone proves nothing, but a size matching a known older build is a strong warning.
+- Say which features the binary was verified to carry, and which fixes are source-only until a rebuild.
+
 ## Operating model
 
 Delegate grunt work (broad searches, mechanical edits) to subagents rather than burning context on
@@ -65,6 +78,19 @@ subsystem is not a finding until it names the gate:
 - No rule value, no build access, no DB? Then the honest form is *"if `Custom:X` is on, then…"* —
   never a bare assertion about the running server.
 
+### A premise this checkout cannot inspect does not justify a change
+
+Reporting under a stated assumption is fine. **Editing under one is not.** If a fix is only correct
+given the state of something outside this tree — a live client install, the running server, the
+deployed DB, a machine I cannot read — it is a hypothesis, not a diagnosis.
+
+- Name what would confirm it and ask, or make the change that is correct either way. Never commit a
+  **deletion** on an unverified premise: the failure mode is silent, and on a public repo it is public.
+- When my own evidence contradicts my theory, **the theory loses**. A grep that finds one declaration
+  is not evidence for a second one I cannot see; explaining the contradiction away is how a wrong fix
+  gets shipped.
+- An error message names a symptom. It is not a diagnosis until I have found the code that produces it.
+
 ### Subagent findings are leads, not results
 
 A subagent report is unverified until I check it. Before any finding reaches the maintainer:
@@ -77,6 +103,13 @@ A subagent report is unverified until I check it. Before any finding reaches the
   maintainer's attention on a bug that may not exist.
 - Have my own work reviewed by a separate agent. Reviewing my own diff is not review — a review
   pass in this session caught a change of mine that broke every single-item vault deposit.
+
+### A fix is not done until every caller is accounted for
+
+When the defect is *"this helper, value or flag is used somewhere it should not be"*, the call site I
+was shown is one instance, not the bug. Before calling it fixed: grep every caller of the thing being
+changed, and state which ones were changed and which were deliberately left, with the reason. Half a
+fix is worse than none — it reads as done and leaves a boundary nobody can describe.
 
 ## Build principle — done means done end-to-end
 
@@ -161,6 +194,13 @@ newest at the bottom.
   and the maintainer said the override is the design: a locker item overwrites the held weapon's proc
   even when it is not a shield. Custom subsystems encode intent the code does not state; ask what the
   behaviour is *for* before labelling it broken.
+- I read a client "Schema error - Duplicate item" as proof that a stock UI file declared the texture
+  first, deleted the declaration from our own XML, and pushed it — while my own grep had found exactly
+  one declaration in the repo. The real cause was the add-on injecting the file a second time. Do not
+  edit on a premise about a system this checkout cannot read, and never delete on one.
+- Two fixes of mine shipped covering one call site of four, and a redraw guard keyed on the wrong state
+  twice; a reviewer caught both. When changing where a helper or value may be used, enumerate its
+  callers first and say which were left alone.
 - I committed a rebuilt `dinput8.dll` after a build whose errors I had printed but not gated on, so the
   commit shipped the previous binary under a message claiming the fix. Gate every binary commit on the
   build's exit code and a fresh output timestamp, never on reading a log.
