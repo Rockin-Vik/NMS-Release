@@ -8,8 +8,8 @@
 >
 > Narrative and gotchas stay in [CODEBASE.md](../CODEBASE.md). This file is the lookup index.
 
-- Custom rules parsed: **113**
-- With an inline note: **113**
+- Custom rules parsed: **116**
+- With an inline note: **116**
 - Unclustered: **0**
 
 Regenerate:

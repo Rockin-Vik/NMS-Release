@@ -255,11 +255,11 @@ Skins that ship `EQUI_Inventory.xml` stay in sync: `default/`, `gearcore/`, `shi
 
 ### 11.3 Wire
 
-One new RoF2-only opcode in `emu_oplist.h` and the `#CUSTOM` block of `patch_RoF2.conf`, next free after `0x1409` (`patch_RoF2.conf:747`):
+One new RoF2-only opcode in `emu_oplist.h` and the `#CUSTOM` block of `patch_RoF2.conf`. `0x140A` / `0x140B` are taken by `OP_NmsLootOffer` / `OP_NmsLootDecision`; this reservation is `0x140C`.
 
 | Opcode | Direction | Role |
 | --- | --- | --- |
-| `OP_HeroRequest` `0x140A` | client to server | `op` = add / remove, `class_id` |
+| `OP_HeroRequest` `0x140C` | client to server | `op` = add / remove, `class_id` |
 
 Server fail-closes every request with `CanAddExtraClass` and answers with `SendBulkStatsUpdate()` (D11). No server-to-client Hero opcode.
 

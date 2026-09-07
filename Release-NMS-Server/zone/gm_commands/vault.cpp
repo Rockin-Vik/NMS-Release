@@ -66,7 +66,7 @@ void command_vault_withdraw_bagitem(Client *c, const Seperator *sep)
 void command_nmsloot_decide(Client *c, const Seperator *sep)
 {
 	if (!sep->IsNumber(1) || !sep->IsNumber(2)) {
-		c->Message(Chat::White, "Usage: #nmsloot_decide [offer_id] [action 1-7] [pass_to]");
+		c->Message(Chat::White, "Usage: #nmsloot_decide [offer_id] [action 1-7 or 9] [pass_to]");
 		return;
 	}
 
