@@ -272,6 +272,43 @@ namespace {
 		return Strings::ToInt(row[0]) > 0;
 	}
 
+	enum class VaultRowState {
+		Missing,
+		Match,
+		Mismatch,
+		Unknown
+	};
+
+	VaultRowState ReadVaultRowState(uint32 character_id, const NmsVaultItem &item)
+	{
+		auto results = database.QueryDatabase(fmt::format(
+			"SELECT item_id, charges, aug1, aug2, aug3, aug4, aug5, aug6 "
+			"FROM character_nms_vault WHERE character_id = {} AND slot = {} AND bag_slot = {} LIMIT 1",
+			character_id,
+			item.slot,
+			item.bag_slot
+		));
+		if (!results.Success()) {
+			return VaultRowState::Unknown;
+		}
+		if (results.RowCount() == 0) {
+			return VaultRowState::Missing;
+		}
+		auto row = results.begin();
+		if (Strings::ToUnsignedInt(row[0]) != item.item_id
+			|| static_cast<int16>(Strings::ToInt(row[1])) != item.charges
+			|| Strings::ToUnsignedInt(row[2]) != item.aug[0]
+			|| Strings::ToUnsignedInt(row[3]) != item.aug[1]
+			|| Strings::ToUnsignedInt(row[4]) != item.aug[2]
+			|| Strings::ToUnsignedInt(row[5]) != item.aug[3]
+			|| Strings::ToUnsignedInt(row[6]) != item.aug[4]
+			|| Strings::ToUnsignedInt(row[7]) != item.aug[5]
+		) {
+			return VaultRowState::Mismatch;
+		}
+		return VaultRowState::Match;
+	}
+
 	bool CleanupVaultSlot(uint32 character_id, int slot)
 	{
 		auto results = database.QueryDatabase(fmt::format(
@@ -279,7 +316,8 @@ namespace {
 			character_id,
 			slot
 		));
-		if (!results.Success() || VaultSlotHasPersistedRows(character_id, slot)) {
+		const bool still_has = VaultSlotHasPersistedRows(character_id, slot);
+		if (!results.Success() || still_has) {
 			LogError(
 				"NmsVault: failed to clean slot {} for character {}",
 				slot,
@@ -290,12 +328,46 @@ namespace {
 		return true;
 	}
 
+	bool FinishFailedVaultSlotWrite(uint32 character_id, const NmsVaultItem &parent)
+	{
+		if (CleanupVaultSlot(character_id, parent.slot)) {
+			return false;
+		}
+		const auto state = ReadVaultRowState(character_id, parent);
+		if (state == VaultRowState::Match || state == VaultRowState::Unknown) {
+			LogError(
+				"NmsVault: slot {} for character {} remains after a failed write; treating the vault row as saved",
+				parent.slot,
+				character_id
+			);
+			return true;
+		}
+		return false;
+	}
+
+	bool FinishFailedVaultChildWrite(uint32 character_id, const NmsVaultItem &item)
+	{
+		NmsVaultDeleteItem(character_id, item.slot, item.bag_slot);
+		const auto state = ReadVaultRowState(character_id, item);
+		if (state == VaultRowState::Match || state == VaultRowState::Unknown) {
+			LogError(
+				"NmsVault: child slot {} bag {} for character {} remains after a failed write; treating the vault row as saved",
+				item.slot,
+				item.bag_slot,
+				character_id
+			);
+			return true;
+		}
+		return false;
+	}
+
 	bool SaveVaultSlot(uint32 character_id, int slot, EQ::ItemInstance *inst)
 	{
 		if (!inst || !EnsureTables()) {
 			return false;
 		}
 
+		auto parent = FromInstance(slot, 0, inst);
 		if (inst->IsClassBag() && inst->IsNoneEmptyContainer()) {
 			for (auto &content : *inst->GetContents()) {
 				if (!content.second) {
@@ -303,53 +375,70 @@ namespace {
 				}
 				auto inner = FromInstance(slot, content.first + 1, content.second);
 				if (!NmsVaultSaveItem(character_id, inner)) {
-					CleanupVaultSlot(character_id, slot);
-					return false;
+					return FinishFailedVaultSlotWrite(character_id, parent);
 				}
 			}
 		}
 
-		auto row = FromInstance(slot, 0, inst);
-		if (!NmsVaultSaveItem(character_id, row)) {
-			CleanupVaultSlot(character_id, slot);
-			return false;
+		if (!NmsVaultSaveItem(character_id, parent)) {
+			return FinishFailedVaultSlotWrite(character_id, parent);
 		}
 		return true;
 	}
 
-	bool ConsumeCursorAfterSave(Client *c, int slot, int bag_slot)
+	bool DeletePersistedCursorRange(uint32 character_id)
+	{
+		auto results = database.QueryDatabase(fmt::format(
+			"DELETE FROM inventory WHERE character_id = {} "
+			"AND (slot_id = {} OR slot_id BETWEEN {} AND {})",
+			character_id,
+			EQ::invslot::slotCursor,
+			EQ::invbag::CURSOR_BAG_BEGIN,
+			EQ::invbag::CURSOR_BAG_END
+		));
+		return results.Success();
+	}
+
+	bool WipeThenPersistCursor(Client *c)
+	{
+		if (!DeletePersistedCursorRange(c->CharacterID())) {
+			return false;
+		}
+		return CursorPersisted(c);
+	}
+
+	void RestoreTakenCursor(Client *c, EQ::ItemInstance *copy)
+	{
+		if (!c || !copy) {
+			safe_delete(copy);
+			return;
+		}
+		c->GetInv().PushCursorFront(*copy);
+		c->SendItemPacket(EQ::invslot::slotCursor, copy, ItemPacketLimbo);
+		CursorPersisted(c);
+		safe_delete(copy);
+	}
+
+	EQ::ItemInstance *TakeCursorIfPersisted(Client *c)
 	{
 		auto *cursor = c->GetInv().GetItem(EQ::invslot::slotCursor);
 		if (!cursor) {
-			return false;
+			return nullptr;
 		}
 		auto *copy = cursor->Clone();
+		if (!copy) {
+			return nullptr;
+		}
 		c->DeleteItemInInventory(EQ::invslot::slotCursor, 0, true, false);
-		if (CursorPersisted(c)) {
-			safe_delete(copy);
-			return true;
+		if (WipeThenPersistCursor(c)) {
+			return copy;
 		}
-
-		bool vault_cleared = false;
-		for (int attempt = 0; attempt < 3 && !vault_cleared; ++attempt) {
-			vault_cleared = NmsVaultDeleteItem(c->CharacterID(), slot, bag_slot);
-		}
-		if (vault_cleared && copy) {
-			c->GetInv().PushCursorFront(*copy);
-			c->SendItemPacket(EQ::invslot::slotCursor, copy, ItemPacketLimbo);
-			CursorPersisted(c);
-		}
-		else if (!vault_cleared) {
-			LogError(
-				"NmsVault: cursor persist failed and vault rollback delete failed for character {} slot {} bag {}",
-				c->CharacterID(),
-				slot,
-				bag_slot
-			);
-			CursorPersisted(c);
-		}
-		safe_delete(copy);
-		return false;
+		LogError(
+			"NmsVault: cursor persist failed before vault write for character {}",
+			c->CharacterID()
+		);
+		RestoreTakenCursor(c, copy);
+		return nullptr;
 	}
 
 	void RestoreWithdrawOnFail(
@@ -550,7 +639,10 @@ bool NmsVaultSaveItem(uint32 character_id, const NmsVaultItem &item)
 		item.aug[4],
 		item.aug[5]
 	));
-	return results.Success();
+	if (results.Success()) {
+		return true;
+	}
+	return ReadVaultRowState(character_id, item) == VaultRowState::Match;
 }
 
 bool NmsVaultDeleteItem(uint32 character_id, int slot, int bag_slot)
@@ -665,19 +757,21 @@ void NmsVaultHandleDeposit(Client *c, int slot)
 		return;
 	}
 
-	auto *inst = PeekCursor(c);
-	if (!inst) {
+	if (!PeekCursor(c)) {
 		return;
 	}
 
-	if (!SaveVaultSlot(c->CharacterID(), slot, inst)) {
-		c->Message(Chat::Red, "[NMS] Could not save that item to the vault.");
-		return;
-	}
-	if (!ConsumeCursorAfterSave(c, slot, 0)) {
+	auto *taken = TakeCursorIfPersisted(c);
+	if (!taken) {
 		c->Message(Chat::Red, "[NMS] Could not remove that item from your cursor.");
 		return;
 	}
+	if (!SaveVaultSlot(c->CharacterID(), slot, taken)) {
+		RestoreTakenCursor(c, taken);
+		c->Message(Chat::Red, "[NMS] Could not save that item to the vault.");
+		return;
+	}
+	safe_delete(taken);
 	AfterVaultMutation(c, slot, {});
 	NmsVaultSendRefresh(c, NmsVaultPageForSlot(slot));
 }
@@ -794,15 +888,20 @@ void NmsVaultHandleDepositBagItem(Client *c, int slot, int bag_slot)
 		return;
 	}
 
-	auto row = FromInstance(slot, bag_slot, inst);
-	if (!NmsVaultSaveItem(c->CharacterID(), row)) {
-		c->Message(Chat::Red, "[NMS] Could not save that item to the vault.");
-		return;
-	}
-	if (!ConsumeCursorAfterSave(c, slot, bag_slot)) {
+	auto *taken = TakeCursorIfPersisted(c);
+	if (!taken) {
 		c->Message(Chat::Red, "[NMS] Could not remove that item from your cursor.");
 		return;
 	}
+	auto row = FromInstance(slot, bag_slot, taken);
+	if (!NmsVaultSaveItem(c->CharacterID(), row)) {
+		if (!FinishFailedVaultChildWrite(c->CharacterID(), row)) {
+			RestoreTakenCursor(c, taken);
+			c->Message(Chat::Red, "[NMS] Could not save that item to the vault.");
+			return;
+		}
+	}
+	safe_delete(taken);
 	AfterVaultMutation(c, slot, {});
 	NmsVaultSendRefresh(c, NmsVaultPageForSlot(slot));
 }

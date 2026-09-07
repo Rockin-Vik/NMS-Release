@@ -110,6 +110,9 @@ namespace {
 		if (!EnsureTables() || !zone) {
 			return false;
 		}
+		if (expire_seconds < 1) {
+			expire_seconds = 1;
+		}
 
 		auto results = database.QueryDatabase(fmt::format(
 			"INSERT INTO character_nms_loot_offers "
@@ -143,7 +146,7 @@ namespace {
 		if (!offer.id) {
 			return false;
 		}
-		offer.expire_remaining = expire_seconds > 0 ? expire_seconds : 1;
+		offer.expire_remaining = expire_seconds;
 		return true;
 	}
 
