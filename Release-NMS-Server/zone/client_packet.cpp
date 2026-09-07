@@ -873,6 +873,11 @@ void Client::CompleteConnect()
 		}
 
 		e.last_login = time(nullptr);
+		// FindOne is a full-row snapshot from before LoadClassExp. UpdateOne writes every
+		// column, so persist the in-memory pool/level (already the trailing class when
+		// catch-up is on) instead of putting the stale watermark back on disk.
+		e.exp   = static_cast<uint32_t>(m_pp.exp);
+		e.level = m_pp.level;
 
 		const int updated = CharacterDataRepository::UpdateOne(database, e);
 		if (!updated) {

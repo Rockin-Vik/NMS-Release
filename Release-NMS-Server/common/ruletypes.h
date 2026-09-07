@@ -39,7 +39,7 @@
 
 
 RULE_CATEGORY(Character)
-RULE_INT(Character, MaxLevel, 75, "Sets the highest level for players that can be reached through experience")
+RULE_INT(Character, MaxLevel, 70, "Sets the highest level for players that can be reached through experience")
 RULE_BOOL(Character, PerCharacterQglobalMaxLevel, false, "Check for qglobal 'CharMaxLevel' character qglobal (Type 5, \"\"), if player tries to level beyond that point, it will not go beyond that level")
 RULE_BOOL(Character, PerCharacterBucketMaxLevel, true, "Check for data bucket 'CharMaxLevel', if player tries to level beyond that point, it will not go beyond that level")
 RULE_INT(Character, MaxExpLevel, 70, "Defines the maximum level that can be reached through experience")
@@ -136,7 +136,7 @@ RULE_BOOL(Character, MaintainIntoxicationAcrossZones, true, "If true, alcohol ef
 RULE_BOOL(Character, EnableDiscoveredItems, true, "If enabled, it enables EVENT_DISCOVER_ITEM and also saves character names and timestamps for the first time an item is discovered")
 RULE_BOOL(Character, EnableXTargetting, true, "Enable Extended Targeting Window, for users with UF and later clients")
 RULE_BOOL(Character, EnableAggroMeter, true, "Enable Aggro Meter, for users with RoF and later clients")
-RULE_BOOL(Character, KeepLevelOverMax, true, "Don't de-level a character that has somehow gone over the level cap")
+RULE_BOOL(Character, KeepLevelOverMax, false, "Don't de-level a character that has somehow gone over the level cap")
 RULE_INT(Character, FoodLossPerUpdate, 15, "How much food/water you lose per stamina update")
 RULE_BOOL(Character, EnableHungerPenalties, false, "Being hungry/thirsty has negative effects -- it does appear normal live servers do not have penalties")
 RULE_BOOL(Character, EnableFoodRequirement, false, "If disabled, food is no longer required")
