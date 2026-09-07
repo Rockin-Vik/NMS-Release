@@ -393,8 +393,7 @@ bool GenerateMQUI()
             while (pFile) {
                 DebugSpew("GenerateMQUI::Inserting %s",pFile->szFilename);
                 if (!AlreadyIncluded(seenIncludes, pFile->szFilename))
-                    fprintf(fnew, "<Include>%s</Include>
-", pFile->szFilename);
+                    fprintf(fnew, "<Include>%s</Include>\n", pFile->szFilename);
                 pFile = pFile->pNext;
             }
         }
@@ -445,8 +444,7 @@ bool GenerateMQUI()
                     while (pFile) {
                         //DebugSpew("GenerateMQUI::Inserting %s",pFile->szFilename);
                         if (!AlreadyIncluded(seenIncludes, pFile->szFilename))
-                            fprintf(fnew, "<Include>%s</Include>
-", pFile->szFilename);
+                            fprintf(fnew, "<Include>%s</Include>\n", pFile->szFilename);
                         pFile = pFile->pNext;
                     }
                 }
