@@ -17328,14 +17328,15 @@ void Client::Handle_OP_HeroRequest(const EQApplicationPacket *app)
 		return;
 	}
 
-	if (!parse->PlayerHasQuestSub(EVENT_HERO_REQUEST)) {
+	// Global script only: a zone-local player.pl must not be able to answer (or bypass) this.
+	if (!parse->PlayerHasQuestSubGlobal(EVENT_HERO_REQUEST)) {
 		LogError("OP_HeroRequest from [{}] dropped: global_player has no EVENT_HERO_REQUEST", GetCleanName());
 		Message(Chat::Red, "Class changes are not available from this window right now. See a guildmaster or the Vision of Ayonae.");
 		return;
 	}
 
 	m_hero_request_timer.Start(1000);
-	parse->EventPlayer(EVENT_HERO_REQUEST, this, fmt::format("{} {}", request->op, class_id), 0);
+	parse->EventPlayerGlobal(EVENT_HERO_REQUEST, this, fmt::format("{} {}", request->op, class_id), 0, nullptr);
 }
 
 bool Client::IsFilteredAFKPacket(const EQApplicationPacket *p)
