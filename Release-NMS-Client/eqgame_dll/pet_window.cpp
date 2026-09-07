@@ -23,6 +23,7 @@
 #include "MQ2Main.h"
 #include "pet_window.h"
 #include "multi_pet.h"
+#include "hero_tab.h"
 
 #include <cstdint>
 #include <cstring>
@@ -279,6 +280,9 @@ static int __fastcall WndNotification_Detour(void* thisPtr, void* edx,
             return result;
         }
     }
+
+    if (message == 1 /* XWM_LCLICK */ && HeroTab_HandleClick(thisPtr, sender))
+        return 1; // Hero tab button handled
 
     if (message == 1 /* XWM_LCLICK */) {
         if (s_petWnd && s_petWnd->HandleClick(sender))

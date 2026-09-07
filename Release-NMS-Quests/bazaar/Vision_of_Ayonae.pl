@@ -8,9 +8,9 @@ sub EVENT_SAY {
         return;
     }
    
-    my $remove_class_cost = 10;
+    my $remove_class_cost = plugin::RemoveClassCost();
     my $reset_aa_cost = 5;
-    my $remove_class_lockout = 7;
+    my $remove_class_lockout = plugin::RemoveClassLockoutDays();
 
     if ($text=~/hail/i) {   
         if (plugin::GetClassesCount($client) <= 1) {
@@ -289,33 +289,11 @@ sub EVENT_SAY {
     }
 
     if ($text =~ /^proceed_(\d+)$/i) {
-        #return;
-        my $class_id = $1; 
-
-        if ($client->HasExpeditionLockout("Class Removal Lockout", "")) {
-            plugin::YellowText("You cannot remove a class at this time, you still are under cooldown from a previous class removal.");
-            return 0;
-        }
-
-        if (!$client->HasExpeditionLockout("Class Removal Lockout", "") && plugin::HasClass($client, $class_id)) {
-            if (plugin::GetEOM($client) >= $remove_class_cost && plugin::RemoveClass($class_id, $client)) {
-                plugin::SpendEOM($client, $remove_class_cost);
-                $client->AddExpeditionLockout("Class Removal Lockout", "", $remove_class_lockout * 24 * 60 * 60);
-            }
-        }
+        plugin::RemoveClassPaid($client, $1);
     }
-
     if ($text =~ /^free_(\d+)$/i) {
-        #return;
-        my $class_id = $1; 
-        my $free_class_remove = ($client->GetBucket("free_remove_class_used") || 0);
-        if (!$free_class_remove && plugin::HasClass($client, $class_id)) {
-            if (plugin::RemoveClass($class_id, $client)) {
-                $client->SetBucket("free_remove_class_used", 1);
-            }
-        }
-    }   
-
+        plugin::RemoveClassFree($client, $1);
+    }
     if ($text =~ /unmem/i) {
         for ($i = 0; $i < 12; $i++) {
             $client->UnmemSpell($i, 1);

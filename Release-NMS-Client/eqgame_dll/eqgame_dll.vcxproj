@@ -166,6 +166,7 @@
     <ClCompile Include="MQ2Windows.cpp" />
     <ClCompile Include="Sprite.cpp" />
     <ClCompile Include="Text.cpp" />
+    <ClCompile Include="hero_tab.cpp" />
     <ClCompile Include="waypoint_window.cpp" />
     <ClCompile Include="who_multiclass.cpp" />
   </ItemGroup>
@@ -213,6 +214,7 @@
     <ClInclude Include="Sprite.h" />
     <ClInclude Include="Text.h" />
     <ClInclude Include="TickCount.h" />
+    <ClInclude Include="hero_tab.h" />
     <ClInclude Include="waypoint_window.h" />
     <ClInclude Include="who_multiclass.h" />
     <ClInclude Include="weapons.h" />

@@ -6972,7 +6972,8 @@ luabind::scope lua_register_events() {
 			luabind::value("read", static_cast<int>(EVENT_READ_ITEM)),
 			luabind::value("spell_effect_bot", static_cast<int>(EVENT_SPELL_EFFECT_BOT)),
 			luabind::value("spell_effect_buff_tic_bot", static_cast<int>(EVENT_SPELL_EFFECT_BUFF_TIC_BOT)),
-			luabind::value("item_generate", static_cast<int>(EVENT_ITEM_GENERATE))
+			luabind::value("item_generate", static_cast<int>(EVENT_ITEM_GENERATE)),
+			luabind::value("hero_request", static_cast<int>(EVENT_HERO_REQUEST))
 		)];
 }
 

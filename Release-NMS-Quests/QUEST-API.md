@@ -403,6 +403,7 @@ Each event fires a handler function. In Lua, the handler receives a single table
 | `EVENT_SPELL_EFFECT_BOT` (143) | `event_spell_effect_bot(e)` | `EVENT_SPELL_EFFECT_BOT` | Bot | Spell effect on bot |
 | `EVENT_SPELL_EFFECT_BUFF_TIC_BOT` (144) | `event_spell_effect_buff_tic_bot(e)` | `EVENT_SPELL_EFFECT_BUFF_TIC_BOT` | Bot | Buff tic on bot |
 | `EVENT_ITEM_GENERATE` (145) | `event_item_generate(e)` | `EVENT_ITEM_GENERATE` | — | **Never fires.** Declared in `event_codes.h` but nothing in the server dispatches it. |
+| `EVENT_HERO_REQUEST` (146) | `event_hero_request(e)` | `EVENT_HERO_REQUEST` | Player | Hero tab (inventory window) asked to add or drop a class. `$hero_op` 1 = add, 2 = remove; `$class_id` 1-16. The zone handler has already fail-closed the request; `global_player.pl` routes it to `plugin::HeroRequest`. |
 
 > **Keep the three name tables in sync.** `QuestEventID` (`zone/event_codes.h`), `QuestEventSubroutines[]` (`zone/embparser.cpp`) and `LuaEvents[]` (`zone/lua_parser.cpp`) are parallel arrays sized `_LargestEventID`. A new event added to the enum without a name in both tables is a null pointer that gets dereferenced on dispatch. Add new events to all three, and to the `Event` enum in `zone/lua_general.cpp`.
 

@@ -1618,6 +1618,20 @@ struct WaypointRequest_Struct
     bool    autoconfirm_selected;
 };
 
+// NMS Hero tab (inventory window): the client asks to add or drop a class. The zone handler
+// fail-closes with CanAddExtraClass / HasClass and hands the request to EVENT_HERO_REQUEST,
+// where the Perl policy (free add, fee and lockout on removal) lives.
+enum HeroRequestOp : uint32 {
+	HeroRequestAdd    = 1,
+	HeroRequestRemove = 2
+};
+
+struct HeroRequest_Struct
+{
+	uint32 op;       // HeroRequestOp
+	uint32 class_id; // 1..16
+};
+
 #pragma pack(push, 1)
 struct NmsLootOfferHeader_Struct
 {
