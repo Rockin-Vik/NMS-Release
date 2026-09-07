@@ -161,6 +161,9 @@ newest at the bottom.
   and the maintainer said the override is the design: a locker item overwrites the held weapon's proc
   even when it is not a shield. Custom subsystems encode intent the code does not state; ask what the
   behaviour is *for* before labelling it broken.
+- I committed a rebuilt `dinput8.dll` after a build whose errors I had printed but not gated on, so the
+  commit shipped the previous binary under a message claiming the fix. Gate every binary commit on the
+  build's exit code and a fresh output timestamp, never on reading a log.
 
 ## Project skills
 
