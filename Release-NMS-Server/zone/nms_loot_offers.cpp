@@ -392,17 +392,13 @@ namespace {
 		}
 
 		ExpireOffers(c->CharacterID());
-		database.QueryDatabase(fmt::format(
-			"DELETE FROM character_nms_loot_offers WHERE character_id = {} AND zone_id = {} "
-			"AND instance_id = {} AND corpse_id = {} AND corpse_serial != {} AND passed = 0",
-			c->CharacterID(),
-			zone->GetZoneID(),
-			zone->GetInstanceID(),
-			corpse->GetID(),
-			corpse->GetNmsLootSerial()
-		));
-
-		auto existing = LoadOffers(c->CharacterID(), zone->GetZoneID(), corpse->GetID(), corpse->GetNmsLootSerial());
+		// Corpse entity ids are recycled from EntityList::free_ids, so the same corpse_id
+		// names many different corpses over a zone's life. An offer is a personal roll that
+		// deliberately outlives the corpse it came from, so the old "delete every row for
+		// this corpse_id with a different serial" cleanup destroyed unclaimed loot the player
+		// had never seen. Load every serial under this corpse_id instead: stale rows are shown
+		// alongside the fresh ones in the same window, and expires_at still reclaims them.
+		auto existing = LoadOffers(c->CharacterID(), zone->GetZoneID(), corpse->GetID(), 0);
 		if (!existing.empty()) {
 			SendOffers(c, existing, corpse->GetID());
 		}
@@ -541,7 +537,7 @@ namespace {
 	}
 }
 
-void NmsLootOfferForgetCorpseItem(uint32 character_id, uint32 corpse_id, const LootItem *item)
+void NmsLootOfferForgetCorpseItem(uint32 character_id, uint32 corpse_id, uint64 corpse_serial, const LootItem *item)
 {
 	// Rule first, then tables - the same order every other entry point in this file uses.
 	// Without the rule check this ran on EVERY native corpse loot on a server that had
@@ -551,14 +547,21 @@ void NmsLootOfferForgetCorpseItem(uint32 character_id, uint32 corpse_id, const L
 	// rule is off. Rows written while the rule was on are left behind deliberately: they
 	// carry expires_at and are reclaimed by ExpireOffers, and no offer is sent or
 	// actioned while the rule is off, so a stale row is inert.
-	if (!NmsLootOffersEnabled() || !EnsureTables() || !character_id || !corpse_id || !item || !item->item_id) {
+	if (!NmsLootOffersEnabled() || !EnsureTables() || !zone || !character_id || !corpse_id || !item || !item->item_id) {
 		return;
 	}
+	// corpse_id alone is not a key: entity ids are recycled within a zone and repeat across
+	// zones, so an unscoped DELETE revoked offers earned from a different corpse - or a
+	// different zone entirely. Pin it to this zone, this instance and this exact corpse.
 	database.QueryDatabase(fmt::format(
-		"DELETE FROM character_nms_loot_offers WHERE character_id = {} AND corpse_id = {} "
+		"DELETE FROM character_nms_loot_offers WHERE character_id = {} AND zone_id = {} "
+		"AND instance_id = {} AND corpse_id = {} AND corpse_serial = {} "
 		"AND item_id = {} AND aug1 = {} AND aug2 = {} AND aug3 = {} AND aug4 = {} AND aug5 = {} AND aug6 = {}",
 		character_id,
+		zone->GetZoneID(),
+		zone->GetInstanceID(),
 		corpse_id,
+		corpse_serial,
 		item->item_id,
 		item->aug_1,
 		item->aug_2,
@@ -609,14 +612,12 @@ void NmsLootOfferOnCorpseCreated(Corpse *corpse, Client *credit, NPC *source)
 
 	std::vector<Client *> recipients;
 	CollectPartyClientsInZone(credit, recipients);
+	// Per recipient this used to run a DELETE (ExpireOffers) and a SELECT before rolling.
+	// The SELECT filtered on corpse_serial, which NextNmsLootSerial had just minted uniquely
+	// for this corpse, so it could never match a row - one guaranteed-empty query per player
+	// per kill. Expiry is enforced by the "expires_at >= NOW()" filter every read already
+	// carries; the sweep still runs on corpse open and on zone-in.
 	for (auto *c : recipients) {
-		ExpireOffers(c->CharacterID());
-		auto existing = LoadOffers(c->CharacterID(), zone->GetZoneID(), corpse->GetID(), corpse->GetNmsLootSerial());
-		if (!existing.empty()) {
-			SendOffers(c, existing, corpse->GetID());
-			continue;
-		}
-
 		LootItems rolled;
 		source->RollIndependentLoot(rolled);
 		ApplyLootBuffToRolled(source, c, rolled);

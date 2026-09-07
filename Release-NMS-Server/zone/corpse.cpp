@@ -945,7 +945,7 @@ void Corpse::RemoveItem(LootItem *item_data, bool forget_offers)
 				looter_id = looter->CharacterID();
 			}
 			if (looter_id) {
-				NmsLootOfferForgetCorpseItem(looter_id, GetID(), sitem);
+				NmsLootOfferForgetCorpseItem(looter_id, GetID(), GetNmsLootSerial(), sitem);
 			}
 		}
 		m_item_list.erase(iter);
