@@ -38,6 +38,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "fastmath.h"
 #include "mob.h"
 #include "npc.h"
+#include "nms_loot_offers.h"
 #include "nms_vault.h"
 
 #include "bot.h"
@@ -3184,6 +3185,17 @@ bool NPC::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::SkillTy
 				corpse->AllowPlayerLoot(ultimate_owner, 0);
 			}
 		}
+
+		Client *nms_loot_credit = nullptr;
+		if (killer && killer->IsClient()) {
+			nms_loot_credit = killer->CastToClient();
+		} else if (killer_mob) {
+			Mob *ultimate_owner = killer_mob->GetUltimateOwner();
+			if (ultimate_owner && ultimate_owner->IsClient()) {
+				nms_loot_credit = ultimate_owner->CastToClient();
+			}
+		}
+		NmsLootOfferOnCorpseCreated(corpse, nms_loot_credit, this);
 
 		if (zone && zone->adv_data) {
 			auto sr = (ServerZoneAdventureDataReply_Struct *) zone->adv_data;

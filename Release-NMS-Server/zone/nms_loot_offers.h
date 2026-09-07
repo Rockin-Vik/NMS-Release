@@ -8,6 +8,7 @@
 class Client;
 class Corpse;
 class EQApplicationPacket;
+class NPC;
 
 enum class NmsLootAction : uint32 {
 	None = 0,
@@ -43,6 +44,7 @@ bool NmsLootOffersEnabled();
 bool NmsLootOfferTablesReady();
 
 void NmsLootOfferOnCorpseOpen(Client *c, Corpse *corpse);
+void NmsLootOfferOnCorpseCreated(Corpse *corpse, Client *credit, NPC *source);
 void NmsLootOfferRestoreOnZoneIn(Client *c);
 void NmsLootOfferHandleDecision(Client *c, const EQApplicationPacket *app);
 bool NmsLootOfferApply(Client *c, const NmsLootOffer &offer, NmsLootAction action, const std::string &pass_to);
