@@ -1412,8 +1412,23 @@ void Client::PurchaseAlternateAdvancementRank(int rank_id) {
 
 void Client::PurchaseAllAlternateAdvancementRanks(int starting_rank_id) {
 	AA::Rank* rank = zone->GetAlternateAdvancementRank(starting_rank_id);
+	bool told = false;
 	while (rank) {
-		PurchaseAlternateAdvancementRank(rank->id);
+		if (HasAlreadyPurchasedRank(rank)) {
+			rank = rank->next;
+			continue;
+		}
+
+		std::string reason;
+		if (!CanPurchaseAlternateAdvancementRank(rank, true, true, &reason)) {
+			if (!told && !reason.empty()) {
+				Message(Chat::Red, "%s", reason.c_str());
+				told = true;
+			}
+			break;
+		}
+
+		FinishAlternateAdvancementPurchase(rank, false, true);
 		rank = rank->next;
 	}
 }
@@ -1998,38 +2013,39 @@ bool Mob::CanUseAlternateAdvancementRank(AA::Rank *rank, std::string *reason)
 		}
 	}
 
-	const int  expansion        = RuleI(Expansion, CurrentExpansion);
-	const bool use_expansion_aa = RuleB(Expansion, UseCurrentExpansionAAOnly);
-	if (use_expansion_aa && expansion >= 0) {
-		if (rank->expansion > expansion) {
-			if (reason) {
-				*reason = "That ability is not available in the current expansion.";
+	if (!RuleB(Custom, AAIgnoreExpansionGate)) {
+		const int  expansion        = RuleI(Expansion, CurrentExpansion);
+		const bool use_expansion_aa = RuleB(Expansion, UseCurrentExpansionAAOnly);
+		if (use_expansion_aa && expansion >= 0) {
+			if (rank->expansion > expansion) {
+				if (reason) {
+					*reason = "That ability is not available in the current expansion.";
+				}
+				return false;
 			}
-			return false;
 		}
-	}
 
-
-	if (IsClient()) {
-		if (rank->expansion && !(CastToClient()->GetPP().expansions & (1 << (rank->expansion - 1)))) {
-			if (reason) {
-				*reason = "That ability is not available in the current expansion.";
+		if (IsClient()) {
+			if (rank->expansion && !(CastToClient()->GetPP().expansions & (1 << (rank->expansion - 1)))) {
+				if (reason) {
+					*reason = "That ability is not available in the current expansion.";
+				}
+				return false;
 			}
-			return false;
-		}
-	} else if (IsBot()) {
-		if (rank->expansion && !(CastToBot()->GetExpansionBitmask() & (1 << (rank->expansion - 1)))) {
-			if (reason) {
-				*reason = "That ability is not available in the current expansion.";
+		} else if (IsBot()) {
+			if (rank->expansion && !(CastToBot()->GetExpansionBitmask() & (1 << (rank->expansion - 1)))) {
+				if (reason) {
+					*reason = "That ability is not available in the current expansion.";
+				}
+				return false;
 			}
-			return false;
-		}
-	} else {
-		if (rank->expansion && !(RuleI(World, ExpansionSettings) & (1 << (rank->expansion - 1)))) {
-			if (reason) {
-				*reason = "That ability is not available in the current expansion.";
+		} else {
+			if (rank->expansion && !(RuleI(World, ExpansionSettings) & (1 << (rank->expansion - 1)))) {
+				if (reason) {
+					*reason = "That ability is not available in the current expansion.";
+				}
+				return false;
 			}
-			return false;
 		}
 	}
 

@@ -103,7 +103,9 @@ It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `Player
 
 Supporting rules: `Custom:ServerAuthStats` (server-authoritative stats, requires the DLL),
 `Custom:UseDynamicAATimers` (+ `character_dynamic_aa_timers` table, deconflicts AA timers that
-collide across classes), `Custom:BypassMulticlassStackConflict`, `Custom:MaxMulticlasses`,
+collide across classes), `Custom:AAIgnoreExpansionGate` (skip `aa_ranks.expansion` vs the
+character/World bitmask so later-era AAs remain trainable; off = stock refuse),
+`Custom:BypassMulticlassStackConflict`, `Custom:MaxMulticlasses`,
 `Custom:HeroCatchupEnabled`, `Custom:NewClassStartLevel`, and the `character_aa_disabled` table.
 
 ### 3.2 Multiple pets
