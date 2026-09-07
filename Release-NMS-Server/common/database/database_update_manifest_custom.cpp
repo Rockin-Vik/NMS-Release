@@ -1271,6 +1271,43 @@ ALTER TABLE character_nms_vault
 		.content_schema_update = false,
 	},
 
+	ManifestEntry{
+		.version = 42,
+		.description = "2026_09_07_character_learned_spells_discs_mem",
+		.check = "SHOW TABLES LIKE 'character_learned_mem'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+CREATE TABLE IF NOT EXISTS character_learned_spells (
+  character_id INT UNSIGNED NOT NULL,
+  spell_id INT UNSIGNED NOT NULL,
+  PRIMARY KEY (character_id, spell_id)
+);
+
+CREATE TABLE IF NOT EXISTS character_learned_discs (
+  character_id INT UNSIGNED NOT NULL,
+  spell_id INT UNSIGNED NOT NULL,
+  PRIMARY KEY (character_id, spell_id)
+);
+
+CREATE TABLE IF NOT EXISTS character_learned_mem (
+  character_id INT UNSIGNED NOT NULL,
+  spell_id INT UNSIGNED NOT NULL,
+  gem_slot SMALLINT UNSIGNED NOT NULL,
+  PRIMARY KEY (character_id, spell_id)
+);
+
+INSERT IGNORE INTO character_learned_spells (character_id, spell_id)
+SELECT id, spell_id FROM character_spells
+WHERE spell_id IS NOT NULL;
+
+INSERT IGNORE INTO character_learned_discs (character_id, spell_id)
+SELECT id, disc_id FROM character_disciplines
+WHERE disc_id IS NOT NULL AND disc_id <> 0;
+)",
+		.content_schema_update = false,
+	},
+
 	// Used for testing
 	//	ManifestEntry{
 	//		.version = 9229,

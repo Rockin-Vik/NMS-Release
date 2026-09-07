@@ -88,6 +88,12 @@ It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `Player
 - Read: `zone/client_packet.cpp:644` loads it into `m_pp.classes`
 - Accessors: `Client::GetClassesBits()` (`zone/client.cpp:14509`) returns the mask when
   `RuleB(Custom, MulticlassingEnabled)` is true, otherwise just the single-class bit
+- Spell knowledge is `character_learned_spells` / `character_learned_discs` (uncapped). The live
+  book is 2880 slots; the RoF2 window shows one 720-slot volume at a time (`/book 1-4` in the
+  add-on). `RemoveExtraClass` hides class-owned spells the current mask cannot use; it does not
+  delete learned rows. If the learned tables cannot be read, reconcile skips hide/restore
+  rather than unscribing against an empty set. Coordinated server + DLL deploy; CAuth cannot
+  reject an old add-on before the profile goes out. Spec: `specs/2026-09-07-spellbook-capacity.md`.
 - **`Mob::HasClass(class, bitmask)`** (`zone/mob.cpp:4859`) replaces every stock
   `GetClass() == X` comparison across attack, spells, AA and bonuses. **If you add code that
   branches on class, use `HasClass`, never `GetClass()`.** This is the most common way to
@@ -248,7 +254,7 @@ ALTER TABLE db_version ADD COLUMN custom_version INT UNSIGNED NOT NULL DEFAULT 0
 
 ### 4.2 What is actually in the custom manifest
 
-41 entries declared (v1–v41), **38 live**. Numbering is a plain sequence independent of the 9325
+42 entries declared (v1–v42), **39 live**. Numbering is a plain sequence independent of the 9325
 stock number. Entries carry `content_schema_update` to target the content DB rather than the
 player DB.
 
@@ -271,6 +277,7 @@ player DB.
 | v39 | `instance_id` and Pass tombstone (`passed`) | Live |
 | v40 | `passed_from` (client offer `name2` passer name) | Live |
 | v41 | `character_nms_vault` per-instance item state: attunement, `custom_data`, ornamentation, `guid` | Live |
+| v42 | `character_learned_spells` / `character_learned_discs` / `character_learned_mem` (B1 hide/restore) | Live |
 
 ### 4.3 ⚠️ The version number is a claim, not a fact
 
@@ -329,6 +336,10 @@ sends opcodes in the `0x1338`–`0x140B` range that stock clients do not underst
   `Custom:NmsLootOffers` default off; without that add-on, leave the rule off.
   When on, each in-zone group/raid member (and the killer) gets an independent
   loot-table roll in `/nmsloot` on NPC death; opening a corpse only resends.
+- Spellbook is 2880 absolute slots on the wire. The add-on keeps `CHARINFO2.SpellBook[720]`
+  unchanged and shows one volume at a time (`/book 1-4`). Ship server and DLL together; CAuth
+  has no build number and runs after the profile is sent, so an old add-on cannot be rejected
+  before a 2880-slot `OP_PlayerProfile` goes out. Spec: `specs/2026-09-07-spellbook-capacity.md`.
 - **Enforcement:** when `Custom:ServerAuthStats` is on, the `CAuth` handshake
   (`zone/client_packet.cpp:5106`) validates `GetClassesBits() * GetID()` and **disconnects
   clients without the DLL.**

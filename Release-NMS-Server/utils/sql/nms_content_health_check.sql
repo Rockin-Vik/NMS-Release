@@ -1,6 +1,6 @@
 -- ============================================================================
 -- NMS content health check - verifies the DATA every custom-manifest version
--- (v18 through v41) is supposed to deliver, without trusting db_version.
+-- (v18 through v42) is supposed to deliver, without trusting db_version.
 --
 -- Why this exists: we have now twice found servers whose custom_version was
 -- stamped PAST an entry whose content never landed (a half-apply healed by a
@@ -17,7 +17,7 @@
 -- READ-ONLY: SELECT/SHOW only. Safe on any server, any number of times.
 -- ============================================================================
 
-SELECT 'db_version (expect 41 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
+SELECT 'db_version (expect 42 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
 
 -- ---- v18 / v23: Beastlord spell merchant + scrolls -------------------------
 SELECT 'v23 bl merchant npc (expect 1)' AS what, COUNT(*) AS value FROM npc_types WHERE id = 1120001300;
@@ -131,3 +131,13 @@ SELECT 'v41 vault instance columns (expect 6)' AS what, COUNT(*) AS value
   WHERE table_schema = DATABASE() AND table_name = 'character_nms_vault'
     AND column_name IN ('instnodrop', 'custom_data', 'ornament_icon',
                         'ornament_idfile', 'ornament_hero_model', 'guid');
+
+
+-- ---- v42: learned spell/disc/mem carry-over -----------------------------------
+-- The spec change hides class-illegal spells instead of deleting them; without these three
+-- tables a spec change permanently loses every spell and discipline the character learned.
+SELECT 'v42 learned carry-over tables (expect 3)' AS what, COUNT(*) AS value
+  FROM information_schema.tables
+  WHERE table_schema = DATABASE()
+    AND table_name IN ('character_learned_spells', 'character_learned_discs',
+                       'character_learned_mem');

@@ -6445,7 +6445,7 @@ void Client::UnmemSpellAll(bool update_client)
 }
 
 uint32 Client::GetSpellIDByBookSlot(int book_slot) {
-	if (book_slot <= EQ::spells::SPELLBOOK_SIZE) {
+	if (book_slot >= 0 && book_slot < EQ::spells::SPELLBOOK_SIZE) {
 		return GetSpellByBookSlot(book_slot);
 	}
 	return -1;
@@ -6495,11 +6495,13 @@ void Client::ScribeSpell(uint16 spell_id, int slot, bool update_client, bool def
 
 	if (update_client) {
 		if (m_pp.spell_book[slot] != UINT32_MAX) {
+			// Explicit overwrite of an occupied slot is a player/GM unscribe (D7).
 			UnscribeSpell(slot, update_client, defer_save);
 		}
 	}
 
 	m_pp.spell_book[slot] = spell_id;
+	LearnSpellId(spell_id);
 
 	// defer save if we're bulk saving elsewhere
 	if (!defer_save) {
@@ -6512,13 +6514,14 @@ void Client::ScribeSpell(uint16 spell_id, int slot, bool update_client, bool def
 	}
 }
 
-void Client::UnscribeSpell(int slot, bool update_client, bool defer_save)
+void Client::UnscribeSpell(int slot, bool update_client, bool defer_save, bool forget_learned)
 {
 	if (!EQ::ValueWithin(slot, 0, (EQ::spells::SPELLBOOK_SIZE - 1))) {
 		return;
 	}
 
-	LogSpells("Spell [{}] erased from spell book slot [{}]", m_pp.spell_book[slot], slot);
+	const uint32 erased_spell = m_pp.spell_book[slot];
+	LogSpells("Spell [{}] erased from spell book slot [{}]", erased_spell, slot);
 
 	if (!defer_save) {
 		database.DeleteCharacterSpell(CharacterID(), slot);
@@ -6535,43 +6538,59 @@ void Client::UnscribeSpell(int slot, bool update_client, bool defer_save)
 		safe_delete(outapp);
 	}
 
-	if (parse->PlayerHasQuestSub(EVENT_UNSCRIBE_SPELL)) {
-		const auto export_string = fmt::format("{} {}", slot, m_pp.spell_book[slot]);
+	if (forget_learned && parse->PlayerHasQuestSub(EVENT_UNSCRIBE_SPELL)) {
+		const auto export_string = fmt::format("{} {}", slot, erased_spell);
 		parse->EventPlayer(EVENT_UNSCRIBE_SPELL, this, export_string, 0);
 	}
 
 	m_pp.spell_book[slot] = UINT32_MAX;
+
+	if (forget_learned && IsValidSpell(erased_spell)) {
+		ForgetSpellId(static_cast<uint16>(erased_spell));
+	}
 }
 
 void Client::UnscribeSpellAll(bool update_client)
 {
 	for (int i = 0; i < EQ::spells::SPELLBOOK_SIZE; i++) {
 		if (m_pp.spell_book[i] != 0xFFFFFFFF) {
-			UnscribeSpell(i, update_client, true);
+			UnscribeSpell(i, update_client, true, true);
 		}
 	}
 
 	// bulk save at end (this will only delete)
 	SaveSpells();
+	m_learned_spells.clear();
+	m_learned_mem.clear();
+	database.QueryDatabase(
+		fmt::format("DELETE FROM character_learned_spells WHERE character_id = {}", CharacterID())
+	);
+	database.QueryDatabase(
+		fmt::format("DELETE FROM character_learned_mem WHERE character_id = {}", CharacterID())
+	);
 }
 
 void Client::UnscribeSpellBySpellID(uint16 spell_id, bool update_client)
 {
 	for (int index = 0; index < EQ::spells::SPELLBOOK_SIZE; index++) {
 		if (IsValidSpell(m_pp.spell_book[index]) && m_pp.spell_book[index] == spell_id) {
-			UnscribeSpell(index, update_client, true);
+			UnscribeSpell(index, update_client, true, true);
 			break;
 		}
 	}
+
+	ForgetSpellId(spell_id);
+	SaveSpells();
 }
 
-void Client::UntrainDisc(int slot, bool update_client, bool defer_save)
+void Client::UntrainDisc(int slot, bool update_client, bool defer_save, bool forget_learned)
 {
 	if (slot >= MAX_PP_DISCIPLINES || slot < 0) {
 		return;
 	}
 
-	LogSpells("Discipline [{}] untrained from slot [{}]", m_pp.disciplines.values[slot], slot);
+	const uint32 erased_disc = m_pp.disciplines.values[slot];
+	LogSpells("Discipline [{}] untrained from slot [{}]", erased_disc, slot);
 	m_pp.disciplines.values[slot] = 0;
 
 	if (!defer_save) {
@@ -6580,6 +6599,10 @@ void Client::UntrainDisc(int slot, bool update_client, bool defer_save)
 
 	if (update_client) {
 		SendDisciplineUpdate();
+	}
+
+	if (forget_learned && IsValidSpell(erased_disc)) {
+		ForgetDiscId(static_cast<uint16>(erased_disc));
 	}
 }
 
@@ -6593,16 +6616,23 @@ void Client::UntrainDiscAll(bool update_client)
 
 	// bulk delete / save
 	SaveDisciplines();
+	m_learned_discs.clear();
+	database.QueryDatabase(
+		fmt::format("DELETE FROM character_learned_discs WHERE character_id = {}", CharacterID())
+	);
 }
 
 void Client::UntrainDiscBySpellID(uint16 spell_id, bool update_client)
 {
 	for (int slot = 0; slot < MAX_PP_DISCIPLINES; slot++) {
 		if (m_pp.disciplines.values[slot] == spell_id) {
-			UntrainDisc(slot, update_client);
+			UntrainDisc(slot, update_client, false, true);
+			ForgetDiscId(spell_id);
 			return;
 		}
 	}
+
+	ForgetDiscId(spell_id);
 }
 
 int Client::GetNextAvailableSpellBookSlot(int starting_slot) {

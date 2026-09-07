@@ -348,7 +348,7 @@ namespace RoF2
 		};
 
 		const int SPELL_ID_MAX = 45000;
-		const int SPELLBOOK_SIZE = 720;
+		const int SPELLBOOK_SIZE = 2880;
 		const int SPELL_GEM_COUNT = static_cast<uint32>(CastingSlot::MaxGems);
 
 		const int LONG_BUFFS = 42;

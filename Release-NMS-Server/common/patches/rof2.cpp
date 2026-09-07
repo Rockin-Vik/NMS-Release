@@ -2505,7 +2505,7 @@ namespace RoF2
 		unsigned char *__emu_buffer = in->pBuffer;
 		PlayerProfile_Struct *emu = (PlayerProfile_Struct *)__emu_buffer;
 
-		uint32 PacketSize = 40000;	// Calculate this later
+		uint32 PacketSize = 50000;	// 2880 book slots need ~8.6k more than the old 720-slot 40000 buffer
 
 		auto outapp = new EQApplicationPacket(OP_PlayerProfile, PacketSize);
 

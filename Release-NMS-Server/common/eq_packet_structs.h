@@ -796,7 +796,7 @@ typedef struct
 /*88*/
 } PVPStatsEntry_Struct;
 
-static const uint32 MAX_PP_DISCIPLINES = 100;
+static const uint32 MAX_PP_DISCIPLINES = 300;
 static const uint32 MAX_DISCIPLINE_TIMERS = 399;
 
 struct Disciplines_Struct {

@@ -13197,6 +13197,336 @@ void Client::SaveDisciplines()
 	}
 }
 
+bool Client::HasSpellScribed(int spellid)
+{
+	return m_learned_spells.find(static_cast<uint32>(spellid)) != m_learned_spells.end();
+}
+
+bool Client::HasSpellInBook(int spellid)
+{
+	return FindSpellBookSlotBySpellID(static_cast<uint16>(spellid)) != -1;
+}
+
+void Client::LearnSpellId(uint16 spell_id)
+{
+	if (!IsValidSpell(spell_id)) {
+		return;
+	}
+
+	if (!m_learned_spells.insert(spell_id).second) {
+		return;
+	}
+
+	database.QueryDatabase(
+		fmt::format(
+			"INSERT IGNORE INTO character_learned_spells (character_id, spell_id) VALUES ({}, {})",
+			CharacterID(),
+			spell_id
+		)
+	);
+}
+
+void Client::ForgetSpellId(uint16 spell_id)
+{
+	m_learned_spells.erase(spell_id);
+	m_learned_mem.erase(spell_id);
+	database.QueryDatabase(
+		fmt::format(
+			"DELETE FROM character_learned_spells WHERE character_id = {} AND spell_id = {}",
+			CharacterID(),
+			spell_id
+		)
+	);
+	database.QueryDatabase(
+		fmt::format(
+			"DELETE FROM character_learned_mem WHERE character_id = {} AND spell_id = {}",
+			CharacterID(),
+			spell_id
+		)
+	);
+}
+
+void Client::LearnDiscId(uint16 spell_id)
+{
+	if (!IsValidSpell(spell_id)) {
+		return;
+	}
+
+	if (!m_learned_discs.insert(spell_id).second) {
+		return;
+	}
+
+	database.QueryDatabase(
+		fmt::format(
+			"INSERT IGNORE INTO character_learned_discs (character_id, spell_id) VALUES ({}, {})",
+			CharacterID(),
+			spell_id
+		)
+	);
+}
+
+void Client::ForgetDiscId(uint16 spell_id)
+{
+	m_learned_discs.erase(spell_id);
+	database.QueryDatabase(
+		fmt::format(
+			"DELETE FROM character_learned_discs WHERE character_id = {} AND spell_id = {}",
+			CharacterID(),
+			spell_id
+		)
+	);
+}
+
+void Client::LoadLearnedKnowledge()
+{
+	m_learned_ready = false;
+	m_learned_spells.clear();
+	m_learned_discs.clear();
+	m_learned_mem.clear();
+
+	auto spells_result = database.QueryDatabase(
+		fmt::format(
+			"SELECT spell_id FROM character_learned_spells WHERE character_id = {}",
+			CharacterID()
+		)
+	);
+	auto discs_result = database.QueryDatabase(
+		fmt::format(
+			"SELECT spell_id FROM character_learned_discs WHERE character_id = {}",
+			CharacterID()
+		)
+	);
+	auto mem_result = database.QueryDatabase(
+		fmt::format(
+			"SELECT spell_id, gem_slot FROM character_learned_mem WHERE character_id = {}",
+			CharacterID()
+		)
+	);
+
+	if (!spells_result.Success() || !discs_result.Success() || !mem_result.Success()) {
+		LogError(
+			"LoadLearnedKnowledge: character_learned_* query failed for character [{}] — skip hide/restore",
+			CharacterID()
+		);
+		return;
+	}
+
+	for (auto row = spells_result.begin(); row != spells_result.end(); ++row) {
+		m_learned_spells.insert(Strings::ToUnsignedInt(row[0]));
+	}
+	for (auto row = discs_result.begin(); row != discs_result.end(); ++row) {
+		m_learned_discs.insert(Strings::ToUnsignedInt(row[0]));
+	}
+	for (auto row = mem_result.begin(); row != mem_result.end(); ++row) {
+		m_learned_mem[Strings::ToUnsignedInt(row[0])] = static_cast<uint16>(Strings::ToUnsignedInt(row[1]));
+	}
+
+	for (int index = 0; index < EQ::spells::SPELLBOOK_SIZE; index++) {
+		if (IsValidSpell(m_pp.spell_book[index])) {
+			LearnSpellId(static_cast<uint16>(m_pp.spell_book[index]));
+		}
+	}
+
+	for (int index = 0; index < MAX_PP_DISCIPLINES; index++) {
+		if (IsValidSpell(m_pp.disciplines.values[index])) {
+			LearnDiscId(static_cast<uint16>(m_pp.disciplines.values[index]));
+		}
+	}
+
+	m_learned_ready = true;
+}
+
+static bool SpellUsableByClassMask(uint16 spell_id, uint32 class_bits)
+{
+	for (int class_id = Class::Warrior; class_id <= Class::Berserker; class_id++) {
+		if ((class_bits & GetPlayerClassBit(class_id)) && GetSpellLevel(spell_id, class_id) < UINT8_MAX) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static bool SpellOwnedByAnyClass(uint16 spell_id)
+{
+	for (int class_id = Class::Warrior; class_id <= Class::Berserker; class_id++) {
+		if (GetSpellLevel(spell_id, class_id) < UINT8_MAX) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void Client::ReconcileLearnedSpells(bool include_book_and_gems, bool include_discs, bool update_client)
+{
+	if (!m_learned_ready) {
+		LogError(
+			"ReconcileLearnedSpells: learned tables not loaded for character [{}] — skip hide/restore",
+			CharacterID()
+		);
+		return;
+	}
+
+	const uint32 class_bits = GetClassesBits();
+	bool book_dirty = false;
+	bool disc_dirty = false;
+
+	auto persist_hidden_mem = [this](uint16 spell_id, uint16 gem_slot) {
+		m_learned_mem[spell_id] = gem_slot;
+		database.QueryDatabase(
+			fmt::format(
+				"REPLACE INTO character_learned_mem (character_id, spell_id, gem_slot) VALUES ({}, {}, {})",
+				CharacterID(),
+				spell_id,
+				gem_slot
+			)
+		);
+	};
+
+	auto clear_hidden_mem = [this](uint16 spell_id) {
+		m_learned_mem.erase(spell_id);
+		database.QueryDatabase(
+			fmt::format(
+				"DELETE FROM character_learned_mem WHERE character_id = {} AND spell_id = {}",
+				CharacterID(),
+				spell_id
+			)
+		);
+	};
+
+	if (include_book_and_gems) {
+		for (int gem = 0; gem < EQ::spells::SPELL_GEM_COUNT; gem++) {
+			const uint32 spell_id = m_pp.mem_spells[gem];
+			if (!IsValidSpell(spell_id)) {
+				continue;
+			}
+
+			if (SpellOwnedByAnyClass(static_cast<uint16>(spell_id)) &&
+				!SpellUsableByClassMask(static_cast<uint16>(spell_id), class_bits)) {
+				persist_hidden_mem(static_cast<uint16>(spell_id), static_cast<uint16>(gem));
+				UnmemSpell(gem, update_client);
+			}
+		}
+
+		for (int slot = 0; slot < EQ::spells::SPELLBOOK_SIZE; slot++) {
+			const uint32 spell_id = m_pp.spell_book[slot];
+			if (spell_id == SPELLBOOK_UNKNOWN || !IsValidSpell(spell_id)) {
+				continue;
+			}
+
+			if (SpellOwnedByAnyClass(static_cast<uint16>(spell_id)) &&
+				!SpellUsableByClassMask(static_cast<uint16>(spell_id), class_bits)) {
+				UnscribeSpell(slot, update_client, true, false);
+				book_dirty = true;
+			}
+		}
+
+		for (uint32 spell_id : m_learned_spells) {
+			if (!IsValidSpell(spell_id) || !SpellUsableByClassMask(static_cast<uint16>(spell_id), class_bits)) {
+				continue;
+			}
+
+			if (HasSpellInBook(static_cast<int>(spell_id))) {
+				continue;
+			}
+
+			const int slot = GetNextAvailableSpellBookSlot();
+			if (slot == -1) {
+				LogError(
+					"ReconcileLearnedSpells: no book slot for character [{}] spell [{}] used [{}/{}]",
+					CharacterID(),
+					spell_id,
+					GetScribedSpells().size(),
+					EQ::spells::SPELLBOOK_SIZE
+				);
+				continue;
+			}
+
+			ScribeSpell(static_cast<uint16>(spell_id), slot, update_client, true);
+			book_dirty = true;
+		}
+
+		std::vector<uint32> restored_mems;
+		for (const auto &entry : m_learned_mem) {
+			const uint16 spell_id = static_cast<uint16>(entry.first);
+			if (!IsValidSpell(spell_id) || !SpellUsableByClassMask(spell_id, class_bits)) {
+				continue;
+			}
+
+			if (FindMemmedSpellBySpellID(spell_id) >= 0) {
+				restored_mems.push_back(spell_id);
+				continue;
+			}
+
+			int gem = entry.second;
+			if (gem < 0 || gem >= EQ::spells::SPELL_GEM_COUNT || IsValidSpell(m_pp.mem_spells[gem])) {
+				gem = FindEmptyMemSlot();
+			}
+
+			if (gem < 0) {
+				continue;
+			}
+
+			MemSpell(spell_id, gem, update_client);
+			restored_mems.push_back(spell_id);
+		}
+
+		for (uint32 spell_id : restored_mems) {
+			clear_hidden_mem(static_cast<uint16>(spell_id));
+		}
+	}
+
+	if (include_discs) {
+		for (int slot = 0; slot < MAX_PP_DISCIPLINES; slot++) {
+			const uint32 spell_id = m_pp.disciplines.values[slot];
+			if (!IsValidSpell(spell_id)) {
+				continue;
+			}
+
+			if (SpellOwnedByAnyClass(static_cast<uint16>(spell_id)) &&
+				!SpellUsableByClassMask(static_cast<uint16>(spell_id), class_bits)) {
+				UntrainDisc(slot, update_client, true, false);
+				disc_dirty = true;
+			}
+		}
+
+		for (uint32 spell_id : m_learned_discs) {
+			if (!IsValidSpell(spell_id) || !SpellUsableByClassMask(static_cast<uint16>(spell_id), class_bits)) {
+				continue;
+			}
+
+			if (GetDiscSlotBySpellID(static_cast<int32>(spell_id)) != -1) {
+				continue;
+			}
+
+			const int slot = GetNextAvailableDisciplineSlot();
+			if (slot == -1) {
+				LogError(
+					"ReconcileLearnedSpells: no disc slot for character [{}] spell [{}]",
+					CharacterID(),
+					spell_id
+				);
+				continue;
+			}
+
+			m_pp.disciplines.values[slot] = spell_id;
+			database.SaveCharacterDiscipline(CharacterID(), slot, spell_id);
+			disc_dirty = true;
+		}
+	}
+
+	if (book_dirty) {
+		SaveSpells();
+	}
+
+	if (disc_dirty) {
+		SaveDisciplines();
+		// Discs load after OP_PlayerProfile. Always push the reconciled window.
+		SendDisciplineUpdate();
+	}
+}
+
 uint16 Client::ScribeSpells(uint8 min_level, uint8 max_level)
 {
 	auto             available_book_slot = GetNextAvailableSpellBookSlot();
@@ -13268,6 +13598,7 @@ uint16 Client::LearnDisciplines(uint8 min_level, uint8 max_level)
 			}
 
 			GetPP().disciplines.values[available_discipline_slot] = spell_id;
+			LearnDiscId(static_cast<uint16>(spell_id));
 			available_discipline_slot = GetNextAvailableDisciplineSlot(available_discipline_slot);
 			learned_disciplines++;
 		}
@@ -14697,6 +15028,7 @@ bool Client::AddExtraClass(int class_id, bool join_at_watermark)
 		DoGuildTributeUpdate();
 	}
 
+	ReconcileLearnedSpells(true, true);
 	SendBulkStatsUpdate();
 	Save();
 	return true;
@@ -14748,27 +15080,7 @@ bool Client::RemoveExtraClass(int class_id) {
         }
     }
 
-    // Remove spells that are no longer usable
-    auto memorized_spells = GetMemmedSpells();
-    for (auto memmed_id : memorized_spells) {
-        if (!is_spell_usable_by_classes(memmed_id)) {
-            UnmemSpellBySpellID(memmed_id);
-        }
-    }
-
-	for (int i = 0; i < EQ::spells::SPELLBOOK_SIZE; i++) {
-        if (m_pp.spell_book[i] != 0xFFFFFFFF && !is_spell_usable_by_classes(m_pp.spell_book[i])) {
-            UnscribeSpell(i, true, true);
-        }
-    }
-	SaveSpells();
-
-        for (int i = 0; i < MAX_PP_DISCIPLINES; i++) {
-        if (m_pp.disciplines.values[i] != 0 && !is_spell_usable_by_classes(m_pp.disciplines.values[i])) {
-            UntrainDisc(i, true, true);
-        }
-    }
-	SaveDisciplines();
+	ReconcileLearnedSpells(true, true);
 
 	for (int slot = EQ::invslot::EQUIPMENT_BEGIN; slot <= EQ::invslot::EQUIPMENT_END; slot++) {
 		auto item = m_inv.GetItem(slot);
