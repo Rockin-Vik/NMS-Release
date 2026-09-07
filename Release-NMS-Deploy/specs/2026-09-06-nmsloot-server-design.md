@@ -21,12 +21,14 @@ Companion reverse-engineering (not in this repo): `NMSLoot_Spec.md`, `Dimensiona
 | D9 | **`You receive 1 Echo of Memory.` is not a loot-offer message.** | Already sent from `zone/attack.cpp` on the kill award. Do not re-send it from the loot path. |
 | D10 | **Proc Locker (vault page 9) overrides equipped-weapon procs, not stats.** Slot 81 = primary proc, 82 = shield stats + block (and/or secondary proc), 83 = ranged proc. Does not stack with augment procs. | Vault spec §2 / §6.8. Community: locker weapon acts like a "lifetap aug." |
 | D11 | **Clicky pages (vault 7–8, slots 61–80) auto-load on zone-in and login.** Bags in those slots have their click effects applied until death or zone. | Vault spec §2 help text and §6.7. |
+| D12 | **Send offers on NPC corpse create, zone-wide for the killer's group/raid.** Keep/Sell/Tribute/Destroy/Pass do not require standing on the corpse. Native loot range and raid loot type are unchanged for the stock window. | Pending used to fill only after `OP_LootRequest`. A group or raid member anywhere in the same zone/instance must see the kill. |
+| D13 | **Each entitled client gets an independent loot-table roll.** `/nmsloot` does not copy the corpse list. Two people can receive the same item. The offer row is the item; corpse decay does not revoke it. Native corpse loot stays the spawn roll (D4). | Shared Pending meant first-Keep-wins. Personal loot is the requested pipe. |
 
 ## 0b. Six features this pass builds
 
 | # | Feature | Server work |
 | --- | --- | --- |
-| F1 | `/nmsloot` offers | Send offer when a corpse is opened so Pending fills |
+| F1 | `/nmsloot` offers | On NPC death, independently re-roll loot for the killer and every group or raid member in this zone; opening a corpse only resends |
 | F2 | Keep / Sell / Tribute / Destroy / Pass | Execute on the server; no merchant window for Sell |
 | F3 | Dimensional Vault (83 slots) | `#vault_*` + `VAULTDATA\|` persist and refresh |
 | F4 | Proc Locker (slots 81–83) | Combat proc (and slot-82 shield stats) from locker items |
@@ -79,7 +81,7 @@ The installed add-on dispatches `0x140A` and emits `0x140B`. Those numbers stay.
 
 Entry `name` at offset 22 is the item name. Entry `name2` at offset 86 is empty on a fresh corpse offer and is the passing player’s name on a forwarded offer (`passed_from`). Action 9 is mapped to Pass toward `name`. Actions other than 1–7 and 9, and Pass/action 9 with an empty target name, are refused without deleting the offer.
 
-Expire default is `Custom:NmsLootOfferExpireSeconds` = 300. Offers are sent only after a successful stock loot session (`IsBeingLootedBy` and `AllowedPVE` / `GMAllowed`). Decisions match by `offer_id` owned by the connected character, recheck corpse lock/range/`CanPlayerLoot` when the corpse still exists, and refuse if the matching corpse item is gone. Pass requires the recipient online in this zone, NoDrop-eligible, and `CanPlayerLoot` / group / raid. Sell and Tribute refuse NoDrop and augmented items. `#nmsloot_decide` is a GMAdmin QA command; players cannot fire decisions through say.
+Expire default is `Custom:NmsLootOfferExpireSeconds` = 300. On NPC death the server independently re-rolls that NPC's loot table, global loot, and shared bucket for the credit client (killer, or pet owner) and every group or raid member currently in this zone/instance. Those rolls become personal offers; they are not copies of the corpse list. Opening a corpse only resends existing rows (`IsBeingLootedBy` and `AllowedPVE` / `GMAllowed`). Decisions match by `offer_id` owned by the connected character and require the same zone/instance; they do not require the item to still be on the corpse. Pass requires the recipient online in this zone, NoDrop-eligible, and group / raid / `CanPlayerLoot`. Sell and Tribute refuse NoDrop and augmented items. `#nmsloot_decide` is a GMAdmin QA command; players cannot fire decisions through say.
 
 A wrong-size `0x140B` is ignored and does not change inventory, vault, or corpse state. Vault does not depend on this packet. Pending display still needs an in-game check after this layout change.
 
@@ -87,8 +89,8 @@ A wrong-size `0x140B` is ignored and does not change inventory, vault, or corpse
 
 When the Custom rule is **on**:
 
-1. Build an offer for each item the player is allowed to loot (same entitlement as stock corpse loot: solo / group / raid / FFA as today).
-2. Send the offer to **that client**. Do not consult `ActiveLooter.ini`. Do not keep one "account looter."
+1. On NPC death, after loot rights are written, independently re-roll loot for the killer (or pet owner) and every group or raid member in this zone/instance. Each client gets their own items. Raid loot type still gates the native window only. An empty personal roll sends nothing. Player corpses send nothing. Do not broadcast the whole zone on FFA / no-credit kills.
+2. Send that personal offer to **each of those clients**. Do not consult `ActiveLooter.ini`. Do not keep one "account looter."
 3. Persist unclaimed offers per character (and zone or corpse id) so a zone-out can restore them (D6).
 4. On decision: Keep → inventory (respect LORE; DLL already has a LORE skip string). Sell → coin, no merchant. Tribute → favor. Destroy → delete. Pass → other player's Pending (ignore list is client-side return). Bank / Vault deposit only after §4b exists; until then refuse with a clear `[NMS]` line.
 5. When the rule is **off**, or tables/payload are missing: do not send offers. Native loot only.
@@ -155,7 +157,9 @@ This repo today: no `command_vault`, no `character_vault` table, no `VAULTDATA` 
 ## 7. Verification (once implemented)
 
 - Rule off: native loot only; no offer packet; Pending stays empty.
-- Rule on, solo, open corpse that has an item: Pending shows that item (name / icon / qty).
+- Rule on, solo kill, do not open the corpse: Pending shows that character's independent roll.
+- Rule on, grouped or raided, one member kills in this zone, others stay elsewhere in the same zone/instance: each client gets their own roll on Pending and can Keep/Sell without walking to the corpse. Two people can receive the same item.
+- Rule on, open a corpse after the kill: Pending only resends that character's existing personal offers. It does not copy the corpse.
 - Keep: item in inventory; native slot clears; `[NMS] … added to inventory.`
 - Sell of a vendor-valued item: coin granted; `[NMS] … sold for …`. No merchant window.
 - Sell of no-value item: refused, item remains pending.
@@ -171,7 +175,7 @@ This repo today: no `command_vault`, no `character_vault` table, no `VAULTDATA` 
 
 | Feature | Where |
 | --- | --- |
-| F1 `/nmsloot` offers | `nms_loot_offers.cpp`, sent after `Handle_OP_LootRequest` → `MakeLootRequestPackets` |
+| F1 `/nmsloot` offers | `NmsLootOfferOnCorpseCreated` from `zone/attack.cpp` after `AllowPlayerLoot`; open path resends via `NmsLootOfferOnCorpseOpen` |
 | F2 Keep/Sell/Tribute/Destroy/Pass | `NmsLootOfferApply`; `#nmsloot_decide` (GMAdmin) for QA |
 | F3 Vault 83 slots | `nms_vault.cpp` + `#vault_*` + `character_nms_vault` |
 | F4 Proc Locker | Cached locker IDs + `TryWeaponProc` + slot-82 bonuses (no shield+shield stack) |

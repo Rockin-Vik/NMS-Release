@@ -13,18 +13,21 @@
 #include "../common/misc_functions.h"
 #include "../common/mysql_request_row.h"
 #include "../common/rulesys.h"
+#include "../common/say_link.h"
 #include "../common/strings.h"
 #include "client.h"
 #include "common.h"
 #include "corpse.h"
 #include "entity.h"
 #include "groups.h"
+#include "npc.h"
 #include "raids.h"
 #include "zone.h"
 #include "zonedb.h"
 
 #include <climits>
 #include <map>
+#include <set>
 #include <fmt/format.h>
 
 extern ZoneDatabase database;
@@ -48,9 +51,9 @@ namespace {
 			LogError("NmsLootOffers: table check query failed; will retry on next use");
 			return false;
 		}
+		tables_checked = true;
 		if (table.RowCount() == 0) {
-			tables_checked = true;
-			tables_ready   = false;
+			tables_ready = false;
 			return tables_ready;
 		}
 		auto columns = database.QueryDatabase(
@@ -60,11 +63,11 @@ namespace {
 			"AND column_name IN ('corpse_serial', 'instance_id', 'passed', 'passed_from')"
 		);
 		if (!columns.Success()) {
+			tables_checked = false;
 			LogError("NmsLootOffers: column check query failed; will retry on next use");
 			return false;
 		}
-		tables_checked = true;
-		tables_ready   = false;
+		tables_ready = false;
 		if (columns.RowCount() < 4) {
 			return tables_ready;
 		}
@@ -309,25 +312,11 @@ namespace {
 		safe_delete(outapp);
 	}
 
-	// A corpse item can legitimately carry charges == 0: quest scripts call AddItem(id, 0)
-	// directly (greatdivide/Sentry_Badain.lua, encounters/RingTen.lua) and lootdrop_entries
-	// rows exist with item_charges = 0. Stock treats zero as one when it builds the instance
-	// (corpse.cpp:1151), and so did every other site in this file EXCEPT the two below.
-	//
-	// LootItemMatchesOffer normalised only the OFFER side, so a zero-charge corpse item was
-	// compared as 0 == 1 and could never match: the offer showed up in Pending and then
-	// refused every Keep, Sell, Tribute, Destroy and Pass, re-sending itself each time until
-	// it expired. One helper, applied consistently, is what keeps the comparison symmetric.
-	int32 NormalizeChargeCount(int32 charges)
-	{
-		return charges > 0 ? charges : 1;
-	}
-
 	EQ::ItemInstance *MakeLootItem(const NmsLootOffer &offer)
 	{
 		return database.CreateItem(
 			offer.item_id,
-			static_cast<int16>(NormalizeChargeCount(offer.charges)),
+			offer.charges,
 			offer.aug[0],
 			offer.aug[1],
 			offer.aug[2],
@@ -347,104 +336,15 @@ namespace {
 		return false;
 	}
 
-	bool LootItemMatchesOffer(const LootItem *item, const NmsLootOffer &offer)
+	bool OfferStillClaimable(Client *c, const NmsLootOffer &offer)
 	{
-		return item
-			&& item->item_id == offer.item_id
-			&& NormalizeChargeCount(item->charges) == NormalizeChargeCount(offer.charges)
-			&& item->aug_1 == offer.aug[0]
-			&& item->aug_2 == offer.aug[1]
-			&& item->aug_3 == offer.aug[2]
-			&& item->aug_4 == offer.aug[3]
-			&& item->aug_5 == offer.aug[4]
-			&& item->aug_6 == offer.aug[5];
-	}
-
-	LootItem *FindMatchingLootItem(Corpse *corpse, const NmsLootOffer &offer)
-	{
-		if (!corpse) {
-			return nullptr;
-		}
-		for (auto *item : corpse->GetLootItems()) {
-			if (LootItemMatchesOffer(item, offer)) {
-				return item;
-			}
-		}
-		return nullptr;
-	}
-
-	bool RecheckLiveCorpse(Client *c, const NmsLootOffer &offer, Corpse **out_corpse)
-	{
-		if (out_corpse) {
-			*out_corpse = nullptr;
-		}
-		if (!c) {
-			return false;
-		}
-		if (!offer.corpse_id || !offer.corpse_serial) {
+		if (!c || !offer.item_id) {
 			return false;
 		}
 		if (!zone || offer.zone_id != zone->GetZoneID() || offer.instance_id != zone->GetInstanceID()) {
 			return false;
 		}
-
-		auto *ent = entity_list.GetID(offer.corpse_id);
-		if (!ent || !ent->IsCorpse()) {
-			return false;
-		}
-
-		auto *corpse = ent->CastToCorpse();
-		if (corpse->GetNmsLootSerial() != offer.corpse_serial) {
-			return false;
-		}
-		if (corpse->IsPlayerCorpse()) {
-			return false;
-		}
-		if (corpse->IsLocked() && c->Admin() < AccountStatus::GMAdmin) {
-			return false;
-		}
-		if (DistanceSquaredNoZ(c->GetPosition(), corpse->GetPosition()) > 625) {
-			return false;
-		}
-		if (!corpse->CanPlayerLoot(static_cast<int>(c->CharacterID()))) {
-			return false;
-		}
-		if (!FindMatchingLootItem(corpse, offer)) {
-			return false;
-		}
-
-		if (out_corpse) {
-			*out_corpse = corpse;
-		}
 		return true;
-	}
-
-	bool RemoveMatchingFromCorpse(Corpse *corpse, const NmsLootOffer &offer)
-	{
-		auto *match = FindMatchingLootItem(corpse, offer);
-		if (!match) {
-			return false;
-		}
-		corpse->RemoveItem(match, false);
-		return true;
-	}
-
-	void RestoreCorpseItem(Corpse *corpse, const NmsLootOffer &offer)
-	{
-		if (!corpse) {
-			return;
-		}
-		corpse->AddItem(
-			offer.item_id,
-			static_cast<uint16>(NormalizeChargeCount(offer.charges)),
-			0,
-			offer.aug[0],
-			offer.aug[1],
-			offer.aug[2],
-			offer.aug[3],
-			offer.aug[4],
-			offer.aug[5]
-		);
 	}
 
 	bool PutInBank(Client *c, EQ::ItemInstance *inst)
@@ -473,16 +373,158 @@ namespace {
 		if (!from || !to || from == to) {
 			return false;
 		}
-		if (corpse) {
-			return corpse->CanPlayerLoot(static_cast<int>(to->CharacterID()));
-		}
 		if (from->GetGroup() && from->GetGroup()->IsGroupMember(to)) {
 			return true;
 		}
 		if (from->GetRaid() && from->GetRaid()->IsRaidMember(to)) {
 			return true;
 		}
+		if (corpse && corpse->CanPlayerLoot(static_cast<int>(to->CharacterID()))) {
+			return true;
+		}
 		return false;
+	}
+
+	void ResendExistingOffers(Client *c, Corpse *corpse)
+	{
+		if (!c || !corpse || !zone) {
+			return;
+		}
+
+		ExpireOffers(c->CharacterID());
+		database.QueryDatabase(fmt::format(
+			"DELETE FROM character_nms_loot_offers WHERE character_id = {} AND zone_id = {} "
+			"AND instance_id = {} AND corpse_id = {} AND corpse_serial != {} AND passed = 0",
+			c->CharacterID(),
+			zone->GetZoneID(),
+			zone->GetInstanceID(),
+			corpse->GetID(),
+			corpse->GetNmsLootSerial()
+		));
+
+		auto existing = LoadOffers(c->CharacterID(), zone->GetZoneID(), corpse->GetID(), corpse->GetNmsLootSerial());
+		if (!existing.empty()) {
+			SendOffers(c, existing, corpse->GetID());
+		}
+	}
+
+	void CreateOffersFromItems(Client *c, Corpse *corpse, const LootItems &items)
+	{
+		if (!c || !corpse || !zone) {
+			return;
+		}
+
+		const int expire_seconds = RuleI(Custom, NmsLootOfferExpireSeconds);
+		std::vector<NmsLootOffer> created;
+		for (auto *item : items) {
+			if (!item || !item->item_id) {
+				continue;
+			}
+			const auto *data = database.GetItem(item->item_id);
+			if (!data) {
+				continue;
+			}
+
+			NmsLootOffer offer;
+			offer.character_id = c->CharacterID();
+			offer.zone_id = zone->GetZoneID();
+			offer.instance_id = zone->GetInstanceID();
+			offer.corpse_id = corpse->GetID();
+			offer.corpse_serial = corpse->GetNmsLootSerial();
+			offer.item_id = item->item_id;
+			offer.icon = data->Icon;
+			offer.charges = static_cast<int16>(item->charges);
+			offer.bonus = 0;
+			offer.name = data->Name;
+			offer.aug[0] = item->aug_1;
+			offer.aug[1] = item->aug_2;
+			offer.aug[2] = item->aug_3;
+			offer.aug[3] = item->aug_4;
+			offer.aug[4] = item->aug_5;
+			offer.aug[5] = item->aug_6;
+			if (SaveOffer(offer, expire_seconds)) {
+				created.push_back(offer);
+			}
+		}
+
+		if (!created.empty()) {
+			SendOffers(c, created, corpse->GetID());
+		}
+	}
+
+	void ApplyLootBuffToRolled(NPC *npc, Client *c, LootItems &items)
+	{
+		if (!npc || !database.LootBuffEnabled()) {
+			return;
+		}
+
+		for (auto *item : items) {
+			if (!item || !item->item_id) {
+				continue;
+			}
+			const auto old_id = item->item_id;
+			item->item_id = npc->DoUpgradeLoot(item->item_id);
+			if (!c || item->item_id == old_id) {
+				continue;
+			}
+
+			EQ::SayLinkEngine linker;
+			linker.SetLinkType(EQ::saylink::SayLinkItemData);
+			linker.SetItemData(database.GetItem(old_id));
+			const auto old_item_lnk = linker.GenerateLink();
+			linker.SetItemData(database.GetItem(item->item_id));
+			const auto new_item_lnk = linker.GenerateLink();
+			c->Message(
+				Chat::Yellow,
+				"Luck is with you! [%s] has become [%s].",
+				old_item_lnk.c_str(),
+				new_item_lnk.c_str()
+			);
+		}
+	}
+
+	void FreeLootItems(LootItems &items)
+	{
+		for (auto *item : items) {
+			safe_delete(item);
+		}
+		items.clear();
+	}
+
+	void CollectPartyClientsInZone(Client *credit, std::vector<Client *> &out)
+	{
+		out.clear();
+		if (!credit) {
+			return;
+		}
+
+		std::set<Client *> unique;
+		auto add = [&](Client *c) {
+			if (c) {
+				unique.insert(c);
+			}
+		};
+
+		add(credit);
+		if (auto *g = credit->GetGroup()) {
+			for (const auto &m : g->members) {
+				if (m && m->IsClient()) {
+					add(m->CastToClient());
+				}
+			}
+		}
+		if (auto *r = credit->GetRaid()) {
+			for (const auto &m : r->members) {
+				if (m.is_bot) {
+					continue;
+				}
+				if (m.member && m.member->IsClient()) {
+					add(m.member->CastToClient());
+				}
+			}
+		}
+
+		out.assign(unique.begin(), unique.end());
 	}
 
 	bool CanAddSellCopper(Client *c, uint64 copper)
@@ -501,14 +543,14 @@ namespace {
 
 void NmsLootOfferForgetCorpseItem(uint32 character_id, uint32 corpse_id, const LootItem *item)
 {
-	// Rule first, then tables - the same order every other entry point in this file uses
-	// (:507, :582, :616). Without the rule check this ran on EVERY native corpse loot on a
-	// server that had merely applied the migrations, issuing a blocking DELETE per item
-	// removed - including the per-item loops in Corpse::RemoveItemByPercent and the bag
-	// content loop - for a feature that was switched off. Stock loot must be untouched when
-	// the rule is off (design decision D4/D7). Rows written while the rule was on are left
-	// behind deliberately: they carry expires_at and are reclaimed by ExpireOffers, and no
-	// offer is sent or actioned while the rule is off, so a stale row is inert.
+	// Rule first, then tables - the same order every other entry point in this file uses.
+	// Without the rule check this ran on EVERY native corpse loot on a server that had
+	// merely applied the migrations, issuing a blocking DELETE per item removed -
+	// including the per-item loops in Corpse::RemoveItemByPercent and the bag content
+	// loop - for a feature that was switched off. Stock loot must be untouched when the
+	// rule is off. Rows written while the rule was on are left behind deliberately: they
+	// carry expires_at and are reclaimed by ExpireOffers, and no offer is sent or
+	// actioned while the rule is off, so a stale row is inert.
 	if (!NmsLootOffersEnabled() || !EnsureTables() || !character_id || !corpse_id || !item || !item->item_id) {
 		return;
 	}
@@ -553,62 +595,33 @@ void NmsLootOfferOnCorpseOpen(Client *c, Corpse *corpse)
 	if (corpse->IsPlayerCorpse()) {
 		return;
 	}
-	if (!corpse->CanPlayerLoot(static_cast<int>(c->CharacterID()))) {
+	ResendExistingOffers(c, corpse);
+}
+
+void NmsLootOfferOnCorpseCreated(Corpse *corpse, Client *credit, NPC *source)
+{
+	if (!corpse || !credit || !source || !NmsLootOffersEnabled() || !EnsureTables() || !zone) {
+		return;
+	}
+	if (corpse->IsPlayerCorpse()) {
 		return;
 	}
 
-	ExpireOffers(c->CharacterID());
-	database.QueryDatabase(fmt::format(
-		"DELETE FROM character_nms_loot_offers WHERE character_id = {} AND zone_id = {} "
-		"AND instance_id = {} AND corpse_id = {} AND corpse_serial != {} AND passed = 0",
-		c->CharacterID(),
-		zone->GetZoneID(),
-		zone->GetInstanceID(),
-		corpse->GetID(),
-		corpse->GetNmsLootSerial()
-	));
-
-	auto existing = LoadOffers(c->CharacterID(), zone->GetZoneID(), corpse->GetID(), corpse->GetNmsLootSerial());
-	if (!existing.empty()) {
-		SendOffers(c, existing, corpse->GetID());
-		return;
-	}
-
-	const int expire_seconds = RuleI(Custom, NmsLootOfferExpireSeconds);
-	std::vector<NmsLootOffer> created;
-	for (auto *item : corpse->GetLootItems()) {
-		if (!item || !item->item_id) {
-			continue;
-		}
-		const auto *data = database.GetItem(item->item_id);
-		if (!data) {
+	std::vector<Client *> recipients;
+	CollectPartyClientsInZone(credit, recipients);
+	for (auto *c : recipients) {
+		ExpireOffers(c->CharacterID());
+		auto existing = LoadOffers(c->CharacterID(), zone->GetZoneID(), corpse->GetID(), corpse->GetNmsLootSerial());
+		if (!existing.empty()) {
+			SendOffers(c, existing, corpse->GetID());
 			continue;
 		}
 
-		NmsLootOffer offer;
-		offer.character_id = c->CharacterID();
-		offer.zone_id = zone->GetZoneID();
-		offer.instance_id = zone->GetInstanceID();
-		offer.corpse_id = corpse->GetID();
-		offer.corpse_serial = corpse->GetNmsLootSerial();
-		offer.item_id = item->item_id;
-		offer.icon = data->Icon;
-		offer.charges = static_cast<int16>(item->charges);
-		offer.bonus = 0;
-		offer.name = data->Name;
-		offer.aug[0] = item->aug_1;
-		offer.aug[1] = item->aug_2;
-		offer.aug[2] = item->aug_3;
-		offer.aug[3] = item->aug_4;
-		offer.aug[4] = item->aug_5;
-		offer.aug[5] = item->aug_6;
-		if (SaveOffer(offer, expire_seconds)) {
-			created.push_back(offer);
-		}
-	}
-
-	if (!created.empty()) {
-		SendOffers(c, created, corpse->GetID());
+		LootItems rolled;
+		source->RollIndependentLoot(rolled);
+		ApplyLootBuffToRolled(source, c, rolled);
+		CreateOffersFromItems(c, corpse, rolled);
+		FreeLootItems(rolled);
 	}
 }
 
@@ -718,31 +731,14 @@ bool NmsLootOfferApply(Client *c, const NmsLootOffer &offer, NmsLootAction actio
 		return false;
 	}
 
-	Corpse *corpse = nullptr;
-	if (!RecheckLiveCorpse(c, offer, &corpse)) {
+	if (!OfferStillClaimable(c, offer)) {
 		c->Message(Chat::White, "[NMS] That loot offer is no longer available.");
 		return false;
 	}
 
 	const auto *item = database.GetItem(offer.item_id);
 	const std::string item_name = offer.name.empty() && item ? item->Name : offer.name;
-	const int16 qty = static_cast<int16>(NormalizeChargeCount(offer.charges));
-	bool removed_from_corpse = false;
-
-	auto take_from_corpse = [&]() -> bool {
-		if (!corpse || !RemoveMatchingFromCorpse(corpse, offer)) {
-			c->Message(Chat::White, "[NMS] That loot offer is no longer available.");
-			return false;
-		}
-		removed_from_corpse = true;
-		return true;
-	};
-
-	auto restore_if_needed = [&]() {
-		if (removed_from_corpse && corpse) {
-			RestoreCorpseItem(corpse, offer);
-		}
-	};
+	const int16 qty = offer.charges > 0 ? offer.charges : 1;
 
 	switch (action) {
 	case NmsLootAction::Keep: {
@@ -755,10 +751,6 @@ bool NmsLootOfferApply(Client *c, const NmsLootOffer &offer, NmsLootAction actio
 			c->Message(Chat::Red, "[NMS] Could not create %s.", item_name.c_str());
 			return false;
 		}
-		if (!take_from_corpse()) {
-			safe_delete(inst);
-			return false;
-		}
 		const int16 before = inst->GetCharges();
 		const bool cursor_ok = c->GetInv().CursorSize() < EQ::invbag::CURSOR_BAG_COUNT;
 		if (!c->AutoPutLootInInventory(*inst, false, cursor_ok)) {
@@ -768,7 +760,6 @@ bool NmsLootOfferApply(Client *c, const NmsLootOffer &offer, NmsLootAction actio
 					NmsLootOffer leftover = offer;
 					leftover.id = 0;
 					leftover.charges = left;
-					RestoreCorpseItem(corpse, leftover);
 					if (SaveOffer(leftover, RemainingExpireSeconds(offer))) {
 						std::vector<NmsLootOffer> one{leftover};
 						SendOffers(c, one, leftover.corpse_id);
@@ -779,7 +770,6 @@ bool NmsLootOfferApply(Client *c, const NmsLootOffer &offer, NmsLootAction actio
 				return true;
 			}
 			c->Message(Chat::Red, "[NMS] Your inventory is full.");
-			restore_if_needed();
 			safe_delete(inst);
 			return false;
 		}
@@ -795,9 +785,6 @@ bool NmsLootOfferApply(Client *c, const NmsLootOffer &offer, NmsLootAction actio
 		const uint64 copper = static_cast<uint64>(item->Price) * static_cast<uint64>(qty);
 		if (!CanAddSellCopper(c, copper)) {
 			c->Message(Chat::Red, "[NMS] You cannot carry that much coin.");
-			return false;
-		}
-		if (!take_from_corpse()) {
 			return false;
 		}
 		c->AddMoneyToPP(copper, true);
@@ -819,9 +806,6 @@ bool NmsLootOfferApply(Client *c, const NmsLootOffer &offer, NmsLootAction actio
 			c->Message(Chat::White, "[NMS Tribute] %s has no tribute value - please pick another option.", item_name.c_str());
 			return false;
 		}
-		if (!take_from_corpse()) {
-			return false;
-		}
 		const int32 favor = static_cast<int32>(favor64);
 		c->AddTributePoints(favor);
 		c->Message(Chat::White, "[NMS] %s tributed for %d favor points.", item_name.c_str(), favor);
@@ -836,13 +820,8 @@ bool NmsLootOfferApply(Client *c, const NmsLootOffer &offer, NmsLootAction actio
 		if (!inst) {
 			return false;
 		}
-		if (!take_from_corpse()) {
-			safe_delete(inst);
-			return false;
-		}
 		if (!PutInBank(c, inst)) {
 			c->Message(Chat::Red, "[NMS] Your bank is full.");
-			restore_if_needed();
 			safe_delete(inst);
 			return false;
 		}
@@ -861,26 +840,11 @@ bool NmsLootOfferApply(Client *c, const NmsLootOffer &offer, NmsLootAction actio
 			safe_delete(inst);
 			return false;
 		}
-		if (!take_from_corpse()) {
-			if (!NmsVaultDeleteItem(c->CharacterID(), vault_slot, 0)) {
-				LogError(
-					"NmsLoot: vault rollback delete failed for character {} slot {}",
-					c->CharacterID(),
-					vault_slot
-				);
-			}
-			NmsVaultSendRefresh(c, NmsVaultPageForSlot(vault_slot));
-			safe_delete(inst);
-			return false;
-		}
 		c->Message(Chat::White, "[NMS] %s added to your vault.", item_name.c_str());
 		safe_delete(inst);
 		return true;
 	}
 	case NmsLootAction::Destroy:
-		if (!take_from_corpse()) {
-			return false;
-		}
 		c->Message(Chat::White, "[NMS] Item destroyed.");
 		return true;
 	case NmsLootAction::Pass: {
@@ -898,16 +862,12 @@ bool NmsLootOfferApply(Client *c, const NmsLootOffer &offer, NmsLootAction actio
 			c->Message(Chat::Red, "[NMS] That player is not a valid pass target.");
 			return false;
 		}
-		if (!EligiblePassTarget(c, other, corpse)) {
+		if (!EligiblePassTarget(c, other, nullptr)) {
 			c->Message(Chat::Red, "[NMS] That player is not a valid pass target.");
 			return false;
 		}
 		if (other->CheckLoreConflict(item)) {
 			c->Message(Chat::Red, "[NMS] That player cannot receive this LORE item.");
-			return false;
-		}
-		if (!corpse) {
-			c->Message(Chat::White, "[NMS] That loot offer is no longer available.");
 			return false;
 		}
 

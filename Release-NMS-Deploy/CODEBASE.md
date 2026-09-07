@@ -327,6 +327,8 @@ sends opcodes in the `0x1338`–`0x140B` range that stock clients do not underst
   `OP_NmsLootDecision` (`0x140B`)
 - Loot-offer opcodes require the matching installed add-on build (not the repo `dinput8.dll`).
   `Custom:NmsLootOffers` default off; without that add-on, leave the rule off.
+  When on, each in-zone group/raid member (and the killer) gets an independent
+  loot-table roll in `/nmsloot` on NPC death; opening a corpse only resends.
 - **Enforcement:** when `Custom:ServerAuthStats` is on, the `CAuth` handshake
   (`zone/client_packet.cpp:5106`) validates `GetClassesBits() * GetID()` and **disconnects
   clients without the DLL.**
