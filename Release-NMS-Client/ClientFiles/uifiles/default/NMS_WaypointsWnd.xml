@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="us-ascii"?>
 <XML ID="EQInterfaceDefinitionLanguage">
   <Schema xmlns="EverQuestData" xmlns:dt="EverQuestDataTypes" />
-  <!-- EQLS_window_pieces_01.tga is declared by the stock UI set that loads before this
-       file; redeclaring it here raised "Schema error - Duplicate item" on every UI load.
-       The Ui2DAnimation blocks below still resolve the texture by name from that earlier
-       declaration. NMS_MapFilterWnd.xml already follows this pattern - it declares no
-       TextureInfo at all. -->
+  <TextureInfo item="EQLS_window_pieces_01.tga">
+    <Size>
+      <CX>256</CX>
+      <CY>256</CY>
+    </Size>
+  </TextureInfo>
 <!-- Large Button -->
 <Ui2DAnimation item = "A_EQLS_LargeBtnNormal">
   <Cycle>true</Cycle>
