@@ -1,6 +1,6 @@
 -- ============================================================================
 -- NMS content health check - verifies the DATA every custom-manifest version
--- (v18 through v32) is supposed to deliver, without trusting db_version.
+-- (v18 through v33) is supposed to deliver, without trusting db_version.
 --
 -- Why this exists: we have now twice found servers whose custom_version was
 -- stamped PAST an entry whose content never landed (a half-apply healed by a
@@ -17,7 +17,7 @@
 -- READ-ONLY: SELECT/SHOW only. Safe on any server, any number of times.
 -- ============================================================================
 
-SELECT 'db_version (expect 32 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
+SELECT 'db_version (expect 33 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
 
 -- ---- v18 / v23: Beastlord spell merchant + scrolls -------------------------
 SELECT 'v23 bl merchant npc (expect 1)' AS what, COUNT(*) AS value FROM npc_types WHERE id = 1120001300;
@@ -103,3 +103,9 @@ SELECT 'v32 loot_offers.passed (expect 1)' AS what, COUNT(*) AS value
   FROM information_schema.columns
   WHERE table_schema = DATABASE() AND table_name = 'character_nms_loot_offers'
     AND column_name = 'passed';
+
+-- ---- v33: passer name for client name2 -------------------------------------
+SELECT 'v33 loot_offers.passed_from (expect 1)' AS what, COUNT(*) AS value
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'character_nms_loot_offers'
+    AND column_name = 'passed_from';

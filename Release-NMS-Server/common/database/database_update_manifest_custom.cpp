@@ -948,6 +948,19 @@ ALTER TABLE character_nms_loot_offers
 		.content_schema_update = false,
 	},
 
+	ManifestEntry{
+		.version = 33,
+		.description = "2026_09_06_character_nms_loot_offers_passed_from",
+		.check = "SHOW COLUMNS FROM character_nms_loot_offers LIKE 'passed_from'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+ALTER TABLE character_nms_loot_offers
+    ADD COLUMN passed_from VARCHAR(64) NOT NULL DEFAULT '' AFTER passed;
+)",
+		.content_schema_update = false,
+	},
+
 	// Used for testing
 	//	ManifestEntry{
 	//		.version = 9229,

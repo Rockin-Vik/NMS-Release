@@ -1,6 +1,6 @@
 # NMS loot offers + Dimensional Vault — server contract (design)
 
-Status: implemented on this tree (2026-09-06); **do not enable in production** until a second QA pass. Rules stay default-off. Vault protocol is the observed `#vault_*` / `VAULTDATA|` contract. Loot-offer opcode/struct is a **candidate** (`OP_NmsLootOffer=0x140A`, `OP_NmsLootDecision=0x140B`) because the installed DLL does not expose those numbers as strings. If Pending still stays empty, the DLL discarded the candidate packet. `#nmsloot_decide` is GMAdmin-only.
+Status: implemented on this tree (2026-09-06); **do not enable in production**. Rules stay default-off. Vault protocol is the observed `#vault_*` / `VAULTDATA|` contract. Loot-offer opcodes `OP_NmsLootOffer=0x140A` and `OP_NmsLootDecision=0x140B` match the installed add-on; the packed layouts were replaced after disassembly (header 86 + `count`×150, decision 75). Unknown header/entry fields remain unnamed until a capture. `#nmsloot_decide` is GMAdmin-only.
 Date: 2026-09-06
 Governs: (1) the custom loot-offer path so `/nmsloot` can fill and act, and (2) Dimensional Vault storage including **Proc Locker** and clicky-bag autoload. Does not replace stock `OP_LootRequest`. Does not govern `/ptmap` or `/browser`.
 
@@ -68,18 +68,20 @@ Not in this repo's `Release-NMS-Client\ClientFiles\dinput8.dll` (1.6 MB, no `/nm
 | Server → client | Result lines: sold (coin breakdown), no sell value, destroyed, added to inventory, tributed for favor, offer expired, N unclaimed recovered. | Appendix A, chat logs. |
 | Server | Pending offers time out. Returning to the zone restores unclaimed items as new offers. | Appendix A. |
 
-### 3.2 Candidate loot packet (implemented; not recovered from the DLL)
+### 3.2 Loot packet (opcodes recovered; field names partly inferred)
 
-The installed DLL logs `[NMS] Discarded a malformed loot offer packet.` but does not store the opcode or layout as strings. This tree implements the next free custom opcodes after `OP_SuppressBuffNameInfo=0x1409`:
+The installed add-on dispatches `0x140A` and emits `0x140B`. Those numbers stay. The first server layout (`12 + count×81` offer, 84-byte decision) does not match the parser. Current packed sizes: header 86, entry 150, decision 75. Count is clamped to 64.
 
 | Direction | Opcode | Value | Layout |
 | --- | --- | --- | --- |
-| Server → client | `OP_NmsLootOffer` | `0x140A` | packed: `uint32 count`, `uint32 corpse_id`, `uint32 expire_seconds`, then `count` entries of `uint32 offer_id`, `uint32 item_id`, `uint32 icon`, `int32 charges`, `uint8 bonus`, `char name[64]` |
-| Client → server | `OP_NmsLootDecision` | `0x140B` | packed, exact size only: `uint32 offer_id`, `uint32 item_id`, `uint32 corpse_id`, `uint32 action` (1 Keep, 2 Sell, 3 Tribute, 4 Bank, 5 Vault, 6 Destroy, 7 Pass), `uint32 quantity` (0 = all; partial qty is refused), `char pass_to[64]` (must be NUL-terminated inside the field) |
+| Server → client | `OP_NmsLootOffer` | `0x140A` | packed header: `uint16` unused, `char title[64]`, `uint32 corpse_id`, `uint32 expire_seconds`, two unused `uint32`s, `uint32 count` at offset 82; then `count` entries of `uint32 offer_id`, `uint32 icon`, `int32 charges`, `uint32 item_id`, `uint8 bonus`, 5 unused bytes, `char name[64]`, `char name2[64]` |
+| Client → server | `OP_NmsLootDecision` | `0x140B` | packed, exact 75 bytes: `uint16` unused, `uint32 item_id` (echo of entry+12), `uint32 offer_id` (echo of entry+0), `uint8 action` (1 Keep, 2 Sell, 3 Tribute, 4 Bank, 5 Vault, 6 Destroy, 7 Pass, 9 return-to-passer), `char name[64]` (Pass target, or passer name for action 9). No quantity field; the server treats every decision as all charges |
+
+Entry `name` at offset 22 is the item name. Entry `name2` at offset 86 is empty on a fresh corpse offer and is the passing player’s name on a forwarded offer (`passed_from`). Action 9 is mapped to Pass toward `name`. Actions other than 1–7 and 9, and Pass/action 9 with an empty target name, are refused without deleting the offer.
 
 Expire default is `Custom:NmsLootOfferExpireSeconds` = 300. Offers are sent only after a successful stock loot session (`IsBeingLootedBy` and `AllowedPVE` / `GMAllowed`). Decisions match by `offer_id` owned by the connected character, recheck corpse lock/range/`CanPlayerLoot` when the corpse still exists, and refuse if the matching corpse item is gone. Pass requires the recipient online in this zone, NoDrop-eligible, and `CanPlayerLoot` / group / raid. Sell and Tribute refuse NoDrop and augmented items. `#nmsloot_decide` is a GMAdmin QA command; players cannot fire decisions through say.
 
-If the 3.5 MB DLL discards `0x140A`, recover the real opcode/struct from that binary or a capture and replace these candidates. Vault does not depend on this packet.
+A wrong-size `0x140B` is ignored and does not change inventory, vault, or corpse state. Vault does not depend on this packet. Pending display still needs an in-game check after this layout change.
 
 ## 4. Server behaviour
 
@@ -176,4 +178,4 @@ This repo today: no `command_vault`, no `character_vault` table, no `VAULTDATA` 
 | F5 Clicky autoload | `NmsVaultApplyClickies` on `CompleteConnect`; fade on clicky-slot withdraw |
 | F6 Bank / Merchant | Separate bank vs merchant flags; `#vault_bank` / `#vault_merchant`; merchant depop on `SendMerchantEnd` |
 
-Rules default **off**: `Custom:DimensionalVault`, `Custom:NmsLootOffers`. Migration v28 creates `character_nms_vault`; v29 creates `character_nms_loot_offers`; v30 adds `corpse_serial`; v31 widens `corpse_serial` to `BIGINT UNSIGNED`; v32 adds `instance_id` and a Pass tombstone (`passed`). Stock corpse loot is unchanged. Do not enable either rule in production until a later QA pass.
+Rules default **off**: `Custom:DimensionalVault`, `Custom:NmsLootOffers`. Migration v28 creates `character_nms_vault`; v29 creates `character_nms_loot_offers`; v30 adds `corpse_serial`; v31 widens `corpse_serial` to `BIGINT UNSIGNED`; v32 adds `instance_id` and a Pass tombstone (`passed`); v33 adds `passed_from` for the client pass-from name. Stock corpse loot is unchanged. Do not enable either rule in production until a later QA pass.

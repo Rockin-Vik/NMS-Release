@@ -1605,31 +1605,40 @@ struct WaypointRequest_Struct
 #pragma pack(push, 1)
 struct NmsLootOfferHeader_Struct
 {
-	uint32 count;
+	uint16 unknown_u16;
+	char   title[64];
 	uint32 corpse_id;
 	uint32 expire_seconds;
+	uint32 unknown_u32_a;
+	uint32 unknown_u32_b;
+	uint32 count;
 };
 
 struct NmsLootOfferEntry_Struct
 {
 	uint32 offer_id;
-	uint32 item_id;
 	uint32 icon;
 	int32  charges;
+	uint32 item_id;
 	uint8  bonus;
+	uint8  unknown_17[5];
 	char   name[64];
+	char   name2[64];
 };
 
 struct NmsLootDecision_Struct
 {
-	uint32 offer_id;
+	uint16 unknown_u16;
 	uint32 item_id;
-	uint32 corpse_id;
-	uint32 action;
-	uint32 quantity;
-	char   pass_to[64];
+	uint32 offer_id;
+	uint8  action;
+	char   name[64];
 };
 #pragma pack(pop)
+
+static_assert(sizeof(NmsLootOfferHeader_Struct) == 86, "NmsLootOfferHeader_Struct must match the installed add-on header");
+static_assert(sizeof(NmsLootOfferEntry_Struct) == 150, "NmsLootOfferEntry_Struct must match the installed add-on entry");
+static_assert(sizeof(NmsLootDecision_Struct) == 75, "NmsLootDecision_Struct must match the installed add-on decision payload");
 
 /*
 ** Consider Struct

@@ -17,7 +17,8 @@ enum class NmsLootAction : uint32 {
 	Bank = 4,
 	Vault = 5,
 	Destroy = 6,
-	Pass = 7
+	Pass = 7,
+	ReturnToPasser = 9
 };
 
 struct NmsLootOffer {
@@ -34,6 +35,7 @@ struct NmsLootOffer {
 	std::string name;
 	uint32      aug[6] = {0, 0, 0, 0, 0, 0};
 	bool        passed = false;
+	std::string passed_from;
 	int         expire_remaining = 0;
 };
 

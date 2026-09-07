@@ -49,15 +49,16 @@ namespace {
 			"SELECT column_name, data_type, column_type FROM information_schema.columns "
 			"WHERE table_schema = DATABASE() "
 			"AND table_name = 'character_nms_loot_offers' "
-			"AND column_name IN ('corpse_serial', 'instance_id', 'passed')"
+			"AND column_name IN ('corpse_serial', 'instance_id', 'passed', 'passed_from')"
 		);
 		tables_ready = false;
-		if (!columns.Success() || columns.RowCount() < 3) {
+		if (!columns.Success() || columns.RowCount() < 4) {
 			return tables_ready;
 		}
 		bool have_serial = false;
 		bool have_instance = false;
 		bool have_passed = false;
+		bool have_passed_from = false;
 		for (auto row = columns.begin(); row != columns.end(); ++row) {
 			const std::string name = Strings::ToLower(row[0] ? row[0] : "");
 			const std::string type = Strings::ToLower(row[1] ? row[1] : "");
@@ -71,8 +72,11 @@ namespace {
 			else if (name == "passed") {
 				have_passed = true;
 			}
+			else if (name == "passed_from") {
+				have_passed_from = true;
+			}
 		}
-		tables_ready = have_serial && have_instance && have_passed;
+		tables_ready = have_serial && have_instance && have_passed && have_passed_from;
 		return tables_ready;
 	}
 
@@ -117,8 +121,8 @@ namespace {
 		auto results = database.QueryDatabase(fmt::format(
 			"INSERT INTO character_nms_loot_offers "
 			"(character_id, zone_id, instance_id, corpse_id, corpse_serial, item_id, icon, charges, bonus, name, "
-			"aug1, aug2, aug3, aug4, aug5, aug6, passed, expires_at) "
-			"VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, "
+			"aug1, aug2, aug3, aug4, aug5, aug6, passed, passed_from, expires_at) "
+			"VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, '{}', "
 			"DATE_ADD(NOW(), INTERVAL {} SECOND))",
 			offer.character_id,
 			offer.zone_id ? offer.zone_id : zone->GetZoneID(),
@@ -137,6 +141,7 @@ namespace {
 			offer.aug[4],
 			offer.aug[5],
 			offer.passed ? 1 : 0,
+			Strings::Escape(offer.passed_from),
 			expire_seconds
 		));
 		if (!results.Success()) {
@@ -168,14 +173,15 @@ namespace {
 			offer.aug[i] = Strings::ToUnsignedInt(row[11 + i]);
 		}
 		offer.passed = Strings::ToInt(row[17]) != 0;
-		offer.expire_remaining = Strings::ToInt(row[18]);
+		offer.passed_from = row[18] ? row[18] : "";
+		offer.expire_remaining = Strings::ToInt(row[19]);
 		return offer;
 	}
 
 	const char *OfferSelectColumns()
 	{
 		return "id, character_id, zone_id, instance_id, corpse_id, corpse_serial, item_id, icon, charges, bonus, name, "
-			"aug1, aug2, aug3, aug4, aug5, aug6, passed, "
+			"aug1, aug2, aug3, aug4, aug5, aug6, passed, passed_from, "
 			"GREATEST(0, UNIX_TIMESTAMP(expires_at) - UNIX_TIMESTAMP(NOW()))";
 	}
 
@@ -251,29 +257,39 @@ namespace {
 			return;
 		}
 
-		const uint32 count = static_cast<uint32>(active.size());
+		uint32 count = static_cast<uint32>(active.size());
+		if (count > 64) {
+			count = 64;
+		}
 		int expire = RemainingExpireSeconds(*active.front());
-		for (const auto *offer : active) {
-			const int remain = RemainingExpireSeconds(*offer);
+		for (uint32 i = 0; i < count; ++i) {
+			const int remain = RemainingExpireSeconds(*active[i]);
 			if (remain < expire) {
 				expire = remain;
 			}
 		}
 		const uint32 size = sizeof(NmsLootOfferHeader_Struct) + (count * sizeof(NmsLootOfferEntry_Struct));
 		auto outapp = new EQApplicationPacket(OP_NmsLootOffer, size);
+		memset(outapp->pBuffer, 0, size);
 		auto *header = reinterpret_cast<NmsLootOfferHeader_Struct *>(outapp->pBuffer);
 		header->count = count;
 		header->corpse_id = corpse_id;
 		header->expire_seconds = static_cast<uint32>(expire);
+		if (auto *corpse = entity_list.GetCorpseByID(static_cast<uint16>(corpse_id))) {
+			strn0cpy(header->title, corpse->GetName(), sizeof(header->title));
+		}
 
 		auto *entries = reinterpret_cast<NmsLootOfferEntry_Struct *>(outapp->pBuffer + sizeof(NmsLootOfferHeader_Struct));
 		for (uint32 i = 0; i < count; ++i) {
 			entries[i].offer_id = active[i]->id;
-			entries[i].item_id = active[i]->item_id;
 			entries[i].icon = active[i]->icon;
 			entries[i].charges = active[i]->charges;
+			entries[i].item_id = active[i]->item_id;
 			entries[i].bonus = active[i]->bonus;
 			strn0cpy(entries[i].name, active[i]->name.c_str(), sizeof(entries[i].name));
+			if (!active[i]->passed_from.empty()) {
+				strn0cpy(entries[i].name2, active[i]->passed_from.c_str(), sizeof(entries[i].name2));
+			}
 		}
 
 		c->QueuePacket(outapp);
@@ -616,7 +632,7 @@ void NmsLootOfferHandleDecision(Client *c, const EQApplicationPacket *app)
 	}
 
 	char pass_to[64] = {0};
-	strn0cpy(pass_to, in->pass_to, sizeof(pass_to));
+	strn0cpy(pass_to, in->name, sizeof(pass_to));
 
 	ExpireOffers(c->CharacterID());
 
@@ -629,12 +645,17 @@ void NmsLootOfferHandleDecision(Client *c, const EQApplicationPacket *app)
 		c->Message(Chat::White, "[NMS] That loot offer has expired.");
 		return;
 	}
-	if (in->corpse_id && in->corpse_id != match.corpse_id) {
-		c->Message(Chat::White, "[NMS] That loot offer has expired.");
+
+	auto action = static_cast<NmsLootAction>(in->action);
+	if (action == NmsLootAction::ReturnToPasser) {
+		action = NmsLootAction::Pass;
+	}
+	if (action < NmsLootAction::Keep || action > NmsLootAction::Pass) {
+		c->Message(Chat::Red, "[NMS] Unknown loot action.");
 		return;
 	}
-	if (in->quantity > 0 && in->quantity < static_cast<uint32>(match.charges > 0 ? match.charges : 1)) {
-		c->Message(Chat::White, "[NMS] Partial quantity is not supported.");
+	if (action == NmsLootAction::Pass && pass_to[0] == '\0') {
+		c->Message(Chat::Red, "[NMS] Choose a player to pass that item to.");
 		return;
 	}
 
@@ -643,7 +664,7 @@ void NmsLootOfferHandleDecision(Client *c, const EQApplicationPacket *app)
 		return;
 	}
 
-	if (!NmsLootOfferApply(c, match, static_cast<NmsLootAction>(in->action), pass_to)) {
+	if (!NmsLootOfferApply(c, match, action, pass_to)) {
 		if (match.expire_remaining <= 0) {
 			return;
 		}
@@ -873,6 +894,7 @@ bool NmsLootOfferApply(Client *c, const NmsLootOffer &offer, NmsLootAction actio
 		dest.id = 0;
 		dest.character_id = other->CharacterID();
 		dest.passed = false;
+		dest.passed_from = c->GetName();
 		if (zone) {
 			dest.zone_id = zone->GetZoneID();
 			dest.instance_id = zone->GetInstanceID();

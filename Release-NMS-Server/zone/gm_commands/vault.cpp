@@ -72,10 +72,9 @@ void command_nmsloot_decide(Client *c, const Seperator *sep)
 
 	NmsLootDecision_Struct decision{};
 	decision.offer_id = Strings::ToUnsignedInt(sep->arg[1]);
-	decision.action = Strings::ToUnsignedInt(sep->arg[2]);
-	decision.quantity = 0;
+	decision.action = static_cast<uint8>(Strings::ToUnsignedInt(sep->arg[2]));
 	if (sep->arg[3] && sep->arg[3][0]) {
-		strn0cpy(decision.pass_to, sep->arg[3], sizeof(decision.pass_to));
+		strn0cpy(decision.name, sep->arg[3], sizeof(decision.name));
 	}
 
 	auto app = new EQApplicationPacket(OP_NmsLootDecision, sizeof(NmsLootDecision_Struct));
