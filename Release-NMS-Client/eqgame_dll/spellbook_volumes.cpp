@@ -98,6 +98,13 @@ namespace {
 
 	void CopyVolumeToCharInfo()
 	{
+		// GetCharInfo2() dereferences pCharData and pCI2 unconditionally, so testing its
+		// result is too late - check the chain first. This runs from the OP_PlayerProfile
+		// handler, while the client is still building CHARINFO2.
+		if (!ppCharData || !pCharData || !((PCHARINFO)pCharData)->pCI2) {
+			return;
+		}
+
 		PCHARINFO2 ci2 = GetCharInfo2();
 		if (!ci2) {
 			return;
@@ -217,6 +224,12 @@ SpellbookIncomingResult SpellbookVolumes_OnIncoming(uint16_t opcode, char *buf, 
 				static_cast<unsigned>(*size)
 			);
 			LogBook(miss);
+			// Drop the previous character/zone state. g_nmsSpellBook is static storage, so
+			// before any successful scan it is all zeros while the empty marker is
+			// 0xFFFFFFFF - a later /book N would copy 720 zeros into CHARINFO2 and show
+			// spell id 0 in every slot. A stale g_nmsBookVolume would also keep being added
+			// to outgoing scribe/delete/swap slots, landing writes on the wrong server slot.
+			SpellbookVolumes_Reset();
 			if (*size >= kLikely2880ProfileBytes) {
 				return SpellbookIncomingSuppress;
 			}

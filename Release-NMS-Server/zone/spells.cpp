@@ -6552,9 +6552,12 @@ void Client::UnscribeSpell(int slot, bool update_client, bool defer_save, bool f
 
 void Client::UnscribeSpellAll(bool update_client)
 {
+	// forget_learned = false: ForgetSpellId runs two DELETEs per call, and the bulk
+	// deletes below already clear both tables. Passing true here cost up to
+	// 2 * SPELLBOOK_SIZE redundant round trips on a full book.
 	for (int i = 0; i < EQ::spells::SPELLBOOK_SIZE; i++) {
 		if (m_pp.spell_book[i] != 0xFFFFFFFF) {
-			UnscribeSpell(i, update_client, true, true);
+			UnscribeSpell(i, update_client, true, false);
 		}
 	}
 

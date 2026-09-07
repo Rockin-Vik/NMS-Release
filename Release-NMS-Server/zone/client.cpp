@@ -13440,6 +13440,11 @@ void Client::ReconcileLearnedSpells(bool include_book_and_gems, bool include_dis
 			}
 		}
 
+		// next_free walks forward across the loop: GetNextAvailableSpellBookSlot scans
+		// linearly from its starting slot, so restarting at 0 for every spell made this
+		// O(learned * SPELLBOOK_SIZE) - and SPELLBOOK_SIZE is now 2880, on a path that
+		// runs twice per zone-in.
+		int next_free = 0;
 		for (uint32 spell_id : m_learned_spells) {
 			if (!IsValidSpell(spell_id) || !SpellUsableByClassMask(static_cast<uint16>(spell_id), class_bits)) {
 				continue;
@@ -13449,7 +13454,10 @@ void Client::ReconcileLearnedSpells(bool include_book_and_gems, bool include_dis
 				continue;
 			}
 
-			const int slot = GetNextAvailableSpellBookSlot();
+			const int slot = GetNextAvailableSpellBookSlot(next_free);
+			if (slot >= 0) {
+				next_free = slot + 1;
+			}
 			if (slot == -1) {
 				LogError(
 					"ReconcileLearnedSpells: no book slot for character [{}] spell [{}] used [{}/{}]",
