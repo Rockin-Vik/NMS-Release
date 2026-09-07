@@ -1766,16 +1766,23 @@ function Invoke-StageMigrate {
         $rootPw = Get-RootPassword
 
         # Targets from common/version.h: CURRENT_BINARY_DATABASE_VERSION and
-        # CUSTOM_BINARY_DATABASE_VERSION. Read them out of the header rather than
-        # hardcoding, so this keeps working if the fork moves.
-        $targetVersion = 9325
-        $targetCustom  = 25
+        # CUSTOM_BINARY_DATABASE_VERSION. These are read out of the header, never
+        # hardcoded here - a stale copy silently under-reports the target, so the stage
+        # would declare the DB up to date while migrations were still pending. Fail
+        # closed instead: if the header cannot be read, this stage cannot know its target.
         $versionH = Join-Path $script:RepoServer 'common\version.h'
-        if (Test-Path $versionH) {
-            $vh = Get-Content $versionH -Raw
-            if ($vh -match 'CURRENT_BINARY_DATABASE_VERSION\s+(\d+)') { $targetVersion = [int]$Matches[1] }
-            if ($vh -match 'CUSTOM_BINARY_DATABASE_VERSION\s+(\d+)')  { $targetCustom  = [int]$Matches[1] }
+        if (-not (Test-Path $versionH)) {
+            throw "Cannot read $versionH - the Clone stage must run before Migrate."
         }
+        $vh = Get-Content $versionH -Raw
+        if ($vh -notmatch 'CURRENT_BINARY_DATABASE_VERSION\s+(\d+)') {
+            throw "CURRENT_BINARY_DATABASE_VERSION not found in $versionH."
+        }
+        $targetVersion = [int]$Matches[1]
+        if ($vh -notmatch 'CUSTOM_BINARY_DATABASE_VERSION\s+(\d+)') {
+            throw "CUSTOM_BINARY_DATABASE_VERSION not found in $versionH."
+        }
+        $targetCustom = [int]$Matches[1]
         Write-Step "Target versions from version.h: stock $targetVersion, custom $targetCustom"
 
         function Get-DbVersions {

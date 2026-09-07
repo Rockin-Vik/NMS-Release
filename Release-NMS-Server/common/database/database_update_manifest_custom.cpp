@@ -1246,6 +1246,31 @@ ALTER TABLE character_nms_loot_offers
 		.content_schema_update = false,
 	},
 
+	ManifestEntry{
+		.version = 41,
+		.description = "2026_09_07_character_nms_vault_instance_state",
+		// Sentinels on ALL six columns, not just the first: a check that only looked at
+		// instnodrop would mark v41 applied after a partial ALTER and never retry, and the
+		// vault's own EnsureTables() column count would then keep the vault disabled
+		// forever. Same shape as the v39 multi-column check above.
+		.check = "SELECT COUNT(*) AS n FROM information_schema.columns "
+				 "WHERE table_schema = DATABASE() AND table_name = 'character_nms_vault' "
+				 "AND column_name IN ('instnodrop', 'custom_data', 'ornament_icon', "
+				 "'ornament_idfile', 'ornament_hero_model', 'guid') HAVING COUNT(*) = 6",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+ALTER TABLE character_nms_vault
+    ADD COLUMN instnodrop TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER aug6,
+    ADD COLUMN custom_data TEXT DEFAULT NULL AFTER instnodrop,
+    ADD COLUMN ornament_icon INT UNSIGNED NOT NULL DEFAULT 0 AFTER custom_data,
+    ADD COLUMN ornament_idfile INT UNSIGNED NOT NULL DEFAULT 0 AFTER ornament_icon,
+    ADD COLUMN ornament_hero_model INT UNSIGNED NOT NULL DEFAULT 0 AFTER ornament_idfile,
+    ADD COLUMN guid BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER ornament_hero_model;
+)",
+		.content_schema_update = false,
+	},
+
 	// Used for testing
 	//	ManifestEntry{
 	//		.version = 9229,

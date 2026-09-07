@@ -1,6 +1,6 @@
 -- ============================================================================
 -- NMS content health check - verifies the DATA every custom-manifest version
--- (v18 through v40) is supposed to deliver, without trusting db_version.
+-- (v18 through v41) is supposed to deliver, without trusting db_version.
 --
 -- Why this exists: we have now twice found servers whose custom_version was
 -- stamped PAST an entry whose content never landed (a half-apply healed by a
@@ -17,7 +17,7 @@
 -- READ-ONLY: SELECT/SHOW only. Safe on any server, any number of times.
 -- ============================================================================
 
-SELECT 'db_version (expect 40 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
+SELECT 'db_version (expect 41 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
 
 -- ---- v18 / v23: Beastlord spell merchant + scrolls -------------------------
 SELECT 'v23 bl merchant npc (expect 1)' AS what, COUNT(*) AS value FROM npc_types WHERE id = 1120001300;
@@ -121,3 +121,13 @@ SELECT 'v40 loot_offers.passed_from (expect 1)' AS what, COUNT(*) AS value
   FROM information_schema.columns
   WHERE table_schema = DATABASE() AND table_name = 'character_nms_loot_offers'
     AND column_name = 'passed_from';
+
+-- ---- v41: vault per-instance item state -------------------------------------
+-- Without these six columns a vault round trip silently returned a different item than the
+-- one deposited (attunement, ornamentation and custom_data were dropped), and every vault
+-- SELECT/REPLACE now references them - EnsureTables keeps the vault disabled until they exist.
+SELECT 'v41 vault instance columns (expect 6)' AS what, COUNT(*) AS value
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'character_nms_vault'
+    AND column_name IN ('instnodrop', 'custom_data', 'ornament_icon',
+                        'ornament_idfile', 'ornament_hero_model', 'guid');

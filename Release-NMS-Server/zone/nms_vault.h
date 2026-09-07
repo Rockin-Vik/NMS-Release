@@ -20,6 +20,9 @@ static constexpr int NMS_VAULT_CLICKY_END = 80;
 static constexpr int NMS_VAULT_PROC_PRIMARY = 81;
 static constexpr int NMS_VAULT_PROC_SECONDARY = 82;
 static constexpr int NMS_VAULT_PROC_RANGED = 83;
+// Fixed page set - NmsVaultPageForSlot only ever returns a value in this range.
+static constexpr int NMS_VAULT_PAGE_MIN = 1;
+static constexpr int NMS_VAULT_PAGE_MAX = 9;
 
 struct NmsVaultItem {
 	int      slot = 0;
@@ -27,6 +30,16 @@ struct NmsVaultItem {
 	uint32   item_id = 0;
 	int16    charges = 0;
 	uint32   aug[6] = {0, 0, 0, 0, 0, 0};
+	// Per-instance state. Without these a vault round trip silently returned a different
+	// item than the one deposited: an attuned item came back unattuned, ornaments were
+	// stripped, and quest/script state in custom_data was lost. The `inventory` table
+	// persists exactly these fields (shareddb.cpp:436-442); the vault now does too.
+	bool        attuned = false;
+	std::string custom_data;
+	uint32      ornament_icon = 0;
+	uint32      ornament_idfile = 0;
+	uint32      ornament_hero_model = 0;
+	uint64      guid = 0;
 };
 
 bool NmsVaultEnabled();
@@ -50,6 +63,7 @@ void NmsVaultHandleMerchant(Client *c);
 
 void NmsVaultOnZoneIn(Client *c);
 void NmsVaultOnMerchantEnd(Client *c);
+void NmsVaultOnClientDestroy(Client *c);
 void NmsVaultRefreshCache(Client *c);
 void NmsVaultApplyClickies(Client *c);
 const EQ::ItemData *NmsVaultProcItem(Client *c, uint16 hand);

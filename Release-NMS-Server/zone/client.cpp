@@ -735,6 +735,11 @@ Client::~Client() {
 	entity_list.RemoveMobFromCloseLists(this);
 	m_close_mobs.clear();
 
+	// Despawn the vault merchant and drop this character's cached vault state. Logout and
+	// link-death reach here but not SendMerchantEnd, so without this an invisible merchant
+	// NPC stayed spawned for the life of the zone process.
+	NmsVaultOnClientDestroy(this);
+
 	if (ClientVersion() == EQ::versions::ClientVersion::RoF2 && RuleB (Parcel, EnableParcelMerchants)) {
 		DoParcelCancel();
 	}

@@ -39,10 +39,18 @@ namespace {
 		if (tables_checked) {
 			return tables_ready;
 		}
-		tables_checked = true;
 		auto table = database.QueryDatabase("SHOW TABLES LIKE 'character_nms_loot_offers'");
-		if (!table.Success() || table.RowCount() == 0) {
-			tables_ready = false;
+		// A failed QUERY is not a failed SCHEMA. Latching tables_checked before the answer
+		// was known meant one transient DB error at first use disabled loot offers for the
+		// whole life of the zone process, and hid a schema fix applied to a running server
+		// until restart. Only a definitive answer is cached; a query failure retries.
+		if (!table.Success()) {
+			LogError("NmsLootOffers: table check query failed; will retry on next use");
+			return false;
+		}
+		if (table.RowCount() == 0) {
+			tables_checked = true;
+			tables_ready   = false;
 			return tables_ready;
 		}
 		auto columns = database.QueryDatabase(
@@ -51,8 +59,13 @@ namespace {
 			"AND table_name = 'character_nms_loot_offers' "
 			"AND column_name IN ('corpse_serial', 'instance_id', 'passed', 'passed_from')"
 		);
-		tables_ready = false;
-		if (!columns.Success() || columns.RowCount() < 4) {
+		if (!columns.Success()) {
+			LogError("NmsLootOffers: column check query failed; will retry on next use");
+			return false;
+		}
+		tables_checked = true;
+		tables_ready   = false;
+		if (columns.RowCount() < 4) {
 			return tables_ready;
 		}
 		bool have_serial = false;
@@ -296,11 +309,25 @@ namespace {
 		safe_delete(outapp);
 	}
 
+	// A corpse item can legitimately carry charges == 0: quest scripts call AddItem(id, 0)
+	// directly (greatdivide/Sentry_Badain.lua, encounters/RingTen.lua) and lootdrop_entries
+	// rows exist with item_charges = 0. Stock treats zero as one when it builds the instance
+	// (corpse.cpp:1151), and so did every other site in this file EXCEPT the two below.
+	//
+	// LootItemMatchesOffer normalised only the OFFER side, so a zero-charge corpse item was
+	// compared as 0 == 1 and could never match: the offer showed up in Pending and then
+	// refused every Keep, Sell, Tribute, Destroy and Pass, re-sending itself each time until
+	// it expired. One helper, applied consistently, is what keeps the comparison symmetric.
+	int32 NormalizeChargeCount(int32 charges)
+	{
+		return charges > 0 ? charges : 1;
+	}
+
 	EQ::ItemInstance *MakeLootItem(const NmsLootOffer &offer)
 	{
 		return database.CreateItem(
 			offer.item_id,
-			offer.charges,
+			static_cast<int16>(NormalizeChargeCount(offer.charges)),
 			offer.aug[0],
 			offer.aug[1],
 			offer.aug[2],
@@ -324,7 +351,7 @@ namespace {
 	{
 		return item
 			&& item->item_id == offer.item_id
-			&& item->charges == static_cast<uint16>(offer.charges > 0 ? offer.charges : 1)
+			&& NormalizeChargeCount(item->charges) == NormalizeChargeCount(offer.charges)
 			&& item->aug_1 == offer.aug[0]
 			&& item->aug_2 == offer.aug[1]
 			&& item->aug_3 == offer.aug[2]
@@ -409,7 +436,7 @@ namespace {
 		}
 		corpse->AddItem(
 			offer.item_id,
-			static_cast<uint16>(offer.charges > 0 ? offer.charges : 1),
+			static_cast<uint16>(NormalizeChargeCount(offer.charges)),
 			0,
 			offer.aug[0],
 			offer.aug[1],
@@ -474,7 +501,15 @@ namespace {
 
 void NmsLootOfferForgetCorpseItem(uint32 character_id, uint32 corpse_id, const LootItem *item)
 {
-	if (!EnsureTables() || !character_id || !corpse_id || !item || !item->item_id) {
+	// Rule first, then tables - the same order every other entry point in this file uses
+	// (:507, :582, :616). Without the rule check this ran on EVERY native corpse loot on a
+	// server that had merely applied the migrations, issuing a blocking DELETE per item
+	// removed - including the per-item loops in Corpse::RemoveItemByPercent and the bag
+	// content loop - for a feature that was switched off. Stock loot must be untouched when
+	// the rule is off (design decision D4/D7). Rows written while the rule was on are left
+	// behind deliberately: they carry expires_at and are reclaimed by ExpireOffers, and no
+	// offer is sent or actioned while the rule is off, so a stale row is inert.
+	if (!NmsLootOffersEnabled() || !EnsureTables() || !character_id || !corpse_id || !item || !item->item_id) {
 		return;
 	}
 	database.QueryDatabase(fmt::format(
@@ -691,7 +726,7 @@ bool NmsLootOfferApply(Client *c, const NmsLootOffer &offer, NmsLootAction actio
 
 	const auto *item = database.GetItem(offer.item_id);
 	const std::string item_name = offer.name.empty() && item ? item->Name : offer.name;
-	const int16 qty = offer.charges > 0 ? offer.charges : 1;
+	const int16 qty = static_cast<int16>(NormalizeChargeCount(offer.charges));
 	bool removed_from_corpse = false;
 
 	auto take_from_corpse = [&]() -> bool {

@@ -2,6 +2,7 @@
 #include "nms_vault.h"
 
 #include "../common/eqemu_logsys.h"
+#include "../common/features.h"
 #include "../common/rulesys.h"
 #include "../common/strings.h"
 #include "../common/eq_packet_structs.h"
@@ -36,6 +37,21 @@ namespace {
 
 	std::unordered_map<uint32, LockerCache> locker_cache;
 
+	// Where the player stood when they opened the vault bank. The vault bank exists so a
+	// player does not need a banker NPC nearby (feature F6) - it was never meant to let them
+	// bank from anywhere for the rest of the zone session, which is what an unbounded flag
+	// did: one #vault_bank suppressed the distance check, and its POSSIBLE_HACK player
+	// event, on every banker handler until they changed zones. Anchoring the session to the
+	// spot it was opened keeps the feature (no NPC required) while restoring the property
+	// stock relies on - you bank where you opened the window, and walking away ends it.
+	struct BankAnchor {
+		float x = 0.0f;
+		float y = 0.0f;
+		float z = 0.0f;
+	};
+
+	std::unordered_map<uint32, BankAnchor> bank_anchor;
+
 	std::string SanitizeField(const std::string &in)
 	{
 		std::string out;
@@ -56,10 +72,18 @@ namespace {
 		if (tables_checked) {
 			return tables_ready;
 		}
-		tables_checked = true;
 		auto results = database.QueryDatabase("SHOW TABLES LIKE 'character_nms_vault'");
-		if (!results.Success() || results.RowCount() == 0) {
-			tables_ready = false;
+		// A failed QUERY is not a failed SCHEMA. Latching tables_checked before knowing the
+		// answer meant one transient DB error at first vault use disabled the vault for the
+		// entire life of the zone process, and made a schema fix applied to a running server
+		// invisible until restart. Only cache a definitive answer; retry on the next call.
+		if (!results.Success()) {
+			LogError("NmsVault: table check query failed; will retry on next use");
+			return false;
+		}
+		if (results.RowCount() == 0) {
+			tables_checked = true;
+			tables_ready   = false;
 			return tables_ready;
 		}
 		auto primary_key = database.QueryDatabase(
@@ -77,21 +101,46 @@ namespace {
 			"AND table_name = 'character_nms_vault' "
 			"AND non_unique = 0"
 		);
-		tables_ready = false;
-		if (primary_key.Success() && primary_key.RowCount() > 0
-			&& unique_indexes.Success() && unique_indexes.RowCount() > 0) {
+		// Custom manifest v41 added the per-instance state columns. Without them every
+		// SELECT and REPLACE in this file references a column that does not exist, so an
+		// un-migrated server must fail closed here rather than erroring on every operation.
+		auto instance_columns = database.QueryDatabase(
+			"SELECT COUNT(*) FROM information_schema.columns "
+			"WHERE table_schema = DATABASE() "
+			"AND table_name = 'character_nms_vault' "
+			"AND column_name IN ('instnodrop', 'custom_data', 'ornament_icon', "
+			"'ornament_idfile', 'ornament_hero_model', 'guid')"
+		);
+
+		if (!primary_key.Success() || !unique_indexes.Success() || !instance_columns.Success()) {
+			LogError("NmsVault: schema check query failed; will retry on next use");
+			return false;
+		}
+
+		tables_checked = true;
+		tables_ready   = false;
+		if (primary_key.RowCount() > 0 && unique_indexes.RowCount() > 0
+			&& instance_columns.RowCount() > 0) {
 			auto row = primary_key.begin();
 			auto unique_row = unique_indexes.begin();
+			auto columns_row = instance_columns.begin();
 			tables_ready = Strings::ToInt(row[0]) == 3
 				&& Strings::ToInt(row[1]) == 3
-				&& Strings::ToInt(unique_row[0]) == 1;
+				&& Strings::ToInt(unique_row[0]) == 1
+				&& Strings::ToInt(columns_row[0]) == 6;
+			if (!tables_ready && Strings::ToInt(columns_row[0]) != 6) {
+				LogError(
+					"NmsVault: character_nms_vault is missing the v41 instance-state columns; "
+					"the vault stays disabled until the custom migration manifest is applied"
+				);
+			}
 		}
 		return tables_ready;
 	}
 
 	EQ::ItemInstance *MakeInstance(const NmsVaultItem &row)
 	{
-		return database.CreateItem(
+		auto *inst = database.CreateItem(
 			row.item_id,
 			row.charges,
 			row.aug[0],
@@ -99,8 +148,25 @@ namespace {
 			row.aug[2],
 			row.aug[3],
 			row.aug[4],
-			row.aug[5]
+			row.aug[5],
+			row.attuned,
+			row.custom_data,
+			row.ornament_icon,
+			row.ornament_idfile,
+			row.ornament_hero_model
 		);
+		if (!inst) {
+			return nullptr;
+		}
+		// Restore the instance's identity the same way the inventory load does
+		// (shareddb.cpp:816-817): re-register the serial so Bazaar and anything else keyed
+		// on it still recognises the item. AddGUIDToMap inserts into a set, so re-adding a
+		// serial that is still registered is a no-op.
+		if (row.guid != 0) {
+			inst->SetSerialNumber(static_cast<int32>(row.guid));
+			EQ::ItemInstance::AddGUIDToMap(row.guid);
+		}
+		return inst;
 	}
 
 	NmsVaultItem FromInstance(int slot, int bag_slot, const EQ::ItemInstance *inst)
@@ -116,6 +182,12 @@ namespace {
 		for (int i = 0; i < 6; ++i) {
 			row.aug[i] = inst->GetAugmentItemID(static_cast<uint8>(i));
 		}
+		row.attuned             = inst->IsAttuned();
+		row.custom_data         = inst->GetCustomDataString();
+		row.ornament_icon       = inst->GetOrnamentationIcon();
+		row.ornament_idfile     = inst->GetOrnamentationIDFile();
+		row.ornament_hero_model = inst->GetOrnamentHeroModel();
+		row.guid                = static_cast<uint64>(inst->GetSerialNumber());
 		return row;
 	}
 
@@ -159,6 +231,33 @@ namespace {
 			|| item->Click.Type == EQ::item::ItemEffectEquipClick;
 	}
 
+	// The autoload previously cast every clicky in slots 61-80 with no checks at all, so a
+	// level-1 character could park a bag of raid clickies and have them all re-applied on
+	// every zone-in.
+	//
+	// The two gates are deliberately different, because EQ treats these item effects
+	// differently and a blanket equip check would remove intended behaviour:
+	//   - Required level applies to everything. Stock gates item clicks on Click.Level2
+	//     (client_packet.cpp:4725-4727, :10048); a vault clicky is not a way around it.
+	//   - Class/race equipability applies ONLY to EquipClick items, whose effect exists
+	//     solely because the item is worn. A plain inventory clicky (Click / Click2) is
+	//     usable from a bag by classes that could never equip it, which is normal EQ
+	//     behaviour and stays allowed.
+	bool CanUseVaultClicky(Client *c, const EQ::ItemData *item)
+	{
+		if (!c || !IsVaultClicky(item)) {
+			return false;
+		}
+		if (item->Click.Level2 > 0 && c->GetLevel() < item->Click.Level2) {
+			return false;
+		}
+		if (item->Click.Type == EQ::item::ItemEffectEquipClick
+			&& !item->IsEquipable(c->GetBaseRace(), static_cast<uint16>(c->GetClassesBits()))) {
+			return false;
+		}
+		return true;
+	}
+
 	void CollectClickySpells(const std::vector<NmsVaultItem> &items, int slot, std::vector<uint16> &out)
 	{
 		if (slot < NMS_VAULT_CLICKY_BEGIN || slot > NMS_VAULT_CLICKY_END) {
@@ -192,19 +291,32 @@ namespace {
 		if (!database.SaveCursor(c->CharacterID(), start, end)) {
 			return false;
 		}
+		// Count ONLY slot_id = slotCursor, and expect one row per non-empty queue.
+		//
+		// The old test COUNT(*)'d the whole cursor range and compared it to CursorSize().
+		// Those two never had to agree: SaveCursor writes queue entries 1..N into
+		// CURSOR_BAG_BEGIN..END, and UpdateInventorySlot ALSO writes the contents of a bag
+		// sitting on the cursor into that same range via CalcSlotId(slotCursor, i)
+		// (shareddb.cpp:444-458). One bag holding three items counted as four rows against a
+		// CursorSize() of one, so deposits failed for anyone carrying a full bag. The two
+		// kinds of row are indistinguishable by slot_id, so no count over that whole range
+		// can be right - but slotCursor itself is never used for bag contents, so a count
+		// restricted to it is unambiguous.
+		//
+		// The expected value is 0 or 1, not always 1: the caller (TakeCursorIfPersisted)
+		// pops the deposited item BEFORE calling here, so the queue is legitimately empty in
+		// the ordinary one-item case and SaveCursor correctly writes nothing.
+		const int remaining = c->GetInv().CursorSize();
 		auto results = database.QueryDatabase(fmt::format(
-			"SELECT COUNT(*) FROM inventory WHERE character_id = {} "
-			"AND (slot_id = {} OR slot_id BETWEEN {} AND {})",
+			"SELECT COUNT(*) FROM inventory WHERE character_id = {} AND slot_id = {}",
 			c->CharacterID(),
-			EQ::invslot::slotCursor,
-			EQ::invbag::CURSOR_BAG_BEGIN,
-			EQ::invbag::CURSOR_BAG_END
+			EQ::invslot::slotCursor
 		));
 		if (!results.Success() || results.RowCount() == 0) {
 			return false;
 		}
 		auto row = results.begin();
-		return Strings::ToInt(row[0]) == c->GetInv().CursorSize();
+		return Strings::ToInt(row[0]) == (remaining > 0 ? 1 : 0);
 	}
 
 	bool DeliverToPlayer(Client *c, EQ::ItemInstance *inst)
@@ -216,12 +328,43 @@ namespace {
 			return c->AutoPutLootInInventory(*inst, true, false);
 		}
 
+		// PushItemOnCursor returns SaveCursor's result - whether the cursor actually reached
+		// the database. The old test compared CursorSize() before and after, but PushCursor
+		// is a pure in-memory queue push, so it ALWAYS grew and a failed SaveCursor read as
+		// success. On the withdraw path the vault row is deleted before this call, so the
+		// item then existed in neither place after a relog. It also made the
+		// AutoPutLootInInventory fallback below unreachable.
 		const int before = c->GetInv().CursorSize();
-		c->PushItemOnCursor(*inst, true);
-		if (c->GetInv().CursorSize() > before) {
+		if (c->PushItemOnCursor(*inst, true)) {
 			return true;
 		}
-		return c->AutoPutLootInInventory(*inst, true, false);
+
+		// The push queued a copy in memory even though it did not persist, and the caller is
+		// about to restore the vault row - so that copy has to go, or the player could move
+		// it into a real slot and end up holding the item twice.
+		//
+		// It can only be taken back out when it was the ONLY thing on the cursor:
+		// PushCursor appends to the BACK of the queue while DeleteItemInInventory(slotCursor)
+		// pops the FRONT (inventory_profile.cpp:163, :465). With anything else queued, the
+		// removal would destroy a different item the player was already carrying, which is
+		// worse than the duplicate it is trying to prevent.
+		//
+		// So when the cursor was not empty the copy is left in place, and that case is NOT
+		// fully safe: nothing was persisted, so it disappears on the next zone or relog -
+		// but if the player drags it into a real inventory slot first, SaveInventory writes
+		// it and they end up with both it and the restored vault row. Reaching that needs a
+		// database write failure at exactly this moment, so it is rare rather than
+		// impossible; the LogError below is what makes it findable if it happens.
+		if (before == 0) {
+			c->DeleteItemInInventory(EQ::invslot::slotCursor, 0, true);
+		}
+		LogError(
+			"NmsVault: cursor delivery for character {} did not persist (cursor held {} item(s) "
+			"beforehand); the item stays in the vault",
+			c->CharacterID(),
+			before
+		);
+		return false;
 	}
 
 	bool ParentIsBagWithSlot(const std::vector<NmsVaultItem> &items, int slot, int bag_slot)
@@ -282,7 +425,8 @@ namespace {
 	VaultRowState ReadVaultRowState(uint32 character_id, const NmsVaultItem &item)
 	{
 		auto results = database.QueryDatabase(fmt::format(
-			"SELECT item_id, charges, aug1, aug2, aug3, aug4, aug5, aug6 "
+			"SELECT item_id, charges, aug1, aug2, aug3, aug4, aug5, aug6, "
+			"instnodrop, custom_data, ornament_icon, ornament_idfile, ornament_hero_model, guid "
 			"FROM character_nms_vault WHERE character_id = {} AND slot = {} AND bag_slot = {} LIMIT 1",
 			character_id,
 			item.slot,
@@ -295,6 +439,10 @@ namespace {
 			return VaultRowState::Missing;
 		}
 		auto row = results.begin();
+		// The per-instance state is part of the row's identity, not decoration. NmsVaultSaveItem
+		// falls back to this after a failed REPLACE and treats Match as "saved" - so without
+		// these fields a row still carrying the PREVIOUS instance's attunement or ornaments
+		// would pass as the row we meant to write, silently keeping the old state.
 		if (Strings::ToUnsignedInt(row[0]) != item.item_id
 			|| static_cast<int16>(Strings::ToInt(row[1])) != item.charges
 			|| Strings::ToUnsignedInt(row[2]) != item.aug[0]
@@ -303,6 +451,12 @@ namespace {
 			|| Strings::ToUnsignedInt(row[5]) != item.aug[3]
 			|| Strings::ToUnsignedInt(row[6]) != item.aug[4]
 			|| Strings::ToUnsignedInt(row[7]) != item.aug[5]
+			|| (row[8] && Strings::ToInt(row[8]) != 0) != item.attuned
+			|| std::string(row[9] ? row[9] : "") != item.custom_data
+			|| (row[10] ? Strings::ToUnsignedInt(row[10]) : 0) != item.ornament_icon
+			|| (row[11] ? Strings::ToUnsignedInt(row[11]) : 0) != item.ornament_idfile
+			|| (row[12] ? Strings::ToUnsignedInt(row[12]) : 0) != item.ornament_hero_model
+			|| (row[13] ? Strings::ToUnsignedBigInt(row[13]) : 0) != item.guid
 		) {
 			return VaultRowState::Mismatch;
 		}
@@ -334,13 +488,28 @@ namespace {
 			return false;
 		}
 		const auto state = ReadVaultRowState(character_id, parent);
-		if (state == VaultRowState::Match || state == VaultRowState::Unknown) {
+		// Only a POSITIVELY confirmed row counts as saved. Unknown means the verification
+		// SELECT itself failed, so we do not know whether the row exists - and the caller
+		// destroys the player's cursor item on a true return. Claiming a save we cannot
+		// prove trades an unverified row for a guaranteed item loss; returning false hands
+		// the item back instead. If a row did survive, the next REPLACE on the same primary
+		// key collapses it, so the worst case here is a recoverable duplicate rather than
+		// silently destroying something the player owned.
+		if (state == VaultRowState::Match) {
 			LogError(
 				"NmsVault: slot {} for character {} remains after a failed write; treating the vault row as saved",
 				parent.slot,
 				character_id
 			);
 			return true;
+		}
+		if (state == VaultRowState::Unknown) {
+			LogError(
+				"NmsVault: could not verify slot {} for character {} after a failed write; "
+				"returning the item to the player rather than assuming it was stored",
+				parent.slot,
+				character_id
+			);
 		}
 		return false;
 	}
@@ -349,7 +518,8 @@ namespace {
 	{
 		NmsVaultDeleteItem(character_id, item.slot, item.bag_slot);
 		const auto state = ReadVaultRowState(character_id, item);
-		if (state == VaultRowState::Match || state == VaultRowState::Unknown) {
+		// Same rule as FinishFailedVaultSlotWrite: an unverifiable row is not a saved row.
+		if (state == VaultRowState::Match) {
 			LogError(
 				"NmsVault: child slot {} bag {} for character {} remains after a failed write; treating the vault row as saved",
 				item.slot,
@@ -357,6 +527,15 @@ namespace {
 				character_id
 			);
 			return true;
+		}
+		if (state == VaultRowState::Unknown) {
+			LogError(
+				"NmsVault: could not verify child slot {} bag {} for character {} after a failed "
+				"write; returning the item to the player rather than assuming it was stored",
+				item.slot,
+				item.bag_slot,
+				character_id
+			);
 		}
 		return false;
 	}
@@ -574,7 +753,8 @@ bool NmsVaultLoad(uint32 character_id, std::vector<NmsVaultItem> &items)
 	}
 
 	auto results = database.QueryDatabase(fmt::format(
-		"SELECT slot, bag_slot, item_id, charges, aug1, aug2, aug3, aug4, aug5, aug6 "
+		"SELECT slot, bag_slot, item_id, charges, aug1, aug2, aug3, aug4, aug5, aug6, "
+		"instnodrop, custom_data, ornament_icon, ornament_idfile, ornament_hero_model, guid "
 		"FROM character_nms_vault WHERE character_id = {} ORDER BY slot, bag_slot",
 		character_id
 	));
@@ -591,6 +771,15 @@ bool NmsVaultLoad(uint32 character_id, std::vector<NmsVaultItem> &items)
 		for (int i = 0; i < 6; ++i) {
 			item.aug[i] = Strings::ToUnsignedInt(row[4 + i]);
 		}
+		// custom_data is the only nullable column here; Strings::To*(nullptr) would build a
+		// std::string from a null pointer, so every field is guarded rather than just that
+		// one - a NULL from a hand-edited row must not be undefined behaviour.
+		item.attuned             = row[10] && Strings::ToInt(row[10]) != 0;
+		item.custom_data         = row[11] ? row[11] : "";
+		item.ornament_icon       = row[12] ? Strings::ToUnsignedInt(row[12]) : 0;
+		item.ornament_idfile     = row[13] ? Strings::ToUnsignedInt(row[13]) : 0;
+		item.ornament_hero_model = row[14] ? Strings::ToUnsignedInt(row[14]) : 0;
+		item.guid                = row[15] ? Strings::ToUnsignedBigInt(row[15]) : 0;
 		items.push_back(item);
 	}
 	return true;
@@ -625,8 +814,9 @@ bool NmsVaultSaveItem(uint32 character_id, const NmsVaultItem &item)
 
 	auto results = database.QueryDatabase(fmt::format(
 		"REPLACE INTO character_nms_vault "
-		"(character_id, slot, bag_slot, item_id, charges, aug1, aug2, aug3, aug4, aug5, aug6) "
-		"VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+		"(character_id, slot, bag_slot, item_id, charges, aug1, aug2, aug3, aug4, aug5, aug6, "
+		"instnodrop, custom_data, ornament_icon, ornament_idfile, ornament_hero_model, guid) "
+		"VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, '{}', {}, {}, {}, {})",
 		character_id,
 		item.slot,
 		item.bag_slot,
@@ -637,7 +827,15 @@ bool NmsVaultSaveItem(uint32 character_id, const NmsVaultItem &item)
 		item.aug[2],
 		item.aug[3],
 		item.aug[4],
-		item.aug[5]
+		item.aug[5],
+		item.attuned ? 1 : 0,
+		// custom_data is free-form text written by quest scripts - the only non-numeric
+		// value in this statement, and the only one that must be escaped.
+		Strings::Escape(item.custom_data),
+		item.ornament_icon,
+		item.ornament_idfile,
+		item.ornament_hero_model,
+		item.guid
 	));
 	if (results.Success()) {
 		return true;
@@ -726,8 +924,14 @@ void NmsVaultHandlePage(Client *c, int page)
 	if (!c || !NmsVaultEnabled() || !EnsureTables()) {
 		return;
 	}
-	if (page < 1) {
-		page = 1;
+	// Clamp both ends. The page set is fixed at 1-9 (NmsVaultPageForSlot), and this value is
+	// player-supplied - it is formatted straight into VAULTDATA|OPEN|{} and handed to the
+	// client add-on, whose parser is not in this repo.
+	if (page < NMS_VAULT_PAGE_MIN) {
+		page = NMS_VAULT_PAGE_MIN;
+	}
+	if (page > NMS_VAULT_PAGE_MAX) {
+		page = NMS_VAULT_PAGE_MAX;
 	}
 	NmsVaultSendRefresh(c, page);
 }
@@ -807,6 +1011,23 @@ void NmsVaultHandleWithdraw(Client *c, int slot, int quantity)
 		if (inner.bag_slot <= 0) {
 			continue;
 		}
+		// Re-validate the DB-sourced bag slot. The deposit path checks this, but the whole
+		// bag withdraw re-reads rows and trusted them: an index at or beyond the bag's
+		// BagSlots is dropped by UpdateInventorySlot's `i < BagSlots` loop the next time the
+		// bag is saved, so the item silently disappears. Reachable from a hand-edited row or
+		// from an item whose BagSlots shrank in item data after the deposit.
+		if (!ParentIsBagWithSlot(items, slot, inner.bag_slot)) {
+			LogError(
+				"NmsVault: character {} slot {} has an out-of-range bag_slot {}; refusing the withdraw",
+				c->CharacterID(),
+				slot,
+				inner.bag_slot
+			);
+			safe_delete(inst);
+			c->Message(Chat::Red, "[NMS] That vault bag has a damaged entry - contact a GM.");
+			return;
+		}
+
 		auto *bag_item = MakeInstance(inner);
 		if (!bag_item) {
 			safe_delete(inst);
@@ -824,11 +1045,23 @@ void NmsVaultHandleWithdraw(Client *c, int slot, int quantity)
 	}
 
 	const NmsVaultItem original = *row;
-	const bool one_charge = quantity == 1 && original.charges > 1;
+	// Only a STACKABLE item may be split: there, charges is the stack size and taking one
+	// leaves the rest behind. On a non-stackable item charges is the charge count of a
+	// single physical item (a 20-charge clicky), so splitting it would hand the player a
+	// second physical item and leave the original in the vault - duplication, repeatable
+	// once per charge. Stock uses this exact test for the same reason (corpse.cpp:1703:
+	// `count = inst->IsStackable() ? inst->GetCharges() : 1`).
+	const bool one_charge = quantity == 1 && original.charges > 1 && inst->IsStackable();
 	if (one_charge) {
 		inst->SetCharges(1);
 		NmsVaultItem remain = original;
 		remain.charges = static_cast<int16>(original.charges - 1);
+		// The withdrawn instance keeps the original serial; the remainder must NOT, or the
+		// two halves of the split would both be live with the same one. Serials are what the
+		// Bazaar uses to tell otherwise-identical stacks apart (item_instance.cpp), so a
+		// collision is the one thing they cannot have. Zero means "assign a fresh serial on
+		// the next withdraw" - MakeInstance only restores a stored serial when guid != 0.
+		remain.guid = 0;
 		if (!NmsVaultSaveItem(c->CharacterID(), remain)) {
 			c->Message(Chat::Red, "[NMS] Could not update that vault item.");
 			safe_delete(inst);
@@ -933,11 +1166,14 @@ void NmsVaultHandleWithdrawBagItem(Client *c, int slot, int bag_slot, int quanti
 	}
 
 	const NmsVaultItem original = *row;
-	const bool one_charge = quantity == 1 && original.charges > 1;
+	// Stackable-only split, and the remainder gets a fresh serial - see the identical block
+	// in NmsVaultHandleWithdraw for why on both counts.
+	const bool one_charge = quantity == 1 && original.charges > 1 && inst->IsStackable();
 	if (one_charge) {
 		inst->SetCharges(1);
 		NmsVaultItem remain = original;
 		remain.charges = static_cast<int16>(original.charges - 1);
+		remain.guid = 0;
 		if (!NmsVaultSaveItem(c->CharacterID(), remain)) {
 			c->Message(Chat::Red, "[NMS] Could not update that vault item.");
 			safe_delete(inst);
@@ -981,6 +1217,7 @@ void NmsVaultHandleBank(Client *c)
 	}
 
 	c->SetNmsVaultBank(true);
+	bank_anchor[c->CharacterID()] = BankAnchor{c->GetX(), c->GetY(), c->GetZ()};
 
 	auto outapp = new EQApplicationPacket(OP_BankerChange, sizeof(BankerChange_Struct));
 	auto *bc = reinterpret_cast<BankerChange_Struct *>(outapp->pBuffer);
@@ -1058,7 +1295,25 @@ void NmsVaultHandleMerchant(Client *c)
 
 bool NmsVaultBankAccess(Client *c)
 {
-	return c && NmsVaultEnabled() && EnsureTables() && c->GetNmsVaultBank();
+	if (!c || !NmsVaultEnabled() || !EnsureTables() || !c->GetNmsVaultBank()) {
+		return false;
+	}
+
+	// Bounded to where the window was opened, using the same range stock allows from a banker
+	// NPC (USE_NPC_RANGE2). Deliberately a pure query: this is called from nine sites,
+	// several of them inside OPMoveCoin's multi-step coin moves, so it must not mutate
+	// session state part-way through an operation. Walking away therefore SUSPENDS vault
+	// banking rather than ending it - which is also how a real banker behaves, since you can
+	// walk back and resume. No anchor means no open session.
+	auto it = bank_anchor.find(c->CharacterID());
+	if (it == bank_anchor.end()) {
+		return false;
+	}
+
+	const float dx = c->GetX() - it->second.x;
+	const float dy = c->GetY() - it->second.y;
+	const float dz = c->GetZ() - it->second.z;
+	return ((dx * dx) + (dy * dy) + (dz * dz)) <= static_cast<float>(USE_NPC_RANGE2);
 }
 
 bool NmsVaultIsMerchant(Client *c, uint16 entity_id)
@@ -1117,7 +1372,7 @@ void NmsVaultApplyClickies(Client *c)
 			continue;
 		}
 		const auto *item = database.GetItem(row.item_id);
-		if (IsVaultClicky(item)) {
+		if (CanUseVaultClicky(c, item)) {
 			c->SpellOnTarget(item->Click.Effect, c);
 		}
 		for (const auto &inner : items) {
@@ -1125,7 +1380,7 @@ void NmsVaultApplyClickies(Client *c)
 				continue;
 			}
 			const auto *bag_item = database.GetItem(inner.item_id);
-			if (IsVaultClicky(bag_item)) {
+			if (CanUseVaultClicky(c, bag_item)) {
 				c->SpellOnTarget(bag_item->Click.Effect, c);
 			}
 		}
@@ -1141,8 +1396,39 @@ void NmsVaultOnZoneIn(Client *c)
 	c->SetNmsVaultBank(false);
 	c->SetNmsVaultMerchant(false);
 	c->SetNmsVaultMerchantId(0);
+	bank_anchor.erase(c->CharacterID());
 	NmsVaultRefreshCache(c);
+
+	// The locker cache is populated here, but zone-in's own CalcBonuses has already run by
+	// this point (Handle_Connect_OP_ZoneEntry precedes ClientReady in the connect sequence),
+	// so without this the slot-82 bonuses were missing until some unrelated event - a buff
+	// fade, an equipment change - happened to recalculate. Only worth a recalc when the
+	// character actually has a locker item, since CalcBonuses is not cheap.
+	// Only the SECONDARY locker slot feeds NmsVaultApplyLockerBonuses. Primary and ranged
+	// feed NmsVaultProcItem, which is read live on each swing and needs no recalculation.
+	auto cached = locker_cache.find(c->CharacterID());
+	if (cached != locker_cache.end() && cached->second.secondary) {
+		c->CalcBonuses();
+	}
+
 	NmsVaultApplyClickies(c);
+}
+
+void NmsVaultOnClientDestroy(Client *c)
+{
+	if (!c) {
+		return;
+	}
+
+	// Logout and link-death both land here. DepopVaultMerchant was previously reachable only
+	// from zone-in and SendMerchantEnd, so camping with the vault shop open left a real NPC
+	// entity spawned at the player's position for the life of the zone process, one per
+	// occurrence. The cache entries are keyed by character id with no tie to a live Client,
+	// so they also have to go: left behind, a re-login into the same zone process would read
+	// the previous session's locker state at CalcBonuses time.
+	DepopVaultMerchant(c);
+	locker_cache.erase(c->CharacterID());
+	bank_anchor.erase(c->CharacterID());
 }
 
 void NmsVaultOnMerchantEnd(Client *c)
@@ -1175,7 +1461,22 @@ const EQ::ItemData *NmsVaultProcItem(Client *c, uint16 hand)
 	if (!item_id) {
 		return nullptr;
 	}
-	return database.GetItem(item_id);
+
+	const auto *item = database.GetItem(item_id);
+	if (!item) {
+		return nullptr;
+	}
+
+	// Same rule as the slot-82 bonuses: a locker item does nothing for a character who is
+	// not permitted to wear it, so the locker cannot lend one class another class's proc.
+	// Two bitmask tests on the per-swing path - IsEquipable is Races & ... && Classes & ...
+	// and nothing more (item_data.cpp), so this costs nothing measurable. Item TYPE is
+	// deliberately not restricted here: any permitted locker item overrides the held
+	// weapon's proc, which is the intended behaviour.
+	if (!item->IsEquipable(c->GetBaseRace(), static_cast<uint16>(c->GetClassesBits()))) {
+		return nullptr;
+	}
+	return item;
 }
 
 void NmsVaultApplyLockerBonuses(Client *c, StatBonuses *b)
@@ -1211,7 +1512,23 @@ void NmsVaultApplyLockerBonuses(Client *c, StatBonuses *b)
 	if (!inst) {
 		return;
 	}
-	c->AddItemBonuses(inst, b, false, true, 0, false);
+
+	// A locker item grants nothing to a character who could not wear it. The vault is
+	// storage, not a way around the class/race gate: this call previously passed
+	// is_tribute = true, whose ONLY effect in AddItemBonuses is to skip exactly this check
+	// (bonuses.cpp:277), so a Wizard could park a Warrior-only shield in slot 82 and collect
+	// its AC, HP, heroics and shield block. Checked here as well as in AddItemBonuses so the
+	// SetShieldEquipped() below is covered too - that flag is not gated by the bonus call.
+	// IsEquipable takes the multiclass bitmask, so a character holding several classes is
+	// judged on all of them (CODEBASE.md 3.1 - never branch on GetClass()).
+	// Cast is lossless: player classes run 1..16 and GetPlayerClassBit returns uint16
+	// (classes.h), so the whole mask fits. Explicit only to keep MSVC quiet on new code.
+	if (!inst->IsEquipable(c->GetBaseRace(), static_cast<uint16>(c->GetClassesBits()))) {
+		safe_delete(inst);
+		return;
+	}
+
+	c->AddItemBonuses(inst, b, false, false, 0, false);
 	if (inst->GetItem() && inst->GetItem()->ItemType == EQ::item::ItemTypeShield) {
 		c->SetShieldEquipped(true);
 	}

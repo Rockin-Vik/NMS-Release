@@ -133,7 +133,17 @@ function Invoke-Sql {
     }
 
     if ($code -ne 0) { throw "Query failed: $($out -join [Environment]::NewLine)" }
-    return @($out)
+
+    # 2>&1 merges the client's stderr into the stream: MariaDB prints notices there
+    # (e.g. the --ssl-verify-server-cert warning on a passwordless login) and they are
+    # NOT result rows. Merged stderr arrives as ErrorRecord objects, so drop those;
+    # belt-and-braces, drop any residual WARNING/ERROR/Note text line too.
+    $rows = @($out) |
+        Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } |
+        Where-Object { "$_" -notmatch '^\s*(WARNING|Warning|ERROR|Note|mysql:|mariadb:)\b' }
+
+    foreach ($l in @($out)) { Write-Verbose "sql> $l" }
+    return @($rows)
 }
 
 # ---------------------------------------------------------------------------
@@ -154,10 +164,12 @@ try {
         Write-Host '  Accounts' -ForegroundColor Cyan
         Write-Host '  --------' -ForegroundColor Cyan
 
-        $rows = Invoke-Sql -Query @"
+        # @() is required: a single-row result unrolls to a bare object on assignment,
+        # and under Set-StrictMode a bare object has no .Count in PS 5.1.
+        $rows = @(Invoke-Sql -Query @"
 SELECT id, name, status, IFNULL(DATE_FORMAT(time_creation, '%Y-%m-%d'), '')
   FROM account ORDER BY status DESC, name;
-"@ | Where-Object { $_ -match '\S' }
+"@ | Where-Object { $_ -match '\S' })
 
         if ($rows.Count -eq 0) {
             Write-Warn 'No accounts exist yet.'
@@ -169,8 +181,16 @@ SELECT id, name, status, IFNULL(DATE_FORMAT(time_creation, '%Y-%m-%d'), '')
 
         '{0,-6} {1,-24} {2,-8} {3}' -f 'ID', 'NAME', 'STATUS', 'CREATED' | Write-Host
         foreach ($r in $rows) {
+            # --batch rows are tab-separated; anything with fewer than 4 fields is not a
+            # result row (client notice, stray output) and must not be indexed blindly.
             $f = "$r" -split "`t"
-            $colour = if ([int]$f[2] -ge 100) { 'Yellow' } else { 'Gray' }
+            if ($f.Count -lt 4) {
+                Write-Verbose "Ignoring unparsable row: $r"
+                continue
+            }
+            $status = 0
+            [void][int]::TryParse($f[2], [ref] $status)
+            $colour = if ($status -ge 100) { 'Yellow' } else { 'Gray' }
             Write-Host ('{0,-6} {1,-24} {2,-8} {3}' -f $f[0], $f[1], $f[2], $f[3]) -ForegroundColor $colour
         }
         Write-Host ''

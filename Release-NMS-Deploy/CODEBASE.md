@@ -221,7 +221,7 @@ NMS runs a **second migration manifest in parallel with stock EQEmu's**:
 | Manifest | File | Version column | Current |
 | --- | --- | --- | --- |
 | Stock | `database_update_manifest.cpp` | `db_version.version` | 9325 |
-| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **40** |
+| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **41** |
 | Bots | `database_update_manifest_bots.cpp` | `db_version.bots_database_version` | |
 
 Both are `#include`d directly into `common/database/database_update.cpp` (lines 9–11) and run
@@ -242,7 +242,7 @@ ALTER TABLE db_version ADD COLUMN custom_version INT UNSIGNED NOT NULL DEFAULT 0
 
 ### 4.2 What is actually in the custom manifest
 
-40 entries declared (v1–v40), **37 live**. Numbering is a plain sequence independent of the 9325
+41 entries declared (v1–v41), **38 live**. Numbering is a plain sequence independent of the 9325
 stock number. Entries carry `content_schema_update` to target the content DB rather than the
 player DB.
 
@@ -264,6 +264,7 @@ player DB.
 | v38 | `corpse_serial` widened to `BIGINT UNSIGNED` | Live |
 | v39 | `instance_id` and Pass tombstone (`passed`) | Live |
 | v40 | `passed_from` (client offer `name2` passer name) | Live |
+| v41 | `character_nms_vault` per-instance item state: attunement, `custom_data`, ornamentation, `guid` | Live |
 
 ### 4.3 ⚠️ The version number is a claim, not a fact
 

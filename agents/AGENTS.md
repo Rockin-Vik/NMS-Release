@@ -28,6 +28,22 @@ Everything agent- or tooling-related lives here; nothing else at the repo root i
 No git hooks, no setup scripts, no editor config: the maintainer uses Claude only, and nothing in
 this folder needs Node or any other runtime. The rules below are followed by hand and by the agent.
 
+## This checkout cannot build or run anything
+
+The repo lives on an authoring machine: **no C++ compiler, no CMake, no MariaDB, no Perl, no
+`Build/`, no `eqemu_config.json`.** The server runs on a different box, built from whatever the
+maintainer last deployed — which is often behind `origin/main`.
+
+Consequences, and they are not optional:
+
+- **"Verified" here can only mean *I read the source*.** Never write "tests pass", "this returns
+  X", or "the query works" for anything on this machine. Say **read-verified** or **not run**.
+- Compile errors are the default expectation for any C++ edit. Before claiming an edit is done,
+  check every new symbol against its declaration: header included, declared before use, exact
+  signature, argument order, const-ness, narrowing. That is still not a build — say so.
+- The compiled default in `ruletypes.h` is **not** the value the server is running, and the tree
+  here is **not** necessarily the code that is deployed. Both must be stated as assumptions.
+
 ## Operating model
 
 Delegate grunt work (broad searches, mechanical edits) to subagents rather than burning context on
@@ -36,6 +52,31 @@ it; keep the final review and gate yourself.
 **First question for any odd behavior:** *which `Custom` rule governs this, and what is it set to in
 `rule_values`?* — not *where is this in the C++?* Find the rule in custom-rules/README.md first, then read
 its live value from the DB (see CODEBASE.md §1 and §7).
+
+### Every claim carries its precondition
+
+That rule governs **what I report**, not just how I debug. A finding about a `Custom`-gated
+subsystem is not a finding until it names the gate:
+
+- Name the governing rule, and say whether its value was **read from `rule_values`** or **assumed
+  from the compiled default**. Those are different claims and only one of them is evidence.
+- State reachability: is the code reachable on a default install, or only with the rule flipped?
+  A defect behind a rule that ships off is **latent**, never "live" or "urgent".
+- No rule value, no build access, no DB? Then the honest form is *"if `Custom:X` is on, then…"* —
+  never a bare assertion about the running server.
+
+### Subagent findings are leads, not results
+
+A subagent report is unverified until I check it. Before any finding reaches the maintainer:
+
+- Require a verdict per claim — **CONFIRMED / FALSE / CONDITIONAL / CANNOT-DETERMINE-STATICALLY**
+  — with the precondition spelled out for anything conditional. Tell the agent that reporting an
+  earlier claim as FALSE is a good outcome.
+- Personally trace the ones that would change what the maintainer does, and quote the `file:line`
+  actually read. Relaying an unchecked claim is worse than not reporting it: it spends the
+  maintainer's attention on a bug that may not exist.
+- Have my own work reviewed by a separate agent. Reviewing my own diff is not review — a review
+  pass in this session caught a change of mine that broke every single-item vault deposit.
 
 ## Build principle — done means done end-to-end
 
@@ -102,6 +143,24 @@ newest at the bottom.
   push then failed on `node: not found` — he never asked for hooks, only for the clutter to go, and
   Node is not on his machine. No hooks, no setup scripts, no runtime dependencies for tooling: the
   repo must commit and push with plain git. Ask before adding anything that runs automatically.
+- Every PowerShell DB helper split `mysql --batch` rows on tabs and indexed the fields blindly; the
+  client's stderr (merged by `2>&1`, e.g. the passwordless-login SSL warning) came through as a row
+  and threw "Index was outside the bounds of the array" under `Set-StrictMode`. Filter merged stderr
+  (`-isnot [ErrorRecord]`) and field-count-check every row before indexing it.
+- I handed the maintainer a `Set-Content -Encoding UTF8` one-liner to edit `eqemu_config.json`;
+  on PS 5.1 that writes a BOM, jsoncpp rejects it, and world would not start — the exact gotcha
+  CODEBASE.md and 2-Setup-NMSServer.ps1 already document. Any JSON this repo's binaries read is
+  written with `[IO.File]::WriteAllText(..., UTF8Encoding($false))`; check the documented gotchas
+  before improvising a command that touches a config file.
+- I reported the Ayonae de-level as a live bug taking players' platinum; the maintainer tested it and
+  it worked. I had reasoned from `HeroCatchupEnabled`'s compiled default (`false`) while his server
+  runs it effectively true — the exact mistake CODEBASE.md §1 exists to prevent, made while quoting
+  that principle. A compiled default is never evidence about a running server: read `rule_values`, or
+  say the value is assumed.
+- I called the vault proc-locker override a bug — a shield in slot 82 silencing the offhand's proc —
+  and the maintainer said the override is the design: a locker item overwrites the held weapon's proc
+  even when it is not a shield. Custom subsystems encode intent the code does not state; ask what the
+  behaviour is *for* before labelling it broken.
 
 ## Project skills
 
