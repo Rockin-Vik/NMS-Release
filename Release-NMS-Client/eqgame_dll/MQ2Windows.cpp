@@ -24,6 +24,8 @@ GNU General Public License for more details.
 #include <map>
 #include <string>
 #include <algorithm>
+#include <set>
+#include <cctype>
 using namespace std;
 
 map<string,unsigned long> WindowMap;
@@ -320,6 +322,35 @@ void ShutdownMQ2Windows()
     WindowList.Cleanup();
 }
 
+// NMS: a skin's EQUI.xml may already <Include> a file the add-on injects (players who added
+// NMS_WaypointsWnd.xml by hand). Loading it twice trips "Schema error - Duplicate item" on the
+// first TextureInfo it declares, and the client refuses the whole UI. Track what the original
+// file includes and skip those.
+static std::string LowerIncludeName(const char *s, size_t n)
+{
+    std::string out(s, n);
+    for (size_t i = 0; i < out.size(); ++i)
+        out[i] = (char)tolower((unsigned char)out[i]);
+    return out;
+}
+
+static void NoteIncludeLine(const char *line, std::set<std::string> &seen)
+{
+    const char *inc = strstr(line, "<Include>");
+    if (!inc)
+        return;
+    const char *start = inc + 9;
+    const char *end = strstr(start, "</Include>");
+    if (!end)
+        return;
+    seen.insert(LowerIncludeName(start, (size_t)(end - start)));
+}
+
+static bool AlreadyIncluded(const std::set<std::string> &seen, const char *name)
+{
+    return seen.count(LowerIncludeName(name, strlen(name))) != 0;
+}
+
 bool GenerateMQUI()
 {
     // create EverQuest\uifiles\default\MQUI.xml
@@ -353,14 +384,17 @@ bool GenerateMQUI()
         fclose(forg);
         return false;
     }
+    std::set<std::string> seenIncludes;
     while (fgets(Buffer, 2048, forg)) {
+        NoteIncludeLine(Buffer, seenIncludes);
         if (strstr(Buffer, "</Composite>")) {
             DebugSpew("GenerateMQUI::Inserting our xml files");
             PMQXMLFILE      pFile = pXMLFiles;
             while (pFile) {
                 DebugSpew("GenerateMQUI::Inserting %s",pFile->szFilename);
-                fprintf(fnew, "<Include>%s</Include>\n",
-                    pFile->szFilename);
+                if (!AlreadyIncluded(seenIncludes, pFile->szFilename))
+                    fprintf(fnew, "<Include>%s</Include>
+", pFile->szFilename);
                 pFile = pFile->pNext;
             }
         }
@@ -402,14 +436,17 @@ bool GenerateMQUI()
                 fclose(forg);
                 return false;
             }
+            std::set<std::string> seenIncludes;
             while (fgets(Buffer, 2048, forg)) {
+                NoteIncludeLine(Buffer, seenIncludes);
                 if (strstr(Buffer, "</Composite>")) {
                     //DebugSpew("GenerateMQUI::Inserting our xml files");
                     PMQXMLFILE      pFile = pXMLFiles;
                     while (pFile) {
                         //DebugSpew("GenerateMQUI::Inserting %s",pFile->szFilename);
-                        fprintf(fnew, "<Include>%s</Include>\n",
-                            pFile->szFilename);
+                        if (!AlreadyIncluded(seenIncludes, pFile->szFilename))
+                            fprintf(fnew, "<Include>%s</Include>
+", pFile->szFilename);
                         pFile = pFile->pNext;
                     }
                 }
