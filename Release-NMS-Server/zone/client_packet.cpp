@@ -17288,11 +17288,14 @@ void Client::Handle_OP_HeroRequest(const EQApplicationPacket *app)
 	// The remove path can be refused by the Perl (lockout, or not enough Echo of Memory)
 	// without changing anything the C++ gate above tests, so an unthrottled client could
 	// replay the same rejected packet in a tight loop and spin a Perl dispatch, two cache
-	// scans and a reply packet every iteration on the zone thread.
+	// scans and a reply packet every iteration on the zone thread. Armed here rather than
+	// at the dispatch, so the paths that get REFUSED below are covered too - those return
+	// before the dispatch and so would never have started the window.
 	if (m_hero_request_timer.Enabled() && !m_hero_request_timer.Check(false)) {
 		Message(Chat::Red, "Please wait a moment before changing classes again.");
 		return;
 	}
+	m_hero_request_timer.Start(1000);
 
 	const auto *request  = (const HeroRequest_Struct *) app->pBuffer;
 	const int   class_id = static_cast<int>(request->class_id);
@@ -17335,7 +17338,6 @@ void Client::Handle_OP_HeroRequest(const EQApplicationPacket *app)
 		return;
 	}
 
-	m_hero_request_timer.Start(1000);
 	parse->EventPlayerGlobal(EVENT_HERO_REQUEST, this, fmt::format("{} {}", request->op, class_id), 0, nullptr);
 }
 

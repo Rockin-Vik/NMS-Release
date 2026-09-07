@@ -169,6 +169,9 @@ namespace {
 				}
 
 				const int row = list->AddString(ClassName(class_id), color, (uint32_t)class_id, NULL);
+				if (row < 0) {
+					continue;
+				}
 				CXStr level_text(level);
 				CXStr status_text(status);
 				list->SetItemText(row, 1, &level_text);
@@ -218,10 +221,17 @@ void HeroTab_OnStatsUpdated()
 	// int compares. While it IS on screen the selection is also watched, because RenderInfo
 	// now reads the highlighted row and a keyboard selection raises no XWM_LCLICK for
 	// HeroTab_HandleClick to catch.
-	static uint32_t s_lastMask  = 0xFFFFFFFFu;
-	static int      s_lastLevel = -1;
-	static int      s_lastSel   = -1;
-	static bool     s_dirty     = true;
+	// The memo must also break when the WIDGET changes underneath it, not only when the
+	// data does. RenderList has no other caller, so a /loadskin - which rebuilds the
+	// inventory window and hands back a fresh, empty Hero_ClassList - would otherwise leave
+	// the tab blank for the rest of the session, with an unchanged mask and level. The list
+	// pointer is only ever compared, never dereferenced while stale. Level 0 means
+	// pLocalPlayer is gone (character select, zoning), so coming back into the world redraws.
+	static uint32_t   s_lastMask  = 0xFFFFFFFFu;
+	static int        s_lastLevel = -1;
+	static int        s_lastSel   = -1;
+	static CListWnd  *s_lastList  = NULL;
+	static bool       s_dirty     = true;
 
 	const uint32_t mask  = NMS_GetClassesBitmask();
 	const int      level = EffectiveLevel();
@@ -230,8 +240,20 @@ void HeroTab_OnStatsUpdated()
 		s_lastLevel = level;
 		s_dirty     = true;
 	}
+	if (level == 0) {
+		s_dirty = true;
+	}
 
 	if (!((CXWnd *)pInventoryWnd)->IsReallyVisible()) {
+		return;
+	}
+
+	CListWnd *list = ClassList();
+	if (list != s_lastList) {
+		s_lastList = list;
+		s_dirty    = true;
+	}
+	if (!list) {
 		return;
 	}
 
