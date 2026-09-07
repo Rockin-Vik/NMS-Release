@@ -634,6 +634,9 @@ public:
 	void   SaveClassExp();
 private:
 	uint8  LevelFromExp(uint64 exp) const;
+	uint8  GetExpLevelCap() const;
+	uint64 GetHardExpCap() const;
+	uint64 ApplyClientMaxLevelCap(uint64 candidate_exp) const;
 	uint64 ApplyExpClamps(uint64 candidate_exp, uint16 candidate_level) const;
 	uint64 GetClassExpCap() const;
 

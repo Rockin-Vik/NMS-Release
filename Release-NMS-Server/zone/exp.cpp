@@ -1161,8 +1161,10 @@ void Client::SetEXP(ExpSource exp_source, uint64 set_exp, uint64 set_aaxp, bool 
 	}
 
 	// Route the target into the per-class rows before the stock derivation runs, so the
-	// pool the stock loop sees is already the trailing class and the stock clamps below
-	// are no-ops.
+	// pool the stock loop sees is already the trailing class. After a route, apply only
+	// the downward 70-cap (MaxExpLevel): do not let KeepLevelOverMax lift set_exp back
+	// to GetEXPForLevel(GetLevel()+1) (the watermark).
+	bool routed_class_exp = false;
 	if (RuleB(Custom, MulticlassingEnabled) && RuleB(Custom, HeroCatchupEnabled) && !m_class_exp.empty()) {
 		const uint32 classes_bits = GetClassesBits();
 
@@ -1180,6 +1182,7 @@ void Client::SetEXP(ExpSource exp_source, uint64 set_exp, uint64 set_aaxp, bool 
 			// SetLevel() below calls Save() while m_pp.exp still holds the old pool. Defer the
 			// class row write until the pool has been assigned so the rows are never persisted
 			// against a pool they no longer describe.
+			routed_class_exp          = true;
 			m_class_exp_save_deferred = true;
 
 			const uint64 row_minimum = *std::min_element(active_exp.begin(), active_exp.end());
@@ -1304,25 +1307,32 @@ void Client::SetEXP(ExpSource exp_source, uint64 set_exp, uint64 set_aaxp, bool 
 	if(maxlevel <= 1)
 		maxlevel = RuleI(Character, MaxLevel) + 1;
 
-	if(check_level > maxlevel) {
+	if (routed_class_exp) {
+		const uint64 hard_cap  = GetHardExpCap();
+		const uint8  cap_level = GetExpLevelCap();
+
+		if (set_exp > hard_cap) {
+			set_exp = hard_cap;
+		}
+
+		if (check_level > cap_level) {
+			check_level = cap_level;
+		}
+	} else if (check_level > maxlevel) {
 		check_level = maxlevel;
 
 		if(RuleB(Character, KeepLevelOverMax)) {
 			set_exp = GetEXPForLevel(GetLevel()+1);
 		}
 		else {
-			set_exp = GetEXPForLevel(maxlevel);
+			const uint64 hard_cap = GetHardExpCap();
+			set_exp = hard_cap;
+			check_level = GetExpLevelCap();
 		}
 	}
 
-	auto client_max_level = GetClientMaxLevel();
-	if (client_max_level && Admin() < RuleI(GM, MinStatusToLevelTarget)) {
-		if (GetLevel() >= client_max_level) {
-			auto exp_needed = GetEXPForLevel(client_max_level);
-			if (set_exp > exp_needed) {
-				set_exp = exp_needed;
-			}
-		}
+	if (!routed_class_exp) {
+		set_exp = ApplyClientMaxLevelCap(set_exp);
 	}
 
 	if ((GetLevel() != check_level) && !(check_level >= maxlevel)) {
@@ -1419,6 +1429,16 @@ void Client::SetEXP(ExpSource exp_source, uint64 set_exp, uint64 set_aaxp, bool 
 
 void Client::SetLevel(uint8 set_level, bool command)
 {
+	if (command) {
+		const uint8 cap = GetExpLevelCap();
+		if (set_level < 1) {
+			set_level = 1;
+		} else if (set_level > cap) {
+			LogInfo("Clamping SetLevel for [{}] from [{}] to cap [{}]", GetName(), set_level, cap);
+			set_level = cap;
+		}
+	}
+
 	if (GetEXPForLevel(set_level) == 0xFFFFFFFF) {
 		LogError("GetEXPForLevel([{}]) = 0xFFFFFFFF", set_level);
 		return;
@@ -1654,30 +1674,42 @@ uint8 Client::LevelFromExp(uint64 exp) const
 	return static_cast<uint8>(check_level);
 }
 
-// The post-derivation clamp rules from Client::SetEXP, applied to a candidate target
-// before it is routed into the rows so the stock block downstream stays a no-op.
-uint64 Client::ApplyExpClamps(uint64 candidate_exp, uint16 candidate_level) const
+uint8 Client::GetExpLevelCap() const
 {
-	uint8 maxlevel = RuleI(Character, MaxExpLevel) + 1;
+	int cap_level = RuleI(Character, MaxExpLevel);
 
-	if (maxlevel <= 1) {
-		maxlevel = RuleI(Character, MaxLevel) + 1;
-	}
-
-	if (candidate_level > maxlevel) {
-		candidate_exp = RuleB(Character, KeepLevelOverMax) ?
-			GetEXPForLevel(GetLevel() + 1) :
-			GetEXPForLevel(maxlevel);
+	if (cap_level <= 1) {
+		cap_level = RuleI(Character, MaxLevel);
 	}
 
 	const auto client_max_level = GetClientMaxLevel();
 
 	if (client_max_level && Admin() < RuleI(GM, MinStatusToLevelTarget)) {
-		if (GetLevel() >= client_max_level) {
-			const uint64 exp_needed = GetEXPForLevel(client_max_level);
+		cap_level = std::min(cap_level, static_cast<int>(client_max_level));
+	}
 
+	return static_cast<uint8>(std::clamp(cap_level, 1, 127));
+}
+
+// Highest exp that still derives to GetExpLevelCap() (70 by default), not 71.
+uint64 Client::GetHardExpCap() const
+{
+	const uint64 next_level = GetEXPForLevel(static_cast<uint16>(GetExpLevelCap()) + 1);
+
+	return next_level > 0 ? next_level - 1 : 0;
+}
+
+// Stock SetEXP applies CharMaxLevel after KeepLevelOverMax. Shared so rule-off
+// login cannot leave a non-GM over their per-character bucket.
+uint64 Client::ApplyClientMaxLevelCap(uint64 candidate_exp) const
+{
+	const auto client_max_level = GetClientMaxLevel();
+
+	if (client_max_level && Admin() < RuleI(GM, MinStatusToLevelTarget)) {
+		if (GetLevel() >= client_max_level) {
+			const auto exp_needed = GetEXPForLevel(client_max_level);
 			if (candidate_exp > exp_needed) {
-				candidate_exp = exp_needed;
+				return exp_needed;
 			}
 		}
 	}
@@ -1685,32 +1717,35 @@ uint64 Client::ApplyExpClamps(uint64 candidate_exp, uint16 candidate_level) cons
 	return candidate_exp;
 }
 
-// Ceiling for an individual class row. Unlike ApplyExpClamps this must never pull a
-// caught-up row down to the current (trailing) level, so the KeepLevelOverMax
-// allowance only ever raises the ceiling.
-uint64 Client::GetClassExpCap() const
+// The post-derivation clamp rules from Client::SetEXP, applied to a candidate target
+// before it is routed into the rows so the stock block downstream stays a no-op.
+uint64 Client::ApplyExpClamps(uint64 candidate_exp, uint16 candidate_level) const
 {
-	uint8 maxlevel = RuleI(Character, MaxExpLevel) + 1;
+	(void)candidate_level;
 
-	if (maxlevel <= 1) {
-		maxlevel = RuleI(Character, MaxLevel) + 1;
-	}
+	const uint64 hard_cap = GetHardExpCap();
 
-	uint64 cap = GetEXPForLevel(maxlevel);
-
-	if (RuleB(Character, KeepLevelOverMax) && GetLevel() + 1 > maxlevel) {
-		cap = std::max<uint64>(cap, GetEXPForLevel(GetLevel() + 1));
-	}
-
-	const auto client_max_level = GetClientMaxLevel();
-
-	if (client_max_level && Admin() < RuleI(GM, MinStatusToLevelTarget)) {
-		if (GetLevel() >= client_max_level) {
-			cap = std::min<uint64>(cap, GetEXPForLevel(client_max_level));
+	if (candidate_exp > hard_cap) {
+		// Stock KeepLevelOverMax freezes an over-cap body at its current level.
+		// Catch-up and the 70-cap default must come down instead of riding the watermark.
+		if (RuleB(Character, KeepLevelOverMax) && !RuleB(Custom, HeroCatchupEnabled)) {
+			candidate_exp = GetEXPForLevel(GetLevel() + 1);
+			// Stock SetEXP still applies CharMaxLevel after that freeze. Do the same
+			// here so rule-off login cannot leave a non-GM over their bucket.
+			candidate_exp = ApplyClientMaxLevelCap(candidate_exp);
+		} else {
+			candidate_exp = hard_cap;
 		}
 	}
 
-	return cap;
+	return candidate_exp;
+}
+
+// Ceiling for an individual class row. This is the server level cap (70), not the
+// watermark: over-cap rows are pulled down so catch-up finishes at 70, not 84.
+uint64 Client::GetClassExpCap() const
+{
+	return GetHardExpCap();
 }
 
 uint64 Client::GetClassExp(uint8 class_id) const
@@ -1918,6 +1953,15 @@ void Client::LoadClassExp()
 		return;
 	}
 
+	const uint64 hard_cap = GetHardExpCap();
+
+	for (auto &row : m_class_exp) {
+		if (row.second > hard_cap) {
+			row.second        = hard_cap;
+			m_class_exp_dirty = true;
+		}
+	}
+
 	bool   found   = false;
 	uint64 lowest  = 0;
 
@@ -1933,8 +1977,6 @@ void Client::LoadClassExp()
 	}
 
 	if (found) {
-		lowest = ApplyExpClamps(lowest, LevelFromExp(lowest));
-
 		const uint8 derived_level = LevelFromExp(lowest);
 
 		m_pp.exp   = lowest;
@@ -1942,11 +1984,12 @@ void Client::LoadClassExp()
 		level      = derived_level;
 
 		if (derived_level != loaded_level) {
-			LogError(
-				"Class exp rows corrected character [{}] from loaded level [{}] to [{}]",
+			LogInfo(
+				"Class exp rows set character [{}] from loaded level [{}] to [{}] (trailing class, cap {})",
 				CharacterID(),
 				loaded_level,
-				derived_level
+				derived_level,
+				GetExpLevelCap()
 			);
 		}
 	}
