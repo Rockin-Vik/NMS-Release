@@ -13305,9 +13305,27 @@ void Client::LoadLearnedKnowledge()
 
 	if (!spells_result.Success() || !discs_result.Success() || !mem_result.Success()) {
 		LogError(
-			"LoadLearnedKnowledge: character_learned_* query failed for character [{}] — skip hide/restore",
+			"LoadLearnedKnowledge: character_learned_* query failed for character [{}] - skip hide/restore",
 			CharacterID()
 		);
+
+		// Seed from the profile anyway, in memory only. m_learned_ready stays false so the
+		// hide/restore pass is still skipped, but HasSpellScribed reads nothing except
+		// m_learned_spells: leaving the set empty makes it answer "not scribed" for every
+		// spell the character is actually holding. MemorizeSpellFromItem consumes the scroll
+		// on that answer, so one failed query would otherwise turn every scroll use into a
+		// consumed scroll and a duplicate book entry. No DB writes here - the tables are the
+		// thing that just failed.
+		for (int index = 0; index < EQ::spells::SPELLBOOK_SIZE; index++) {
+			if (IsValidSpell(m_pp.spell_book[index])) {
+				m_learned_spells.insert(static_cast<uint32>(m_pp.spell_book[index]));
+			}
+		}
+		for (int index = 0; index < MAX_PP_DISCIPLINES; index++) {
+			if (IsValidSpell(m_pp.disciplines.values[index])) {
+				m_learned_discs.insert(static_cast<uint32>(m_pp.disciplines.values[index]));
+			}
+		}
 		return;
 	}
 
@@ -13362,7 +13380,7 @@ void Client::ReconcileLearnedSpells(bool include_book_and_gems, bool include_dis
 {
 	if (!m_learned_ready) {
 		LogError(
-			"ReconcileLearnedSpells: learned tables not loaded for character [{}] — skip hide/restore",
+			"ReconcileLearnedSpells: learned tables not loaded for character [{}] - skip hide/restore",
 			CharacterID()
 		);
 		return;

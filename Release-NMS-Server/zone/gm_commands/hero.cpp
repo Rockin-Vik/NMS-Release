@@ -153,7 +153,9 @@ void command_hero(Client *c, const Seperator *sep)
 		fmt::format(
 			"Set all of {} held classes to level {}.",
 			c->GetTargetDescription(t, TargetDescriptionType::LCYour),
-			level
+			// SetLevel clamps to the exp level cap, so report what was applied, not what was
+			// asked for - otherwise "#hero setall 70" answers "level 70" after delivering 55.
+			t->GetLevel()
 		).c_str()
 	);
 }

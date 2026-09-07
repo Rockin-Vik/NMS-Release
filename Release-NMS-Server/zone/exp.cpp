@@ -1744,7 +1744,12 @@ uint64 Client::ApplyExpClamps(uint64 candidate_exp, uint16 candidate_level) cons
 {
 	(void)candidate_level;
 
-	const uint64 hard_cap = GetHardExpCap();
+	// Server cap, not GetHardExpCap: every caller of this feeds a character_class_exp row
+	// that is then persisted, and the per-character CharMaxLevel bucket is a temporary
+	// administrative ceiling that must not permanently destroy earned exp. The bucket is
+	// still enforced where the player feels it - on set_exp and the derived level in
+	// Client::SetEXP - just not on the stored rows.
+	const uint64 hard_cap = GetServerHardExpCap();
 
 	if (candidate_exp > hard_cap) {
 		// Stock KeepLevelOverMax freezes an over-cap body at its current level.
@@ -1762,11 +1767,13 @@ uint64 Client::ApplyExpClamps(uint64 candidate_exp, uint16 candidate_level) cons
 	return candidate_exp;
 }
 
-// Ceiling for an individual class row. This is the server level cap (70), not the
-// watermark: over-cap rows are pulled down so catch-up finishes at 70, not 84.
+// Ceiling for an individual class row. The server level cap (70), not the watermark:
+// over-cap rows are pulled down so catch-up finishes at 70, not 84. RouteClassExp applies
+// this with std::min to every row and the result is persisted, so it is the server cap and
+// not GetHardExpCap - see the note in ApplyExpClamps.
 uint64 Client::GetClassExpCap() const
 {
-	return GetHardExpCap();
+	return GetServerHardExpCap();
 }
 
 uint64 Client::GetClassExp(uint8 class_id) const
