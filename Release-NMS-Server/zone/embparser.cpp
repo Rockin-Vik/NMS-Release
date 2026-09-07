@@ -211,7 +211,8 @@ const char* QuestEventSubroutines[_LargestEventID] = {
 	// Must stay in sync with the tail of QuestEventID in event_codes.h
 	"EVENT_SPELL_EFFECT_BOT",
 	"EVENT_SPELL_EFFECT_BUFF_TIC_BOT",
-	"EVENT_ITEM_GENERATE"
+	"EVENT_ITEM_GENERATE",
+	"EVENT_HERO_REQUEST"
 };
 
 PerlembParser::PerlembParser() : perl(nullptr)
@@ -2333,6 +2334,13 @@ void PerlembParser::ExportEventVariables(
 
 		case EVENT_AA_GAIN: {
 			ExportVar(package_name.c_str(), "aa_gained", data);
+			break;
+		}
+
+		case EVENT_HERO_REQUEST: {
+			Seperator sep(data);
+			ExportVar(package_name.c_str(), "hero_op", sep.arg[0]);
+			ExportVar(package_name.c_str(), "class_id", sep.arg[1]);
 			break;
 		}
 

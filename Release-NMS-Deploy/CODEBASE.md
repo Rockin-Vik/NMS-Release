@@ -77,6 +77,14 @@ It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `Player
 (`common/eq_packet_structs.h` ~line 1190), and **persisted as a data bucket** named
 `GestaltClasses` — not a table of its own.
 
+- The inventory window's Shrouds tab is the **Hero** tab (`EQUI_Inventory.xml` page
+  `IW_AltCharProgPage` + `eqgame_dll/hero_tab.cpp`): it lists the sixteen classes with held
+  levels and sends `OP_HeroRequest` (`0x140C`, add or remove). `Handle_OP_HeroRequest` fails
+  closed with `CanAddExtraClass` / `HasClass`, then fires the player event
+  `EVENT_HERO_REQUEST`; `global_player.pl` routes it to `plugin::HeroRequest`, which shares
+  the guildmaster add path and the Ayonae removal policy (`RemoveClassFree` /
+  `RemoveClassPaid` in `NMS_multiclass_utils.pl`). No server-to-client opcode: the bulk
+  stats packet redraws the tab.
 - Per-class experience is persisted in `character_class_exp`; with `HeroCatchupEnabled` off
   (the default), every row shadows the profile pool, while on the pool and displayed level cache
   the lowest class and `Client::SetEXP` water-fills the lowest rows until they catch up.
@@ -331,7 +339,7 @@ sends opcodes in the `0x1338`–`0x140B` range that stock clients do not underst
 - The set: `OP_ServerAuthStats`, `OP_SkillTimers`, `OP_PetList`, `OP_CustomDiscTimer`,
   `OP_CAuth`, `OP_WaypointList`, `OP_WaypointRequest`, `OP_MulticlassCharSelect`,
   `OP_CharacterSet*`, `OP_SuppressBuffNameInfo`, `OP_NmsLootOffer` (`0x140A`),
-  `OP_NmsLootDecision` (`0x140B`)
+  `OP_NmsLootDecision` (`0x140B`), `OP_HeroRequest` (`0x140C`, Hero tab add/remove)
 - Loot-offer opcodes require the matching installed add-on build (not the repo `dinput8.dll`).
   `Custom:NmsLootOffers` default off; without that add-on, leave the rule off.
   When on, each in-zone group/raid member (and the killer) gets an independent

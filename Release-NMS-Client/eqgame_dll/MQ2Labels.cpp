@@ -5,6 +5,7 @@
 
 
 #include "MQ2Main.h"
+#include "hero_tab.h"
 #include <sstream>
 #include <cstdint>
 #include "core_log.h"
@@ -961,6 +962,34 @@ typedef enum EQLabelTypes {
 		return result.empty() ? "None" : result;
 	}
 
+// NMS: Hero tab accessors. statEntries and ClassAbbr are file-local, so hero_tab.cpp reads
+// them through these.
+uint32_t NMS_GetClassesBitmask()
+{
+	auto itr = statEntries.find(eStatClassesBitmask);
+	return itr == statEntries.end() ? 0u : static_cast<uint32_t>(itr->second);
+}
+
+int NMS_GetClassLevel(int class_id)
+{
+	if (class_id < 1 || class_id > 16)
+		return 0;
+
+	auto itr = statEntries.find(static_cast<eStatEntry>(eStatClassLevel1 + class_id - 1));
+	if (itr != statEntries.end() && itr->second != 0)
+		return static_cast<int>(itr->second);
+
+	if (pLocalPlayer && pLocalPlayer->Data.pSpawn)
+		return pLocalPlayer->Data.pSpawn->Level;
+
+	return 0;
+}
+
+const char* NMS_GetClassAbbr(int class_id)
+{
+	return (class_id >= 1 && class_id <= 16) ? ClassAbbr[class_id] : "???";
+}
+
 // NMS: Routes an EQ label type to its mapped stat formatter, returning the formatted stat string for UI display.
 std::string EQLabelFunction(EQLabelTypes LabelID)
 {
@@ -1186,6 +1215,8 @@ PLUGIN_API BOOL OnRecvServerAuthStatLabelPacket(DWORD Type, PVOID Packet, DWORD 
 
 		statEntries[(eStatEntry)key] = val;
 	}
+
+	HeroTab_OnStatsUpdated();
 
 	if (pLocalPlayer)
 	{

@@ -437,6 +437,7 @@ void MapOpcodes()
 	ConnectedOpcodes[OP_ResetAA] = &Client::Handle_OP_ResetAA;
 	ConnectedOpcodes[OP_UnderWorld] = &Client::Handle_OP_UnderWorld;
 	ConnectedOpcodes[OP_WaypointRequest] = &Client::Handle_OP_WaypointRequest;
+	ConnectedOpcodes[OP_HeroRequest] = &Client::Handle_OP_HeroRequest;
 	ConnectedOpcodes[OP_NmsLootDecision] = &Client::Handle_OP_NmsLootDecision;
 
 	// shared tasks
@@ -17261,6 +17262,65 @@ void Client::Handle_OP_WaypointRequest(const EQApplicationPacket *app)
 	{
 		TransportToWaypoint(waypoint_request->waypoint_id);
 	}
+}
+
+void Client::Handle_OP_HeroRequest(const EQApplicationPacket *app)
+{
+	if (app->size != sizeof(HeroRequest_Struct)) {
+		LogError(
+			"Received OP_HeroRequest packet. Expected size {}, received size {}.",
+			sizeof(HeroRequest_Struct),
+			app->size
+		);
+		return;
+	}
+
+	if (!RuleB(Custom, MulticlassingEnabled)) {
+		Message(Chat::Red, "Multiclassing is not enabled on this server.");
+		return;
+	}
+
+	const auto *request  = (const HeroRequest_Struct *) app->pBuffer;
+	const int   class_id = static_cast<int>(request->class_id);
+
+	if (class_id < Class::Warrior || class_id > Class::Berserker) {
+		LogError("OP_HeroRequest from [{}] with invalid class id [{}]", GetCleanName(), request->class_id);
+		return;
+	}
+
+	// Fail closed here. The policy (free add, Echo of Memory fee and lockout on removal,
+	// announcements) is the same Perl the guildmasters and the Vision of Ayonae use.
+	if (request->op == HeroRequestAdd) {
+		if (CanAddExtraClass(class_id, false) != AddClassResult::Ok) {
+			Message(Chat::Red, "%s", CanAddExtraClassMessage(class_id, false));
+			return;
+		}
+	} else if (request->op == HeroRequestRemove) {
+		if (!HasClass(static_cast<uint8>(class_id))) {
+			Message(Chat::Red, "You do not hold that class.");
+			return;
+		}
+
+		int held = 0;
+		for (uint32 bits = GetClassesBits(); bits; bits >>= 1) {
+			held += bits & 1u;
+		}
+		if (held <= 1) {
+			Message(Chat::Red, "You cannot remove your last class.");
+			return;
+		}
+	} else {
+		LogError("OP_HeroRequest from [{}] with unknown op [{}]", GetCleanName(), request->op);
+		return;
+	}
+
+	if (!parse->PlayerHasQuestSub(EVENT_HERO_REQUEST)) {
+		LogError("OP_HeroRequest from [{}] dropped: global_player has no EVENT_HERO_REQUEST", GetCleanName());
+		Message(Chat::Red, "Class changes are not available from this window right now. See a guildmaster or the Vision of Ayonae.");
+		return;
+	}
+
+	parse->EventPlayer(EVENT_HERO_REQUEST, this, fmt::format("{} {}", request->op, class_id), 0);
 }
 
 bool Client::IsFilteredAFKPacket(const EQApplicationPacket *p)

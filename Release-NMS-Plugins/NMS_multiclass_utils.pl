@@ -394,6 +394,61 @@ sub RemoveClass {
     }
 }
 
+# --- Class removal policy: one place for the Vision of Ayonae and the Hero tab ----------------
+sub RemoveClassCost        { return 10; } # Echo of Memory
+sub RemoveClassLockoutDays { return 7; }
+
+# The first removal is free (bucket free_remove_class_used). Returns 1 when a class was removed.
+sub RemoveClassFree {
+    my ($client, $class_id) = @_;
+    return 0 unless $client && HasClass($client, $class_id);
+    return 0 if ($client->GetBucket("free_remove_class_used") || 0);
+    return 0 unless RemoveClass($class_id, $client);
+    $client->SetBucket("free_remove_class_used", 1);
+    return 1;
+}
+
+# Paid removal: Echo of Memory fee plus a lockout before the next one. Returns 1 when removed.
+sub RemoveClassPaid {
+    my ($client, $class_id) = @_;
+    return 0 unless $client && HasClass($client, $class_id);
+    my $cost = RemoveClassCost();
+    my $days = RemoveClassLockoutDays();
+    if ($client->HasExpeditionLockout("Class Removal Lockout", "")) {
+        plugin::YellowText("You cannot remove a class at this time, you still are under cooldown from a previous class removal.", $client);
+        return 0;
+    }
+    if (plugin::GetEOM($client) < $cost) {
+        plugin::YellowText("It costs $cost Echo of Memory in order to remove a class. You can obtain Echo of Memory through contributions to the server or purchase from other players in the Bazaar.", $client);
+        return 0;
+    }
+    return 0 unless RemoveClass($class_id, $client);
+    plugin::SpendEOM($client, $cost);
+    $client->AddExpeditionLockout("Class Removal Lockout", "", $days * 24 * 60 * 60);
+    return 1;
+}
+
+# Hero tab request (EVENT_HERO_REQUEST): op 1 = add, 2 = remove. The zone handler has already
+# fail-closed the request with CanAddExtraClass / HasClass; this applies the same policy the
+# guildmasters (free add) and the Vision of Ayonae (free first removal, then fee + lockout) use.
+sub HeroRequest {
+    my ($client, $op, $class_id) = @_;
+    return 0 unless $client && $class_id && $class_id >= 1 && $class_id <= 16;
+    if ($op == 1) {
+        if (GetClassesCount($client) >= plugin::MaxMulticlasses() || CanAddClass($client, $class_id) != 0) {
+            $client->Message(13, CanAddClassMessage($client, $class_id));
+            return 0;
+        }
+        return AddClass($class_id, $client) ? 1 : 0;
+    }
+    if ($op == 2) {
+        return 0 if GetClassesCount($client) <= 1; # never drop the last class
+        return 1 if RemoveClassFree($client, $class_id);
+        return RemoveClassPaid($client, $class_id);
+    }
+    return 0;
+}
+
 sub CheckUniqueClass {
     my $client              = plugin::val('$client');
     my $class_bits          = $client->GetClassesBitmask();

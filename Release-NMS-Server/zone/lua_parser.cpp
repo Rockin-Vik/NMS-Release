@@ -194,7 +194,8 @@ const char *LuaEvents[_LargestEventID] = {
 	// gets dereferenced when the event dispatches.
 	"event_spell_effect_bot",
 	"event_spell_effect_buff_tic_bot",
-	"event_item_generate"
+	"event_item_generate",
+	"event_hero_request"
 };
 
 extern Zone *zone;

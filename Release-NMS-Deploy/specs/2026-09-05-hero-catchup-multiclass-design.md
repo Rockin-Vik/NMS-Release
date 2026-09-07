@@ -266,6 +266,12 @@ Server fail-closes every request with `CanAddExtraClass` and answers with `SendB
 
 DLL: hook `CInventoryWnd::WndNotification` only for the Hero ScreenIDs. In-tab widgets, not a `CCustomWnd`.
 
+**Shipped 2026-09-07 (phase 4).** ScreenIDs `Hero_ClassList` (Class / Level / Status; the selected row is the
+choice, no combo), `Hero_Info` (STML), `Hero_AddButton`, `Hero_RemoveButton`; tab text `Hero`. Clicks come through
+the existing `CSidlScreenWnd::WndNotification` detour in `pet_window.cpp`. Wire as in 11.3, plus one player quest
+event `EVENT_HERO_REQUEST` (`$hero_op`, `$class_id`) so the tab, the guildmasters and Ayonae share one Perl policy
+(`plugin::HeroRequest`, `RemoveClassFree`, `RemoveClassPaid`). The server fails closed in C++ before the event.
+
 `CAuth` / `ServerAuthStats` stay required. No Hero UI on a stock client.
 
 ### 11.4 Character select icons (follow-up)
