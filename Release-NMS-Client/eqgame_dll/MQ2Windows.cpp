@@ -328,6 +328,12 @@ void ShutdownMQ2Windows()
 // file includes and skip those.
 static std::string LowerIncludeName(const char *s, size_t n)
 {
+    // Trimmed as well as lowered: the players this targets edited EQUI.xml by hand, and
+    // "<Include> NMS_WaypointsWnd.xml </Include>" is as valid to the client as the tight
+    // form. Without the trim those spellings miss the set and the file loads twice anyway.
+    while (n && isspace((unsigned char)*s)) { ++s; --n; }
+    while (n && isspace((unsigned char)s[n - 1])) { --n; }
+
     std::string out(s, n);
     for (size_t i = 0; i < out.size(); ++i)
         out[i] = (char)tolower((unsigned char)out[i]);
@@ -336,14 +342,15 @@ static std::string LowerIncludeName(const char *s, size_t n)
 
 static void NoteIncludeLine(const char *line, std::set<std::string> &seen)
 {
-    const char *inc = strstr(line, "<Include>");
-    if (!inc)
-        return;
-    const char *start = inc + 9;
-    const char *end = strstr(start, "</Include>");
-    if (!end)
-        return;
-    seen.insert(LowerIncludeName(start, (size_t)(end - start)));
+    // Every tag on the line, not just the first - a hand-edited EQUI.xml can carry several.
+    for (const char *inc = strstr(line, "<Include>"); inc; inc = strstr(inc, "<Include>")) {
+        const char *start = inc + 9;
+        const char *end = strstr(start, "</Include>");
+        if (!end)
+            return;
+        seen.insert(LowerIncludeName(start, (size_t)(end - start)));
+        inc = end + 10;
+    }
 }
 
 static bool AlreadyIncluded(const std::set<std::string> &seen, const char *name)
