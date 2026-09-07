@@ -31,6 +31,47 @@ namespace {
 		OutputDebugStringA(msg);
 	}
 
+	// The profile carries its own integrity fields: dword 4 is the body length (packet size - 9)
+	// and dword 0 is a CRC32 over bytes [8, size - 1) (EQEmu CRC32::SetEQChecksum: reflected
+	// table 0xEDB88320, seed 0xFFFFFFFF, no final xor). Compacting the book changes the size, so
+	// both go stale and the client logs "Corrupt PC" and drops the connection at character
+	// select. Restamp them for the compacted packet.
+	uint32_t g_crcTable[256];
+	bool g_crcTableReady = false;
+
+	void InitCrcTable()
+	{
+		if (g_crcTableReady) {
+			return;
+		}
+		for (uint32_t i = 0; i < 256; i++) {
+			uint32_t c = i;
+			for (int k = 0; k < 8; k++) {
+				c = (c & 1u) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
+			}
+			g_crcTable[i] = c;
+		}
+		g_crcTableReady = true;
+	}
+
+	void RestampProfileIntegrity(char *buf, size_t size)
+	{
+		if (!buf || size < 9) {
+			return;
+		}
+		InitCrcTable();
+
+		uint32_t body_len = static_cast<uint32_t>(size) - 9;
+		memcpy(buf + 4, &body_len, 4);
+
+		uint32_t check = 0xFFFFFFFFu;
+		for (size_t i = 8; i < size - 1; i++) {
+			const uint32_t byte = static_cast<unsigned char>(buf[i]);
+			check = (check >> 8) ^ g_crcTable[(byte ^ check) & 0xFFu];
+		}
+		memcpy(buf, &check, 4);
+	}
+
 	bool BusyScribing()
 	{
 		return g_scribeInProgress || g_scribeTimerActive;
@@ -260,6 +301,7 @@ SpellbookIncomingResult SpellbookVolumes_OnIncoming(uint16_t opcode, char *buf, 
 			memmove(buf + dst_tail, buf + src_tail, tail_len);
 		}
 		*size = dst_tail + tail_len;
+		RestampProfileIntegrity(buf, *size);
 		return SpellbookIncomingPass;
 	}
 
