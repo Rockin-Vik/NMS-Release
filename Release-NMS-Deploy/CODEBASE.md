@@ -81,10 +81,13 @@ It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `Player
   `IW_AltCharProgPage` + `eqgame_dll/hero_tab.cpp`): it lists the sixteen classes with held
   levels and sends `OP_HeroRequest` (`0x140C`, add or remove). `Handle_OP_HeroRequest` fails
   closed with `CanAddExtraClass` / `HasClass`, then fires the player event
-  `EVENT_HERO_REQUEST`; `global_player.pl` routes it to `plugin::HeroRequest`, which shares
+  `EVENT_HERO_REQUEST` (global script only, `EventPlayerGlobal`); `global_player.pl` routes it
+  to `plugin::HeroRequest`, which shares
   the guildmaster add path and the Ayonae removal policy (`RemoveClassFree` /
-  `RemoveClassPaid` in `NMS_multiclass_utils.pl`). No server-to-client opcode: the bulk
-  stats packet redraws the tab.
+  `RemoveClassPaid` in `NMS_multiclass_utils.pl`; the tab uses the free removal first, Ayonae
+  lets the player choose). The cap and the join level are the server's: the tab sends every
+  request and shows the server's refusal. No server-to-client opcode: the bulk stats packet
+  redraws the tab.
 - Per-class experience is persisted in `character_class_exp`; with `HeroCatchupEnabled` off
   (the default), every row shadows the profile pool, while on the pool and displayed level cache
   the lowest class and `Client::SetEXP` water-fills the lowest rows until they catch up.
@@ -318,7 +321,7 @@ content.** The seed data lives in the 540 MB dump. Specifically:
 ## 5. The client contract
 
 **A stock RoF2 client cannot play on this server** with custom features enabled. The server
-sends opcodes in the `0x1338`–`0x140B` range that stock clients do not understand.
+sends opcodes in the `0x1338`–`0x140C` range that stock clients do not understand.
 
 - Opcodes: `common/emu_oplist.h` (~lines 620–643), mapped in `utils/patches/patch_RoF2.conf`
   under a `#CUSTOM` block (~line 733)

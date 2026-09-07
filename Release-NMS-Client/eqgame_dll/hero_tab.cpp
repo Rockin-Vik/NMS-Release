@@ -12,10 +12,7 @@ namespace {
 	const uint16_t kOpHeroRequest = 0x140C;
 	const uint32_t kHeroAdd = 1;
 	const uint32_t kHeroRemove = 2;
-	// Custom:MaxMulticlasses default. Only used to grey out rows; the server is authoritative.
-	const int kMaxClasses = 4;
 	const COLORREF kWhite = 0xFFFFFFFF;
-	const COLORREF kGrey = 0xFFA0A0A0;
 	const COLORREF kGreen = 0xFF80FF80;
 
 #pragma pack(push, 1)
@@ -24,8 +21,6 @@ namespace {
 		uint32_t class_id; // 1..16
 	};
 #pragma pack(pop)
-
-	int g_selectedClass = 0;
 
 	// Widgets are looked up by ScreenID on every use: the inventory window is rebuilt on
 	// /loadskin and the pointers must never be cached across that.
@@ -73,6 +68,22 @@ namespace {
 		return 0;
 	}
 
+	// The class the player has highlighted in the list right now. Read at click time so
+	// keyboard selection counts too; nothing is cached.
+	int SelectedClass()
+	{
+		CListWnd *list = ClassList();
+		if (!list) {
+			return 0;
+		}
+		const int sel = list->GetCurSel();
+		if (sel < 0) {
+			return 0;
+		}
+		const int class_id = (int)list->GetItemData(sel);
+		return (class_id >= 1 && class_id <= 16) ? class_id : 0;
+	}
+
 	std::string HeldSummary(uint32_t mask)
 	{
 		std::string out;
@@ -90,6 +101,9 @@ namespace {
 		return out.empty() ? "none" : out;
 	}
 
+	// The server owns the class cap (Custom:MaxMulticlasses) and the join level (the catch-up
+	// rule); the tab never second-guesses them. Refusals come back as the same red lines the
+	// guildmasters and the Vision of Ayonae give.
 	void RenderInfo(uint32_t mask)
 	{
 		CStmlWnd *info = InfoBox();
@@ -97,28 +111,30 @@ namespace {
 			return;
 		}
 
-		const int held_count = CountBits(mask);
-		char head[160];
-		sprintf_s(head, "<c \"#FFFF00\">Level %d</c>  Classes %d of %d: %s<br>",
-			EffectiveLevel(), held_count, kMaxClasses, HeldSummary(mask).c_str());
+		char head[64];
+		sprintf_s(head, "<c \"#FFFF00\">Level %d</c>  Classes held: %d", EffectiveLevel(), CountBits(mask));
 
 		std::string text = head;
-		if (g_selectedClass >= 1 && g_selectedClass <= 16) {
+		text += " (";
+		text += HeldSummary(mask);
+		text += ")<br>";
+
+		const int selected = SelectedClass();
+		if (selected) {
 			text += "<c \"#FFFF00\">";
-			text += ClassName(g_selectedClass);
+			text += ClassName(selected);
 			text += "</c>: ";
-			if (Held(mask, g_selectedClass)) {
+			if (Held(mask, selected)) {
 				text += "held. Remove drops it and you lose access to its spells, disciplines, skills and abilities. "
-					"The first removal is free; after that it costs 10 Echo of Memory and starts a 7-day lockout.<br>";
-			} else if (held_count >= kMaxClasses) {
-				text += "you are at the class cap. Remove a class before adding another.<br>";
+					"Your first removal is free and is used first; after that each removal costs 10 Echo of Memory "
+					"and starts a 7-day lockout.<br>";
 			} else {
-				text += "available. Add is free; the class joins at your current level.<br>";
+				text += "not held. Add is free.<br>";
 			}
 		} else {
 			text += "Select a class, then press Add Class or Remove Class.<br>";
 		}
-		text += "The guildmasters and the Vision of Ayonae in the Bazaar offer the same choices.";
+		text += "The guildmasters and the Vision of Ayonae in the Bazaar make the same changes.";
 
 		CXStr stml(text.c_str());
 		info->SetSTMLText(stml, true, NULL);
@@ -131,8 +147,8 @@ namespace {
 			return;
 		}
 
+		const int keep = SelectedClass();
 		list->DeleteAll();
-		const bool at_cap = CountBits(mask) >= kMaxClasses;
 		int reselect = -1;
 
 		// Held classes first, then the rest in class-id order.
@@ -150,9 +166,6 @@ namespace {
 					sprintf_s(level, "%d", NMS_GetClassLevel(class_id));
 					status = "Held";
 					color = kGreen;
-				} else if (at_cap) {
-					status = "At cap";
-					color = kGrey;
 				}
 
 				const int row = list->AddString(ClassName(class_id), color, (uint32_t)class_id, NULL);
@@ -163,7 +176,7 @@ namespace {
 				list->SetItemColor(row, 1, color);
 				list->SetItemColor(row, 2, color);
 				list->SetItemData(row, (uint32_t)class_id);
-				if (class_id == g_selectedClass) {
+				if (class_id == keep) {
 					reselect = row;
 				}
 			}
@@ -208,8 +221,6 @@ bool HeroTab_HandleClick(void * /*thisPtr*/, void *sender)
 
 	CListWnd *list = ClassList();
 	if (list && sender == (void *)list) {
-		const int sel = list->GetCurSel();
-		g_selectedClass = sel >= 0 ? (int)list->GetItemData(sel) : 0;
 		RenderInfo(NMS_GetClassesBitmask());
 		return false; // let the list keep its selection
 	}
@@ -221,28 +232,27 @@ bool HeroTab_HandleClick(void * /*thisPtr*/, void *sender)
 	}
 
 	const uint32_t mask = NMS_GetClassesBitmask();
-	if (g_selectedClass < 1 || g_selectedClass > 16) {
+	const int selected = SelectedClass();
+	if (!selected) {
 		Say("Select a class in the list first.");
 		return true;
 	}
 
 	if (add) {
-		if (Held(mask, g_selectedClass)) {
+		if (Held(mask, selected)) {
 			Say("You already hold that class.");
-		} else if (CountBits(mask) >= kMaxClasses) {
-			Say("You are at the class cap. Remove a class before adding another.");
 		} else {
-			SendRequest(kHeroAdd, g_selectedClass);
+			SendRequest(kHeroAdd, selected);
 		}
 		return true;
 	}
 
-	if (!Held(mask, g_selectedClass)) {
+	if (!Held(mask, selected)) {
 		Say("You do not hold that class.");
 	} else if (CountBits(mask) <= 1) {
 		Say("You cannot remove your last class.");
 	} else {
-		SendRequest(kHeroRemove, g_selectedClass);
+		SendRequest(kHeroRemove, selected);
 	}
 	return true;
 }

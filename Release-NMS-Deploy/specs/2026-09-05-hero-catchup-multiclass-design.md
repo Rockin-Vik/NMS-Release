@@ -269,7 +269,9 @@ DLL: hook `CInventoryWnd::WndNotification` only for the Hero ScreenIDs. In-tab w
 choice, no combo), `Hero_Info` (STML), `Hero_AddButton`, `Hero_RemoveButton`; tab text `Hero`. Clicks come through
 the existing `CSidlScreenWnd::WndNotification` detour in `pet_window.cpp`. Wire as in 11.3, plus one player quest
 event `EVENT_HERO_REQUEST` (`$hero_op`, `$class_id`) so the tab, the guildmasters and Ayonae share one Perl policy
-(`plugin::HeroRequest`, `RemoveClassFree`, `RemoveClassPaid`). The server fails closed in C++ before the event.
+(`plugin::HeroRequest`, `RemoveClassFree`, `RemoveClassPaid`; the tab uses the free removal first, Ayonae offers
+both). The server fails closed in C++ before the event and dispatches to the global player script only. The tab
+does not know the cap or the catch-up rule: it sends every add and shows the server's refusal.
 
 `CAuth` / `ServerAuthStats` stay required. No Hero UI on a stock client.
 

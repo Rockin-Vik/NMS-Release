@@ -195,12 +195,22 @@ public:
 
 	void LoadPerlEventExportSettings(PerlEventExportSettings* s);
 
+	// Global-script-only forms: a request that must be answered by global_player only,
+	// never by a zone-local player script (Handle_OP_HeroRequest).
+	bool PlayerHasQuestSubGlobal(QuestEventID event_id);
+	int EventPlayerGlobal(
+		QuestEventID event_id,
+		Client* client,
+		std::string data,
+		uint32 extra_data,
+		std::vector<std::any>* extra_pointers
+	);
+
 private:
 	bool HasQuestSubLocal(uint32 npc_id, QuestEventID event_id);
 	bool HasQuestSubGlobal(QuestEventID event_id);
 	bool NPCHasEncounterSub(uint32 npc_id, QuestEventID event_id);
 	bool PlayerHasQuestSubLocal(QuestEventID event_id);
-	bool PlayerHasQuestSubGlobal(QuestEventID event_id);
 	bool PlayerHasEncounterSub(QuestEventID event_id);
 	bool SpellHasEncounterSub(uint32 spell_id, QuestEventID event_id);
 	bool ItemHasEncounterSub(EQ::ItemInstance* inst, QuestEventID event_id);
@@ -236,13 +246,6 @@ private:
 		std::vector<std::any>* extra_pointers
 	);
 
-	int EventPlayerGlobal(
-		QuestEventID event_id,
-		Client* client,
-		std::string data,
-		uint32 extra_data,
-		std::vector<std::any>* extra_pointers
-	);
 
 	int EventBotLocal(
 		QuestEventID event_id,
