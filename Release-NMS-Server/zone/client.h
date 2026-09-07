@@ -2392,6 +2392,7 @@ public:
 
 	int m_fancy_models = -1;
 
+	Timer m_hero_request_timer;
 	Timer m_stun_immune_timer;
 	Timer m_silence_immune_timer;
 

@@ -98,8 +98,12 @@ namespace {
 		}
 
 		const int held_count = CountBits(mask);
-		char head[160];
-		sprintf_s(head, "<c \"#FFFF00\">Level %d</c>  Classes %d of %d: %s<br>",
+		// _TRUNCATE, not sprintf_s: HeldSummary grows ~9 bytes per held class, so a large
+		// Custom:MaxMulticlasses (or a GM-built character) overruns a fixed buffer, and
+		// sprintf_s answers an overrun by invoking the invalid-parameter handler, which in
+		// a release CRT terminates the client.
+		char head[512];
+		_snprintf_s(head, _TRUNCATE, "<c \"#FFFF00\">Level %d</c>  Classes %d of %d: %s<br>",
 			EffectiveLevel(), held_count, kMaxClasses, HeldSummary(mask).c_str());
 
 		std::string text = head;
@@ -195,7 +199,23 @@ void HeroTab_OnStatsUpdated()
 	if (!ppInventoryWnd || !pInventoryWnd) {
 		return;
 	}
-	const uint32_t mask = NMS_GetClassesBitmask();
+
+	// OP_ServerAuthStats is not only the bulk push - the server also sends 2-entry HP,
+	// mana and endurance updates, several times a second in combat. Rebuilding the tab
+	// on each one meant a DeleteAll plus 16 AddString plus a full STML re-parse per tick,
+	// window closed or not, and DeleteAll also yanked the scroll position back. Only the
+	// class mask and the level are on display, so redraw when one of them actually moves.
+	static uint32_t s_lastMask  = 0xFFFFFFFFu;
+	static int      s_lastLevel = -1;
+
+	const uint32_t mask  = NMS_GetClassesBitmask();
+	const int      level = EffectiveLevel();
+	if (mask == s_lastMask && level == s_lastLevel) {
+		return;
+	}
+	s_lastMask  = mask;
+	s_lastLevel = level;
+
 	RenderList(mask);
 	RenderInfo(mask);
 }

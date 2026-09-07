@@ -17275,8 +17275,22 @@ void Client::Handle_OP_HeroRequest(const EQApplicationPacket *app)
 		return;
 	}
 
-	if (!RuleB(Custom, MulticlassingEnabled)) {
-		Message(Chat::Red, "Multiclassing is not enabled on this server.");
+	// Both rules, because the Perl policy this hands off to gates on plugin::IsNMS(),
+	// which requires both. Checking only MulticlassingEnabled here meant that with
+	// ServerAuthStats off the event fired, the Perl returned silently, and the player
+	// pressed the button with no response at all - the "not available from this window"
+	// fallback below cannot fire, because the sub does exist.
+	if (!RuleB(Custom, MulticlassingEnabled) || !RuleB(Custom, ServerAuthStats)) {
+		Message(Chat::Red, "Class changes from this window are not enabled on this server.");
+		return;
+	}
+
+	// The remove path can be refused by the Perl (lockout, or not enough Echo of Memory)
+	// without changing anything the C++ gate above tests, so an unthrottled client could
+	// replay the same rejected packet in a tight loop and spin a Perl dispatch, two cache
+	// scans and a reply packet every iteration on the zone thread.
+	if (m_hero_request_timer.Enabled() && !m_hero_request_timer.Check(false)) {
+		Message(Chat::Red, "Please wait a moment before changing classes again.");
 		return;
 	}
 
@@ -17320,6 +17334,7 @@ void Client::Handle_OP_HeroRequest(const EQApplicationPacket *app)
 		return;
 	}
 
+	m_hero_request_timer.Start(1000);
 	parse->EventPlayer(EVENT_HERO_REQUEST, this, fmt::format("{} {}", request->op, class_id), 0);
 }
 
