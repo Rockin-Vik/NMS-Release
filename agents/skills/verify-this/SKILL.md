@@ -3,7 +3,7 @@ name: verify-this
 description: "Verify a claim with fresh local evidence: restate it falsifiably, capture baseline and treatment, compare artifacts, and return VERIFIED, NOT VERIFIED, or INCONCLUSIVE."
 ---
 
-<!-- Vendored from cursor/plugins @c8402bc8e3673b973719fe3acc2c4837fef34f86 (cursor-team-kit). MIT License — see .agents/skills/cursor-team-kit/LICENSE -->
+<!-- Adapted from the MIT-licensed cursor-team-kit `verify-this` skill (cursor/plugins @c8402bc8e3673b973719fe3acc2c4837fef34f86). -->
 
 # Verify This
 

@@ -1195,6 +1195,9 @@ RULE_CATEGORY(Custom)
 // Multiclassing Engine
 RULE_BOOL(Custom, 	ServerAuthStats, 						true, "Enable this rule in order to send explicit client updates. Requires client dll.")
 RULE_BOOL(Custom, 	MulticlassingEnabled, 					true, "Enable this to enable all multiclass-related tweaks. Requires ServerAuthStats and UseDynamicAATimers for full functionality.")
+RULE_INT(Custom, 	MaxMulticlasses, 						4, "Cap on multiclasses; inert unless MulticlassingEnabled and requires Character:UseOldClassExpPenalties false.")
+RULE_BOOL(Custom, 	HeroCatchupEnabled, 					false, "Off (default): a new class joins at the character's current level and all class rows shadow the single pool. On: new classes start at NewClassStartLevel and the effective level is the lowest class until it catches up. Inert unless MulticlassingEnabled.")
+RULE_INT(Custom, 	NewClassStartLevel, 					1, "New class start level; ignored when catch-up is off and inert unless MulticlassingEnabled.")
 RULE_BOOL(Custom, 	UseDynamicAATimers, 					true, "Enable using dynamic AA timers. Required to deconflict multiclass AA timers")
 
 // NMS Options
@@ -1323,7 +1326,7 @@ RULE_INT(Custom,  	EnableSeasonalCharacters, 				0, "Set to Seasonal ID to track
 RULE_BOOL(Custom,   EnableGlobalLoot,                       true,    "Enable or disable global loot tables dynamically")
 RULE_BOOL(Custom,   PermanentServerBuffsEnabled,            false,   "Enable or disable permanent server buffs (spells 43002, 43005, 36856, 17779)")
 RULE_BOOL(Custom,   GuideAudit,                             true,    "Enable command auditing for guides/GMs of status 80 or higher.")
-RULE_BOOL(Custom,   EnableFabledMobs,                       false,   "Enable Fabled Season globally (true to enable 100% Fabled spawns, false to disable).")
+RULE_INT(Custom,    FabledDefaultChance,                    50,      "Percent chance used by #fabled on when no chance is given. Read only at command time, never per spawn.")
 
 RULE_CATEGORY_END()
 

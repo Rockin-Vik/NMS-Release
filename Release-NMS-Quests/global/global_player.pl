@@ -16,10 +16,6 @@ sub EVENT_SIGNAL {
 }
 
 sub EVENT_ENTERZONE {
-    # NMS: Fabled Season Synchronization. Automatically turns on/off 100% Fabled spawns based on rule.
-    my $fabled_active = quest::get_rule("Custom:EnableFabledMobs") eq "true" ? 2 : 1;
-    quest::spawn_condition($zonesn, $instanceid, 99, $fabled_active);
-
     my $default_size = $client->GetDefaultRaceSize();
     $client->ChangeSize($default_size);
 
@@ -186,11 +182,12 @@ sub EVENT_LEVEL_UP {
     my $new_level = $client->GetLevel();
     my $char_max_level = $client->GetBucket("CharMaxLevel");
     
-    if ($new_level == $char_max_level) {
+    if ($new_level == $char_max_level && !$client->GetBucket("MaxLevelAnnounced")) {
         my $name = $client->GetCleanName();
         my $full_class_name = plugin::GetPrettyClassString($client);
 
         plugin::WorldAnnounce("$name ($full_class_name) has reached Level $new_level.");
+        $client->SetBucket("MaxLevelAnnounced", 1);
     }
 }
 

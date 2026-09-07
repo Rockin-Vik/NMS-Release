@@ -20,7 +20,7 @@ python Release-NMS-Deploy/custom-rules/generate.py
 
 ## Clusters
 
-- [Multiclass / client contract](#multiclass--client-contract) — 5 rules
+- [Multiclass / client contract](#multiclass--client-contract) — 8 rules
 - [Pets](#pets) — 16 rules
 - [Echo of Memory / character sets](#echo-of-memory--character-sets) — 8 rules
 - [Item tiers / Power Source / mutations](#item-tiers--power-source--mutations) — 12 rules
@@ -38,6 +38,9 @@ Turning one of these off often looks like a C++ or client bug. `MulticlassingEna
 | --- | --- | --- | --- | --- |
 | `ServerAuthStats` | BOOL | `true` | `BypassMulticlassStackConflict` `MulticlassingEnabled` `UseDynamicAATimers` | Enable this rule in order to send explicit client updates. Requires client dll. |
 | `MulticlassingEnabled` | BOOL | `true` | `BypassMulticlassStackConflict` `ServerAuthStats` `UseDynamicAATimers` | Enable this to enable all multiclass-related tweaks. Requires ServerAuthStats and UseDynamicAATimers for full functionality. |
+| `MaxMulticlasses` | INT | `4` | — | Cap on multiclasses; inert unless MulticlassingEnabled and requires Character:UseOldClassExpPenalties false. |
+| `HeroCatchupEnabled` | BOOL | `false` | — | Off (default): a new class joins at the character's current level and all class rows shadow the single pool. On: new classes start at NewClassStartLevel and the effective level is the lowest class until it catches up. Inert unless MulticlassingEnabled. |
+| `NewClassStartLevel` | INT | `1` | — | New class start level; ignored when catch-up is off and inert unless MulticlassingEnabled. |
 | `UseDynamicAATimers` | BOOL | `true` | `BypassMulticlassStackConflict` `MulticlassingEnabled` `ServerAuthStats` | Enable using dynamic AA timers. Required to deconflict multiclass AA timers |
 | `BypassMulticlassStackConflict` | BOOL | `true` | `MulticlassingEnabled` `ServerAuthStats` `UseDynamicAATimers` | Allow all of your class spells to stack |
 | `ServerAuthKey` | INT | `352236586` | — | Value used to verify patch serial number |
@@ -204,7 +207,7 @@ Season-wide toggles, GM audit, and command behavior. These are the levers you fl
 | `EnableGlobalLoot` | BOOL | `true` | — | Enable or disable global loot tables dynamically |
 | `PermanentServerBuffsEnabled` | BOOL | `false` | — | Enable or disable permanent server buffs (spells 43002, 43005, 36856, 17779) |
 | `GuideAudit` | BOOL | `true` | — | Enable command auditing for guides/GMs of status 80 or higher. |
-| `EnableFabledMobs` | BOOL | `false` | — | Enable Fabled Season globally (true to enable 100% Fabled spawns, false to disable). |
+| `FabledDefaultChance` | INT | `50` | — | Percent chance used by #fabled on when no chance is given. Read only at command time, never per spawn. |
 
 ## Declared inside the Custom block, but not `Custom:`
 
@@ -212,4 +215,4 @@ These macros sit between `RULE_CATEGORY(Custom)` and `RULE_CATEGORY_END()` but n
 
 | Line | Category | Rule | Type | Default | Notes |
 | --- | --- | --- | --- | --- | --- |
-| 1307 | Spells | `NecroDotCritChance` | INT | `7` | Necromancer inherent dot critical percentage chance |
+| 1310 | Spells | `NecroDotCritChance` | INT | `7` | Necromancer inherent dot critical percentage chance |

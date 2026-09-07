@@ -27,6 +27,7 @@
 #include "../common/eq_stream_intf.h"
 #include "../common/inventory_profile.h"
 #include "../common/races.h"
+#include "../common/race_class.h"
 #include "../common/classes.h"
 #include "../common/skills.h"
 #include "../common/extprofile.h"
@@ -2309,51 +2310,26 @@ bool CheckCharCreateInfoTitanium(CharCreate_Struct *cc)
 	{ /*Berserker*/    10,   5,   0,  10,   0,   0,   0,  25}
 	};
 
-	static const bool ClassRaceLookupTable[Class::PLAYER_CLASS_COUNT][_TABLE_RACES]=
-	{                   /*Human  Barbarian Erudite Woodelf Highelf Darkelf Halfelf Dwarf  Troll  Ogre   Halfling Gnome  Iksar  Vahshir Froglok Drakkin*/
-	{ /*Warrior*/         true,  true,     false,  true,   false,  true,   true,   true,  true,  true,  true,    true,  true,  true,   true,   true},
-	{ /*Cleric*/          true,  false,    true,   false,  true,   true,   true,   true,  false, false, true,    true,  false, false,  true,   true},
-	{ /*Paladin*/         true,  false,    true,   false,  true,   false,  true,   true,  false, false, true,    true,  false, false,  true,   true},
-	{ /*Ranger*/          true,  false,    false,  true,   false,  false,  true,   false, false, false, true,    false, false, false,  false,  true},
-	{ /*ShadowKnight*/    true,  false,    true,   false,  false,  true,   false,  false, true,  true,  false,   true,  true,  false,  true,   true},
-	{ /*Druid*/           true,  false,    false,  true,   false,  false,  true,   false, false, false, true,    false, false, false,  false,  true},
-	{ /*Monk*/            true,  false,    false,  false,  false,  false,  false,  false, false, false, false,   false, true,  false,  false,  true},
-	{ /*Bard*/            true,  false,    false,  true,   false,  false,  true,   false, false, false, false,   false, false, true,   false,  true},
-	{ /*Rogue*/           true,  true,     false,  true,   false,  true,   true,   true,  false, false, true,    true,  false, true,   true,   true},
-	{ /*Shaman*/          false, true,     false,  false,  false,  false,  false,  false, true,  true,  false,   false, true,  true,   true,   false},
-	{ /*Necromancer*/     true,  false,    true,   false,  false,  true,   false,  false, false, false, false,   true,  true,  false,  true,   true},
-	{ /*Wizard*/          true,  false,    true,   false,  true,   true,   false,  false, false, false, false,   true,  false, false,  true,   true},
-	{ /*Magician*/        true,  false,    true,   false,  true,   true,   false,  false, false, false, false,   true,  false, false,  false,  true},
-	{ /*Enchanter*/       true,  false,    true,   false,  true,   true,   false,  false, false, false, false,   true,  false, false,  false,  true},
-	{ /*Beastlord*/       false, true,     false,  false,  false,  false,  false,  false, true,  true,  false,   false, true,  true,   false,  false},
-	{ /*Berserker*/       false, true,     false,  false,  false,  false,  false,  true,  true,  true,  false,   false, false, true,   false,  false}
-	};
-
 	if (!cc)
 		return false;
 
 	LogInfo("Validating char creation info");
 
 	classtemp = cc->class_ - 1;
-	racetemp = cc->race - 1;
-	// these have non sequential race numbers so they need to be mapped
-	if (cc->race == FROGLOK) racetemp = 14;
-	if (cc->race == VAHSHIR) racetemp = 13;
-	if (cc->race == IKSAR) racetemp = 12;
-	if (cc->race == DRAKKIN) racetemp = 15;
+	racetemp = GetRaceClassTableIndex(cc->race);
 
 	// if out of range looking it up in the table would crash stuff
 	// so we return from these
-	if (classtemp >= Class::PLAYER_CLASS_COUNT) {
+	if (classtemp < 0 || classtemp >= Class::PLAYER_CLASS_COUNT) {
 		LogInfo(" class is out of range");
 		return false;
 	}
-	if (racetemp >= _TABLE_RACES) {
+	if (racetemp < 0 || racetemp >= _TABLE_RACES) {
 		LogInfo(" race is out of range");
 		return false;
 	}
 
-	if (!ClassRaceLookupTable[classtemp][racetemp]) { //Lookup table better than a bunch of ifs?
+	if (!IsClassRaceCombinationAllowed(static_cast<uint8>(cc->class_), cc->race)) {
 		LogInfo(" invalid race/class combination");
 		// we return from this one, since if it's an invalid combination our table
 		// doesn't have meaningful values for the stats

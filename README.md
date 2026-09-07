@@ -33,6 +33,8 @@ Reference documents:
 | [`Release-NMS-Quests/QUEST-API.md`](Release-NMS-Quests/QUEST-API.md) | Lua/Perl quest script API, with the NMS-specific bindings up front |
 | [`Release-NMS-Server/GM-COMMANDS.md`](Release-NMS-Server/GM-COMMANDS.md) | Every `#command`, its default status level, and NMS side effects |
 
+Contributing with an AI agent? Its instructions and skills live in [`agents/`](agents/).
+
 ## What makes it different
 
 - **Multiclassing** — a character can take up to three classes at once

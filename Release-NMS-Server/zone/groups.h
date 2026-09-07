@@ -94,6 +94,7 @@ public:
 	uint8	GroupCount();
 	uint8 	GroupCountInZone();
 	uint32	GetHighestLevel();
+	uint8	GetHighestRewardLevel();
 	uint32	GetLowestLevel();
 	void	QueuePacket(const EQApplicationPacket *app, bool ack_req = true);
 	void	TeleportGroup(Mob* sender, uint32 zoneID, uint16 instance_id, float x, float y, float z, float heading);

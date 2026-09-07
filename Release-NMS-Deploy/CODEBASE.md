@@ -72,11 +72,14 @@ Lookup index for every `Custom` rule (type, default, related rules, note): [`cus
 
 The single most important design decision in the codebase, and the one most likely to surprise.
 
-A character can hold up to **3 classes**. This is **not** stored as `class2`/`class3` columns.
+A character can hold up to `Custom:MaxMulticlasses` classes (default **4**). This is **not** stored as `class2`/`class3` columns.
 It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `PlayerProfile_Struct`
 (`common/eq_packet_structs.h` ~line 1190), and **persisted as a data bucket** named
 `GestaltClasses` — not a table of its own.
 
+- Per-class experience is persisted in `character_class_exp`; with `HeroCatchupEnabled` off
+  (the default), every row shadows the profile pool, while on the pool and displayed level cache
+  the lowest class and `Client::SetEXP` water-fills the lowest rows until they catch up.
 - Write: `common/database.cpp:532`, `zone/client.cpp:14536` / `:14582`
 - Read: `zone/client_packet.cpp:644` loads it into `m_pp.classes`
 - Accessors: `Client::GetClassesBits()` (`zone/client.cpp:14509`) returns the mask when
@@ -86,8 +89,8 @@ It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `Player
   branches on class, use `HasClass`, never `GetClass()`.** This is the most common way to
   introduce a multiclass bug.
 - Quest API: `AddExtraClass` / `RemoveExtraClass` / `HasClassID` / `GetClassesBitmask` in
-  Perl (`zone/perl_client.cpp:3769-3773`) and Lua (`zone/lua_client.cpp:3947-3951`); the cap is
-  enforced in `Client::AddExtraClass()`. Full table in QUEST-API.md §0.2.
+  Perl (`zone/perl_client.cpp`) and Lua (`zone/lua_client.cpp`); the cap is enforced in
+  `Client::CanAddExtraClass()` / `Client::AddExtraClass()`. Full table in QUEST-API.md §0.2.
 
 **Two ugly-but-load-bearing hacks** you must not "clean up" without understanding them:
 
@@ -100,8 +103,8 @@ It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `Player
 
 Supporting rules: `Custom:ServerAuthStats` (server-authoritative stats, requires the DLL),
 `Custom:UseDynamicAATimers` (+ `character_dynamic_aa_timers` table, deconflicts AA timers that
-collide across classes), `Custom:BypassMulticlassStackConflict`, and the `character_aa_disabled`
-table.
+collide across classes), `Custom:BypassMulticlassStackConflict`, `Custom:MaxMulticlasses`,
+`Custom:HeroCatchupEnabled`, `Custom:NewClassStartLevel`, and the `character_aa_disabled` table.
 
 ### 3.2 Multiple pets
 
@@ -199,7 +202,7 @@ purchasable with EoM. Opcodes `OP_CharacterSetRequest/Create/Move/Unlock`,
 - **Custom instances** — `Custom:StaticInstanceVersion` (255, no respawns),
   `Custom:FarmingInstanceVersion` (254)
 - **Custom GM commands** in `zone/gm_commands/`: `award`, `castspellnms`, `corpsefix`,
-  `gearup`, `lootsim`, `zoneshard`, `alttoggle`, `illusion_block`, `feature`
+  `gearup`, `gmpack`, `lootsim`, `zoneshard`, `alttoggle`, `illusion_block`, `feature`
 - **Discord webhooks** — `zone->SendDiscordMessage`, used by `#award` and GM audit
 - **Combat/spell rework** — `Custom:SuppressDispels` (replaces `SE_CancelMagic` with a
   "SuppressBuff" SPA 527 + `OP_SuppressBuffNameInfo`), heroic stat scaling,
@@ -218,7 +221,7 @@ NMS runs a **second migration manifest in parallel with stock EQEmu's**:
 | Manifest | File | Version column | Current |
 | --- | --- | --- | --- |
 | Stock | `database_update_manifest.cpp` | `db_version.version` | 9325 |
-| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **27** |
+| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **34** |
 | Bots | `database_update_manifest_bots.cpp` | `db_version.bots_database_version` | |
 
 Both are `#include`d directly into `common/database/database_update.cpp` (lines 9–11) and run
@@ -239,7 +242,7 @@ ALTER TABLE db_version ADD COLUMN custom_version INT UNSIGNED NOT NULL DEFAULT 0
 
 ### 4.2 What is actually in the custom manifest
 
-25 entries declared, **22 live**. Numbering is a plain 1..25 sequence, independent of the 9325
+34 entries declared (v1–v34), **31 live**. Numbering is a plain sequence independent of the 9325
 stock number. Entries carry `content_schema_update` to target the content DB rather than the
 player DB.
 
@@ -249,6 +252,12 @@ player DB.
 | v2–v14 | Schema: waypoint tables, `zone.npc_update_range`, `global_buffs`, `account_kill_counts`, `character_pet_name.class_id`, `account_alt_currency`, `familiar_names`, `character_aa_disabled`, `character_pet_command_states`, `character_dynamic_aa_timers` | Live |
 | **v15–v17** | The three `account_character_set*` tables | **Commented out** — lines 273–334 |
 | v18–v25 | Content payloads: Beastlord spell merchant + 38 scrolls, faction fixes, Bazaar spawns, AA339 whitelist | Live |
+| v26 | Waypoint categories aligned with the client DLL tabs; expansion hub rune circles | Live |
+| v27–v28 | Fabled season schema: `fabled_npcs` roster table (content DB) and the `fabled_season` state row (see FABLED-ENCOUNTERS.md) | Live |
+| v29–v30 | `character_class_exp` table and backfill for per-class experience (`#hero`) | Live |
+| v31–v32 | GM Starter Box item `9011012` and the `nms_gm_starter_pack` seed behind `#gmpack` | Live |
+| v33 | Shared-bucket loot schema: `nms_loot_buckets`, `nms_loot_bucket_npcs`, `nms_loot_bucket_items` (gated by `Custom:RandomLootBuckets`) | Live |
+| v34 | Mastery of the Past ranks 7–9 opened at levels 67 / 69 / 70 (`aa_ranks` 7059–7061; they shipped at level 80, expansion -1) | Live |
 
 ### 4.3 ⚠️ The version number is a claim, not a fact
 
@@ -281,12 +290,14 @@ content.** The seed data lives in the 540 MB dump. Specifically:
 2. **`account_character_set*` tables have no migration** (v15–17 are commented out), but
    `world/client.cpp` and `worlddb.cpp` query them at character select. They must come from
    the dump or character select errors.
-3. **Loose `.sql` files are referenced nowhere in code** and must be applied by hand:
+3. **Twelve loose `.sql` files are referenced nowhere in code** and must be applied by hand:
    - `Release-NMS-Server/`: `baztradeskills.sql`, `environmentdoodads.sql`, `holedoor.sql`,
      `kaesoradoors.sql`, `pojdoors.sql`, `pomdoors.sql`, `tranquilitydebris.sql`
    - `Release-NMS-Quests/`: `akanonfixyetanotherlamp.sql`, `overlordngrub.sql`,
      `skyfiredoodads.sql`
-   - Shared-bucket loot seed (after custom v27): `Release-NMS-Server/utils/sql/nms_loot_buckets_seed.sql`
+   - `Release-NMS-Server/utils/sql/`: `fabled_roster_seed.sql` (the Fabled roster; needs manifest v27
+     first, see FABLED-ENCOUNTERS.md §6.8) and `nms_loot_buckets_seed.sql` (shared-bucket loot;
+     needs manifest v33 first)
 
 ---
 
@@ -470,7 +481,7 @@ Quick reference. Each links to the section above.
 | 7 | `db_version.custom_version` is a claim — audit with the health-check SQL | 4.3 |
 | 8 | Migrations create schema only; content comes from the dump | 4.4 |
 | 9 | Waypoint seed data exists **only** as a comment in `nms_waypoints.h` | 4.4 |
-| 10 | Ten loose `.sql` files must be applied by hand | 4.4 |
+| 10 | Twelve loose `.sql` files must be applied by hand | 4.4 |
 | 11 | v1 creates a junk `new_table` on every fresh DB — harmless | 4.2 |
 | 12 | `CAuth` disconnects clients without the DLL when `ServerAuthStats` is on | 5 |
 | 13 | The four exported client files go in **both** client root and `Resources/` | 5 |
@@ -487,6 +498,9 @@ Quick reference. Each links to the section above.
 | 22 | `launcher` table ships empty — without a 'zone' row, zero zones boot, silently | 8 |
 | 23 | `lua_modules` defaults to the server root; `zone.exe` exits 1 without the config key | 8 |
 | 24 | Defender quarantines the compiled binaries after they are copied | 8 |
+| 25 | The exp pool caches the trailing class; only `SetEXP` and `SetLevel(command)` write it | 3.1 |
+| 26 | `level2` is a high-water mark, not the effective multiclass level | 3.1 |
+| 27 | Server-auth stat keys are sent from 1 through `statMax - 1`; key 0 is invalid | 3.1 |
 
 ---
 

@@ -47,12 +47,20 @@ SELECT 'v22 hastened AA (expect 1600,2000)' AS what, GROUP_CONCAT(base1) AS valu
 SELECT 'v22 aa next_id (expect -1)' AS what, next_id AS value FROM aa_ranks WHERE id = 12900;
 SELECT 'v22 quegmor moved (expect -76.12)' AS what, ROUND(z,2) AS value FROM spawn2 WHERE id = 14745;
 
--- ---- v27: shared-bucket loot schema (empty until seed is applied) -----------
-SELECT 'v27 nms_loot_buckets (expect 1)' AS what, COUNT(*) AS value
+-- ---- v27 / v28: Fabled season schema + roster seed ---------------------------
+-- fabled_season is the single operational row world owns; fabled_npcs is filled by the loose
+-- utils/sql/fabled_roster_seed.sql (not a migration - see CODEBASE.md 4.4), expected value is
+-- the row count printed in that file's header.
+SELECT 'v28 fabled_season rows (expect 1)' AS what, COUNT(*) AS value FROM fabled_season;
+SELECT 'v28 fabled_season seed id (expect 1)' AS what, MIN(id) AS value FROM fabled_season;
+SELECT 'v27 fabled_npcs seeded (expect 472)' AS what, COUNT(*) AS value FROM fabled_npcs;
+
+-- ---- v33: shared-bucket loot schema (empty until seed is applied) -----------
+SELECT 'v33 nms_loot_buckets (expect 1)' AS what, COUNT(*) AS value
   FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'nms_loot_buckets';
-SELECT 'v27 nms_loot_bucket_npcs (expect 1)' AS what, COUNT(*) AS value
+SELECT 'v33 nms_loot_bucket_npcs (expect 1)' AS what, COUNT(*) AS value
   FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'nms_loot_bucket_npcs';
-SELECT 'v27 nms_loot_bucket_items (expect 1)' AS what, COUNT(*) AS value
+SELECT 'v33 nms_loot_bucket_items (expect 1)' AS what, COUNT(*) AS value
   FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'nms_loot_bucket_items';
 
 -- ---- v28: vault player table -----------------------------------------------

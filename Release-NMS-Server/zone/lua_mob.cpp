@@ -60,11 +60,23 @@ bool Lua_Mob::BehindMob(Lua_Mob other, float x, float y) {
 
 void Lua_Mob::SetLevel(int level) {
 	Lua_Safe_Call_Void();
+	// On a client the raw form would move Mob::level without moving the class rows it
+	// caches, so the quest surface always takes the command path.
+	if (self->IsClient()) {
+		self->CastToClient()->SetLevel(level, true);
+		return;
+	}
+
 	self->SetLevel(level);
 }
 
 void Lua_Mob::SetLevel(int level, bool command) {
 	Lua_Safe_Call_Void();
+	if (self->IsClient()) {
+		self->CastToClient()->SetLevel(level, true);
+		return;
+	}
+
 	self->SetLevel(level, command);
 }
 
@@ -464,6 +476,12 @@ int Lua_Mob::GetLevel() {
 const char *Lua_Mob::GetCleanName() {
 	Lua_Safe_Call_String();
 	return self->GetCleanName();
+}
+
+// NMS: the spawn-time name before any TempName() rename (e.g. a Fabled promotion). Underscored form.
+const char *Lua_Mob::GetOrigName() {
+	Lua_Safe_Call_String();
+	return self->GetOrigName();
 }
 
 Lua_Mob Lua_Mob::GetTarget() {
@@ -3866,6 +3884,7 @@ luabind::scope lua_register_mob() {
 	.def("GetNimbusEffect1", (uint8(Lua_Mob::*)(void))&Lua_Mob::GetNimbusEffect1)
 	.def("GetNimbusEffect2", (uint8(Lua_Mob::*)(void))&Lua_Mob::GetNimbusEffect2)
 	.def("GetNimbusEffect3", (uint8(Lua_Mob::*)(void))&Lua_Mob::GetNimbusEffect3)
+	.def("GetOrigName", &Lua_Mob::GetOrigName)
 	.def("GetOrigBodyType", &Lua_Mob::GetOrigBodyType)
 	.def("GetOwner", &Lua_Mob::GetOwner)
 	.def("GetOwnerID", &Lua_Mob::GetOwnerID)

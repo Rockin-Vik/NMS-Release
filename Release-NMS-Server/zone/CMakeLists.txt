@@ -15,6 +15,7 @@ SET(zone_sources
     bot_database.cpp
     botspellsai.cpp
     cheat_manager.cpp
+    class_exp_routing.cpp
     client.cpp
     client_evolving_items.cpp
     client_bot.cpp
@@ -28,6 +29,7 @@ SET(zone_sources
     doors.cpp
     dialogue_window.cpp
     dynamic_zone.cpp
+    fabled.cpp
     effects.cpp
     embparser.cpp
     embparser_api.cpp
@@ -138,6 +140,7 @@ SET(zone_headers
     bot_database.h
     bot_structs.h
     cheat_manager.h
+    class_exp_routing.h
     client.h
     client_packet.h
     combat_record.h
@@ -148,6 +151,7 @@ SET(zone_headers
     doors.h
     dialogue_window.h
     dynamic_zone.h
+    fabled.h
     embparser.h
     embperl.h
     encounter.h
@@ -357,6 +361,7 @@ set(gm_command_sources
     gm_commands/enablerecipe.cpp
     gm_commands/entityvariable.cpp
     gm_commands/exptoggle.cpp
+    gm_commands/fabled.cpp
     gm_commands/faction.cpp
     gm_commands/evolving_items.cpp
     gm_commands/feature.cpp
@@ -369,11 +374,13 @@ set(gm_command_sources
     gm_commands/gearup.cpp
     gm_commands/giveitem.cpp
     gm_commands/givemoney.cpp
+    gm_commands/gmpack.cpp
     gm_commands/gmzone.cpp
     gm_commands/goto.cpp
     gm_commands/grantaa.cpp
     gm_commands/grid.cpp
     gm_commands/guild.cpp
+    gm_commands/hero.cpp
     gm_commands/hp.cpp
     gm_commands/illusion_block.cpp
     gm_commands/instance.cpp

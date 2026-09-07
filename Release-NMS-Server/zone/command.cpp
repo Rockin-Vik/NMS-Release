@@ -132,6 +132,7 @@ int command_init(void)
 		command_add("entityvariable", "[clear|delete|set|view] - Modify entity variables for yourself or your target", AccountStatus::GMAdmin, command_entityvariable) ||
 		command_add("exptoggle", "[Toggle] - Toggle your or your target's experience gain.", AccountStatus::QuestTroupe, command_exptoggle) ||
 		command_add("evolve", "Evolving Item manipulation commands. Use argument help for more info.", AccountStatus::Steward, command_evolvingitems) ||
+		command_add("fabled", "[on|off|schedule|status|force] - Manage the Fabled season (see #fabled for usage)", AccountStatus::GMMgmt, command_fabled) ||
 		command_add("faction", "[Find (criteria | all ) | Review (criteria | all) | Reset (id)] - Resets Player's Faction", AccountStatus::QuestTroupe, command_faction) ||
 		command_add("factionassociation", "[factionid] [amount] - triggers a faction hits via association", AccountStatus::GMLeadAdmin, command_faction_association) ||
 		command_add("feature", "Change your or your target's feature's temporarily", AccountStatus::QuestTroupe, command_feature) ||
@@ -145,12 +146,14 @@ int command_init(void)
 		command_add("gearup", "Developer tool to quickly equip yourself or your target", AccountStatus::GMMgmt, command_gearup) ||
 		command_add("giveitem", "[itemid] [charges] - Summon an item onto your target's cursor. Charges are optional.", AccountStatus::GMMgmt, command_giveitem) ||
 		command_add("givemoney", "[Platinum] [Gold] [Silver] [Copper] - Gives specified amount of money to you or your player target", AccountStatus::GMMgmt, command_givemoney) ||
+		command_add("gmpack", "[all|worn|extras|weapons|clickies] - Summon GM Starter Boxes of Legendary gear from nms_gm_starter_pack (default: worn, weapons, clickies)", AccountStatus::GMMgmt, command_gmpack) ||
 		command_add("gmzone", "[Zone ID|Zone Short Name] [Version] [Instance Identifier] - Zones to a private GM instance (Version defaults to 0 and Instance Identifier defaults to 'gmzone' if not used)", AccountStatus::GMAdmin, command_gmzone) ||
 		command_add("goto", "[playername] or [x y z] [h] - Teleport to the provided coordinates or to your target", AccountStatus::Steward, command_goto) ||
 		command_add("grantaa", "[level] - Grants a player all available AA points up the specified level, all AAs are granted if no level is specified.", AccountStatus::GMMgmt, command_grantaa) ||
 		command_add("grid", "[add/delete] [grid_num] [wandertype] [pausetype] - Create/delete a wandering grid", AccountStatus::GMAreas, command_grid) ||
 		command_add("guild", "Guild manipulation commands. Use argument help for more info.", AccountStatus::Steward, command_guild) ||
 		command_add("help", "[Search Criteria] - List available commands and their description, specify partial command as argument to search", AccountStatus::Player, command_help) ||
+		command_add("hero", "[show|set|setall] - View or set per-class experience", AccountStatus::GMAdmin, command_hero) ||
 		command_add("hotfix", "[hotfix_name] - Reloads shared memory into a hotfix, equiv to load_shared_memory followed by apply_shared_memory", AccountStatus::GMImpossible, command_hotfix) ||
 		command_add("hp", "Refresh your HP bar from the server.", AccountStatus::Player, command_hp) ||
 		command_add("illusionblock", "Controls whether or not illusion effects will land on you when cast by other players or bots", AccountStatus::Guide, command_illusion_block) ||

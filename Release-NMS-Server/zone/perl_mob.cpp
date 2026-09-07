@@ -158,11 +158,23 @@ bool Perl_Mob_BehindMob(Mob* self, Mob* other, float x, float y) // @categories 
 
 void Perl_Mob_SetLevel(Mob* self, uint8_t in_level) // @categories Stats and Attributes
 {
+	// On a client the raw form would move Mob::level without moving the class rows it
+	// caches, so the quest surface always takes the command path.
+	if (self->IsClient()) {
+		self->CastToClient()->SetLevel(in_level, true);
+		return;
+	}
+
 	self->SetLevel(in_level);
 }
 
 void Perl_Mob_SetLevel(Mob* self, uint8_t in_level, bool command) // @categories Stats and Attributes
 {
+	if (self->IsClient()) {
+		self->CastToClient()->SetLevel(in_level, true);
+		return;
+	}
+
 	self->SetLevel(in_level, command);
 }
 
@@ -560,6 +572,12 @@ int Perl_Mob_GetLevel(Mob* self) // @categories Stats and Attributes
 std::string Perl_Mob_GetCleanName(Mob* self) // @categories Script Utility
 {
 	return self->GetCleanName();
+}
+
+// NMS: the spawn-time name before any TempName() rename (e.g. a Fabled promotion). Underscored form.
+std::string Perl_Mob_GetOrigName(Mob* self) // @categories Script Utility
+{
+	return self->GetOrigName();
 }
 
 Mob* Perl_Mob_GetTarget(Mob* self) // @categories Script Utility
@@ -3945,6 +3963,7 @@ void perl_register_mob()
 	package.add("GetNimbusEffect1", &Perl_Mob_GetNimbusEffect1);
 	package.add("GetNimbusEffect2", &Perl_Mob_GetNimbusEffect2);
 	package.add("GetNimbusEffect3", &Perl_Mob_GetNimbusEffect3);
+	package.add("GetOrigName", &Perl_Mob_GetOrigName);
 	package.add("GetOwner", &Perl_Mob_GetOwner);
 	package.add("GetOwnerID", &Perl_Mob_GetOwnerID);
 	package.add("GetPR", &Perl_Mob_GetPR);

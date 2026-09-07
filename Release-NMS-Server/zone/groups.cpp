@@ -1156,6 +1156,23 @@ uint32 Group::GetHighestLevel()
 	return level;
 }
 
+uint8 Group::GetHighestRewardLevel()
+{
+	uint8 level = 1;
+	for (uint32 i = 0; i < MAX_GROUP_MEMBERS; i++)
+	{
+		if (members[i])
+		{
+			const uint8 member_level = members[i]->IsClient() ?
+				members[i]->CastToClient()->GetRewardLevel() :
+				members[i]->GetLevel();
+			if (member_level > level)
+				level = member_level;
+		}
+	}
+	return level;
+}
+
 uint32 Group::GetLowestLevel()
 {
 	uint32 level = 255;

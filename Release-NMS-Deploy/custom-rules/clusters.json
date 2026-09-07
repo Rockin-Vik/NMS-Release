@@ -6,6 +6,9 @@
       "rules": [
         "ServerAuthStats",
         "MulticlassingEnabled",
+        "MaxMulticlasses",
+        "HeroCatchupEnabled",
+        "NewClassStartLevel",
         "UseDynamicAATimers",
         "BypassMulticlassStackConflict",
         "ServerAuthKey"
@@ -157,7 +160,7 @@
         "EnableGlobalLoot",
         "PermanentServerBuffsEnabled",
         "GuideAudit",
-        "EnableFabledMobs",
+        "FabledDefaultChance",
         "CorpseFixSummonsCorpses",
         "CampTimerMs",
         "FastCampBlockedInCombat",

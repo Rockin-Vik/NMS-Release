@@ -195,6 +195,41 @@ bool Lua_Client::AddExtraClass(int class_id) {
 	return self->AddExtraClass(class_id);
 }
 
+bool Lua_Client::AddExtraClass(int class_id, bool join_at_watermark) {
+	Lua_Safe_Call_Bool();
+	return self->AddExtraClass(class_id, join_at_watermark);
+}
+
+int Lua_Client::CanAddExtraClass(int class_id) {
+	Lua_Safe_Call_Int();
+	return static_cast<int>(self->CanAddExtraClass(class_id));
+}
+
+std::string Lua_Client::CanAddExtraClassMessage(int class_id) {
+	Lua_Safe_Call_String();
+	return self->CanAddExtraClassMessage(class_id);
+}
+
+int Lua_Client::GetClassLevel(int class_id) {
+	Lua_Safe_Call_Int();
+	return self->GetClassLevel(static_cast<uint8>(class_id));
+}
+
+uint64 Lua_Client::GetClassExp(int class_id) {
+	Lua_Safe_Call_Int();
+	return self->GetClassExp(static_cast<uint8>(class_id));
+}
+
+int Lua_Client::GetRewardLevel() {
+	Lua_Safe_Call_Int();
+	return self->GetRewardLevel();
+}
+
+bool Lua_Client::IsCatchingUp() {
+	Lua_Safe_Call_Bool();
+	return self->IsCatchingUp();
+}
+
 bool Lua_Client::RemoveExtraClass(int class_id) {
 	Lua_Safe_Call_Bool();
 	return self->RemoveExtraClass(class_id);
@@ -312,11 +347,13 @@ void Lua_Client::AddEXP(uint32 add_exp, int conlevel, bool resexp) {
 
 void Lua_Client::SetEXP(uint64 set_exp, uint64 set_aaxp) {
 	Lua_Safe_Call_Void();
+	self->SetAllClassExp(set_exp);
 	self->SetEXP(ExpSource::Quest, set_exp, set_aaxp);
 }
 
 void Lua_Client::SetEXP(uint64 set_exp, uint64 set_aaxp, bool resexp) {
 	Lua_Safe_Call_Void();
+	self->SetAllClassExp(set_exp);
 	self->SetEXP(ExpSource::Quest, set_exp, set_aaxp, resexp);
 }
 
@@ -3833,6 +3870,7 @@ luabind::scope lua_register_client() {
 	.def("CheckIncreaseSkill", (void(Lua_Client::*)(int,Lua_Mob))&Lua_Client::CheckIncreaseSkill)
 	.def("CheckIncreaseSkill", (void(Lua_Client::*)(int,Lua_Mob,int))&Lua_Client::CheckIncreaseSkill)
 	.def("CheckSpecializeIncrease", (void(Lua_Client::*)(int))&Lua_Client::CheckSpecializeIncrease)
+	.def("CheckWaypointGroupFeature", (bool(Lua_Client::*)(void))&Lua_Client::CheckWaypointGroupFeature)
 	.def("ClearCompassMark",(void(Lua_Client::*)(void))&Lua_Client::ClearCompassMark)
 	.def("ClearAccountFlag", (void(Lua_Client::*)(const std::string&))&Lua_Client::ClearAccountFlag)
 	.def("ClearPEQZoneFlag", (void(Lua_Client::*)(uint32))&Lua_Client::ClearPEQZoneFlag)
@@ -3867,6 +3905,7 @@ luabind::scope lua_register_client() {
 	.def("DyeArmorBySlot", (void(Lua_Client::*)(uint8,uint8,uint8,uint8,uint8))&Lua_Client::DyeArmorBySlot)
 	.def("EnableAreaEndRegen", &Lua_Client::EnableAreaEndRegen)
 	.def("EnableAreaHPRegen", &Lua_Client::EnableAreaHPRegen)
+	.def("EnableWaypointGroupFeature", (void(Lua_Client::*)(void))&Lua_Client::EnableWaypointGroupFeature)
 	.def("EnableAreaManaRegen", &Lua_Client::EnableAreaManaRegen)
 	.def("EnableAreaRegens", &Lua_Client::EnableAreaRegens)
 	.def("EnableTitleSet", &Lua_Client::EnableTitleSet)
@@ -3948,6 +3987,13 @@ luabind::scope lua_register_client() {
 	.def("HasClassID", (bool(Lua_Client::*)(int))&Lua_Client::HasClassID)
 	.def("GetClassesBitmask", (int(Lua_Client::*)(void))&Lua_Client::GetClassesBitmask)
 	.def("AddExtraClass", (bool(Lua_Client::*)(int))&Lua_Client::AddExtraClass)
+	.def("AddExtraClass", (bool(Lua_Client::*)(int, bool))&Lua_Client::AddExtraClass)
+	.def("CanAddExtraClass", (int(Lua_Client::*)(int))&Lua_Client::CanAddExtraClass)
+	.def("CanAddExtraClassMessage", (std::string(Lua_Client::*)(int))&Lua_Client::CanAddExtraClassMessage)
+	.def("GetClassLevel", (int(Lua_Client::*)(int))&Lua_Client::GetClassLevel)
+	.def("GetClassExp", (uint64(Lua_Client::*)(int))&Lua_Client::GetClassExp)
+	.def("GetRewardLevel", (int(Lua_Client::*)(void))&Lua_Client::GetRewardLevel)
+	.def("IsCatchingUp", (bool(Lua_Client::*)(void))&Lua_Client::IsCatchingUp)
 	.def("RemoveExtraClass", (bool(Lua_Client::*)(int))&Lua_Client::RemoveExtraClass)
 	.def("GetClientMaxLevel", (int(Lua_Client::*)(void))&Lua_Client::GetClientMaxLevel)
 	.def("GetClientVersion", (int(Lua_Client::*)(void))&Lua_Client::GetClientVersion)
@@ -4081,6 +4127,7 @@ luabind::scope lua_register_client() {
 	.def("IsGrouped", (bool(Lua_Client::*)(void))&Lua_Client::IsGrouped)
 	.def("IsInAGuild", (bool(Lua_Client::*)(void))&Lua_Client::IsInAGuild)
 	.def("IsLD", (bool(Lua_Client::*)(void))&Lua_Client::IsLD)
+	.def("IsWaypointUnlocked", (bool(Lua_Client::*)(std::string))&Lua_Client::IsWaypointUnlocked)
 	.def("IsMedding", (bool(Lua_Client::*)(void))&Lua_Client::IsMedding)
 	.def("IsNameChangeAllowed", &Lua_Client::IsNameChangeAllowed)
 	.def("IsRaidGrouped", (bool(Lua_Client::*)(void))&Lua_Client::IsRaidGrouped)
@@ -4207,6 +4254,7 @@ luabind::scope lua_register_client() {
 	.def("SendPEQZoneFlagInfo", (void(Lua_Client::*)(Lua_Client))&Lua_Client::SendPEQZoneFlagInfo)
 	.def("SendSound", (void(Lua_Client::*)(void))&Lua_Client::SendSound)
 	.def("SendToGuildHall", (void(Lua_Client::*)(void))&Lua_Client::SendToGuildHall)
+	.def("SendWaypointList", (void(Lua_Client::*)(void))&Lua_Client::SendWaypointList)
 	.def("SendToInstance", (void(Lua_Client::*)(std::string,std::string,uint32,float,float,float,float,std::string,uint32))&Lua_Client::SendToInstance)
 	.def("SendPayload", (void(Lua_Client::*)(int))&Lua_Client::SendPayload)
 	.def("SendPayload", (void(Lua_Client::*)(int,std::string))&Lua_Client::SendPayload)
@@ -4357,6 +4405,7 @@ luabind::scope lua_register_client() {
 	.def("UnFreeze", (void(Lua_Client::*)(void))&Lua_Client::UnFreeze)
 	.def("UncompleteTask", (bool(Lua_Client::*)(int))&Lua_Client::UncompleteTask)
 	.def("Undye", (void(Lua_Client::*)(void))&Lua_Client::Undye)
+	.def("UnlockWaypoint", (bool(Lua_Client::*)(std::string))&Lua_Client::UnlockWaypoint)
 	.def("UnmemSpell", (void(Lua_Client::*)(int))&Lua_Client::UnmemSpell)
 	.def("UnmemSpell", (void(Lua_Client::*)(int,bool))&Lua_Client::UnmemSpell)
 	.def("UnmemSpellAll", (void(Lua_Client::*)(bool))&Lua_Client::UnmemSpellAll)
