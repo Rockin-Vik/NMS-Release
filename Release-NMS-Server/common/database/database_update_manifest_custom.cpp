@@ -1136,6 +1136,116 @@ UPDATE aa_ranks SET level_req = 70, expansion = 8 WHERE id = 7061;
 		.content_schema_update = true,
 	},
 
+	ManifestEntry{
+		.version = 35,
+		.description = "2026_09_06_character_nms_vault",
+		.check = "SHOW TABLES LIKE 'character_nms_vault'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+CREATE TABLE IF NOT EXISTS character_nms_vault (
+    character_id INT UNSIGNED NOT NULL,
+    slot INT NOT NULL,
+    bag_slot INT NOT NULL DEFAULT 0,
+    item_id INT UNSIGNED NOT NULL,
+    charges SMALLINT NOT NULL DEFAULT 1,
+    aug1 INT UNSIGNED NOT NULL DEFAULT 0,
+    aug2 INT UNSIGNED NOT NULL DEFAULT 0,
+    aug3 INT UNSIGNED NOT NULL DEFAULT 0,
+    aug4 INT UNSIGNED NOT NULL DEFAULT 0,
+    aug5 INT UNSIGNED NOT NULL DEFAULT 0,
+    aug6 INT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (character_id, slot, bag_slot),
+    KEY idx_character_nms_vault_slot (character_id, slot)
+);
+)",
+		.content_schema_update = false,
+	},
+
+	ManifestEntry{
+		.version = 36,
+		.description = "2026_09_06_character_nms_loot_offers",
+		.check = "SHOW TABLES LIKE 'character_nms_loot_offers'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+CREATE TABLE IF NOT EXISTS character_nms_loot_offers (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    character_id INT UNSIGNED NOT NULL,
+    zone_id INT UNSIGNED NOT NULL DEFAULT 0,
+    corpse_id INT UNSIGNED NOT NULL DEFAULT 0,
+    item_id INT UNSIGNED NOT NULL,
+    icon INT UNSIGNED NOT NULL DEFAULT 0,
+    charges SMALLINT NOT NULL DEFAULT 1,
+    bonus TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    name VARCHAR(64) NOT NULL DEFAULT '',
+    aug1 INT UNSIGNED NOT NULL DEFAULT 0,
+    aug2 INT UNSIGNED NOT NULL DEFAULT 0,
+    aug3 INT UNSIGNED NOT NULL DEFAULT 0,
+    aug4 INT UNSIGNED NOT NULL DEFAULT 0,
+    aug5 INT UNSIGNED NOT NULL DEFAULT 0,
+    aug6 INT UNSIGNED NOT NULL DEFAULT 0,
+    expires_at TIMESTAMP NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_character_nms_loot_offers_char (character_id, zone_id, expires_at)
+);
+)",
+		.content_schema_update = false,
+	},
+
+	ManifestEntry{
+		.version = 37,
+		.description = "2026_09_06_character_nms_loot_offers_corpse_serial",
+		.check = "SHOW COLUMNS FROM character_nms_loot_offers LIKE 'corpse_serial'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+ALTER TABLE character_nms_loot_offers
+    ADD COLUMN corpse_serial INT UNSIGNED NOT NULL DEFAULT 0 AFTER corpse_id;
+)",
+		.content_schema_update = false,
+	},
+
+	ManifestEntry{
+		.version = 38,
+		.description = "2026_09_06_character_nms_loot_offers_corpse_serial_bigint",
+		.check = "SELECT DATA_TYPE FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'character_nms_loot_offers' AND column_name = 'corpse_serial' AND DATA_TYPE = 'bigint'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+ALTER TABLE character_nms_loot_offers
+    MODIFY COLUMN corpse_serial BIGINT UNSIGNED NOT NULL DEFAULT 0;
+)",
+		.content_schema_update = false,
+	},
+
+	ManifestEntry{
+		.version = 39,
+		.description = "2026_09_06_character_nms_loot_offers_instance_and_passed",
+		.check = "SELECT a.column_name FROM information_schema.columns a JOIN information_schema.columns b ON a.table_schema = b.table_schema AND a.table_name = b.table_name WHERE a.table_schema = DATABASE() AND a.table_name = 'character_nms_loot_offers' AND a.column_name = 'instance_id' AND b.column_name = 'passed'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+ALTER TABLE character_nms_loot_offers
+    ADD COLUMN instance_id INT UNSIGNED NOT NULL DEFAULT 0 AFTER zone_id,
+    ADD COLUMN passed TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER aug6;
+)",
+		.content_schema_update = false,
+	},
+
+	ManifestEntry{
+		.version = 40,
+		.description = "2026_09_06_character_nms_loot_offers_passed_from",
+		.check = "SHOW COLUMNS FROM character_nms_loot_offers LIKE 'passed_from'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+ALTER TABLE character_nms_loot_offers
+    ADD COLUMN passed_from VARCHAR(64) NOT NULL DEFAULT '' AFTER passed;
+)",
+		.content_schema_update = false,
+	},
+
 	// Used for testing
 	//	ManifestEntry{
 	//		.version = 9229,

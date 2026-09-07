@@ -1315,6 +1315,9 @@ RULE_INT(Custom,    PetAssistRateLimit,                     1000, "Minimum time 
 RULE_BOOL(Custom, 	CorpseFixSummonsCorpses,				false, "Enable to cause #corpsefix to summon corpses to player")
 RULE_INT(Custom, 	CampTimerMs,							100, "Milliseconds after /camp before the server completes the logout for players outside the Bazaar. Below 29000 the server closes the connection itself so the client drops to character select at once; 29000 or more is stock behavior (client closes after its own 30 s countdown). GMs always camp instantly.")
 RULE_BOOL(Custom, 	FastCampBlockedInCombat,				true, "When true, a player that any NPC has on its hate list, is in a duel, or is feigning death gets the stock 29 second camp instead of Custom:CampTimerMs")
+RULE_BOOL(Custom,	DimensionalVault,						false, "Enable Dimensional Vault (#vault_*) storage, Proc Locker, clicky autoload, and vault bank/merchant. Off = no vault commands or combat hooks.")
+RULE_BOOL(Custom,	NmsLootOffers,							false, "Send /nmsloot offer packets on corpse open and execute Keep/Sell/Tribute/Destroy/Pass on the server. Off = native corpse loot only.")
+RULE_INT(Custom,	NmsLootOfferExpireSeconds,				300, "Seconds before an unclaimed /nmsloot offer expires. Used only when NmsLootOffers is on.")
 RULE_INT(Custom, 	GMUnlockMinStatus,						100, "Accounts at or above this status see every waypoint on the map and receive every progression flag on login. 0 disables. 100 = GM-Admin.")
 
 // Seasonal

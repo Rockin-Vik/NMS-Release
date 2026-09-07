@@ -133,6 +133,15 @@
       ]
     },
     {
+      "title": "Dimensional Vault / loot offers",
+      "blurb": "Optional /nmsloot offer pipe and Dimensional Vault. Both default off. Stock corpse loot and no vault when the rule is off or the tables are missing.",
+      "rules": [
+        "DimensionalVault",
+        "NmsLootOffers",
+        "NmsLootOfferExpireSeconds"
+      ]
+    },
+    {
       "title": "Economy / bags",
       "blurb": "Plat unattune/combine and bag item-id lists. Unattune is off by default.",
       "rules": [
@@ -299,6 +308,11 @@
     [
       "CampTimerMs",
       "FastCampBlockedInCombat"
+    ],
+    [
+      "DimensionalVault",
+      "NmsLootOffers",
+      "NmsLootOfferExpireSeconds"
     ]
   ]
 }

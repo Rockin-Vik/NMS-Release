@@ -221,7 +221,7 @@ NMS runs a **second migration manifest in parallel with stock EQEmu's**:
 | Manifest | File | Version column | Current |
 | --- | --- | --- | --- |
 | Stock | `database_update_manifest.cpp` | `db_version.version` | 9325 |
-| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **34** |
+| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **40** |
 | Bots | `database_update_manifest_bots.cpp` | `db_version.bots_database_version` | |
 
 Both are `#include`d directly into `common/database/database_update.cpp` (lines 9–11) and run
@@ -242,7 +242,7 @@ ALTER TABLE db_version ADD COLUMN custom_version INT UNSIGNED NOT NULL DEFAULT 0
 
 ### 4.2 What is actually in the custom manifest
 
-34 entries declared (v1–v34), **31 live**. Numbering is a plain sequence independent of the 9325
+40 entries declared (v1–v40), **37 live**. Numbering is a plain sequence independent of the 9325
 stock number. Entries carry `content_schema_update` to target the content DB rather than the
 player DB.
 
@@ -258,6 +258,12 @@ player DB.
 | v31–v32 | GM Starter Box item `9011012` and the `nms_gm_starter_pack` seed behind `#gmpack` | Live |
 | v33 | Shared-bucket loot schema: `nms_loot_buckets`, `nms_loot_bucket_npcs`, `nms_loot_bucket_items` (gated by `Custom:RandomLootBuckets`) | Live |
 | v34 | Mastery of the Past ranks 7–9 opened at levels 67 / 69 / 70 (`aa_ranks` 7059–7061; they shipped at level 80, expansion -1) | Live |
+| v35 | Player table `character_nms_vault` (Dimensional Vault slots; `Custom:DimensionalVault`) | Live |
+| v36 | Player table `character_nms_loot_offers` (`Custom:NmsLootOffers`) | Live |
+| v37 | `character_nms_loot_offers.corpse_serial` | Live |
+| v38 | `corpse_serial` widened to `BIGINT UNSIGNED` | Live |
+| v39 | `instance_id` and Pass tombstone (`passed`) | Live |
+| v40 | `passed_from` (client offer `name2` passer name) | Live |
 
 ### 4.3 ⚠️ The version number is a claim, not a fact
 
@@ -304,13 +310,16 @@ content.** The seed data lives in the 540 MB dump. Specifically:
 ## 5. The client contract
 
 **A stock RoF2 client cannot play on this server** with custom features enabled. The server
-sends opcodes in the `0x1338`–`0x1409` range that stock clients do not understand.
+sends opcodes in the `0x1338`–`0x140B` range that stock clients do not understand.
 
 - Opcodes: `common/emu_oplist.h` (~lines 620–643), mapped in `utils/patches/patch_RoF2.conf`
   under a `#CUSTOM` block (~line 733)
 - The set: `OP_ServerAuthStats`, `OP_SkillTimers`, `OP_PetList`, `OP_CustomDiscTimer`,
   `OP_CAuth`, `OP_WaypointList`, `OP_WaypointRequest`, `OP_MulticlassCharSelect`,
-  `OP_CharacterSet*`, `OP_SuppressBuffNameInfo`
+  `OP_CharacterSet*`, `OP_SuppressBuffNameInfo`, `OP_NmsLootOffer` (`0x140A`),
+  `OP_NmsLootDecision` (`0x140B`)
+- Loot-offer opcodes require the matching installed add-on build (not the repo `dinput8.dll`).
+  `Custom:NmsLootOffers` default off; without that add-on, leave the rule off.
 - **Enforcement:** when `Custom:ServerAuthStats` is on, the `CAuth` handshake
   (`zone/client_packet.cpp:5106`) validates `GetClassesBits() * GetID()` and **disconnects
   clients without the DLL.**

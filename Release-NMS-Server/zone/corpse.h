@@ -159,7 +159,8 @@ public:
 	void SetPlayerKillItemID(int32 pk_item_id) { m_player_kill_item = pk_item_id; }
 	int32 GetPlayerKillItem() { return m_player_kill_item; }
 	void RemoveItem(uint16 lootslot);
-	void RemoveItem(LootItem *item_data);
+	void RemoveItem(LootItem *item_data, bool forget_offers = true);
+	inline LootRequestType GetLootRequestType() const { return m_loot_request_type; }
 	void RemoveItemByID(uint32 item_id, int quantity = 1);
 	void AddItem(
 		uint32 itemnum,
@@ -221,6 +222,7 @@ public:
 	}
 	inline bool IsBeingLooted() { return (m_being_looted_by_entity_id != 0xFFFFFFFF); }
 	inline bool IsBeingLootedBy(Client *c) { return m_being_looted_by_entity_id == c->GetID(); }
+	inline uint64 GetNmsLootSerial() const { return m_nms_loot_serial; }
 
 	/* Mob */
 	void FillSpawnStruct(NewSpawn_Struct *ns, Mob *ForWho);
@@ -294,6 +296,7 @@ private:
 	bool                     m_is_owner_online;
 	std::vector<std::string> m_consented_player_names;
 	LootRequestType          m_loot_request_type;
+	uint64                   m_nms_loot_serial = 0;
 	uint32                   m_account_id;
 	bool					 m_seasonal;
 	bool					 m_hardcore;	

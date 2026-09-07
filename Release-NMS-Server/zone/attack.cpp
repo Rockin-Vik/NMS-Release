@@ -38,6 +38,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 #include "fastmath.h"
 #include "mob.h"
 #include "npc.h"
+#include "nms_vault.h"
 
 #include "bot.h"
 
@@ -5333,6 +5334,14 @@ void Mob::TryWeaponProc(const EQ::ItemInstance *inst, const EQ::ItemData *weapon
 	}
 	if (!weapon)
 		return;
+
+	if (IsClient()) {
+		if (const auto *locker = NmsVaultProcItem(CastToClient(), hand)) {
+			weapon = locker;
+			inst = nullptr;
+		}
+	}
+
 	uint16 skillinuse = 28;
 	int ourlevel = GetLevel();
 	float ProcBonus = static_cast<float>(aabonuses.ProcChanceSPA + spellbonuses.ProcChanceSPA + itembonuses.ProcChanceSPA);

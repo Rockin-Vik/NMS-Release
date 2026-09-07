@@ -1024,6 +1024,12 @@ public:
 	void SetWaypointAutoTransportState(bool val);
 	void PromptWaypointTransport(uint32 zoneID, uint32 instance_id, float x, float y, float z, float heading);
 	void WaypointTransport(uint32 zoneID, uint32 instance_id, float x, float y, float z, float heading, ZoneMode zm);
+	inline bool GetNmsVaultBank() const { return m_nms_vault_bank; }
+	inline void SetNmsVaultBank(bool value) { m_nms_vault_bank = value; }
+	inline bool GetNmsVaultMerchant() const { return m_nms_vault_merchant; }
+	inline void SetNmsVaultMerchant(bool value) { m_nms_vault_merchant = value; }
+	inline uint32 GetNmsVaultMerchantId() const { return m_nms_vault_merchant_id; }
+	inline void SetNmsVaultMerchantId(uint32 value) { m_nms_vault_merchant_id = value; }
 
 	void SendPath(Mob* target);
 
@@ -2338,6 +2344,9 @@ private:
 
 	uint16 m_door_tool_entity_id;
 	uint16 m_object_tool_entity_id;
+	bool m_nms_vault_bank = false;
+	bool m_nms_vault_merchant = false;
+	uint32 m_nms_vault_merchant_id = 0;
 
 
 public:

@@ -8,8 +8,8 @@
 >
 > Narrative and gotchas stay in [CODEBASE.md](../CODEBASE.md). This file is the lookup index.
 
-- Custom rules parsed: **113**
-- With an inline note: **113**
+- Custom rules parsed: **116**
+- With an inline note: **116**
 - Unclustered: **0**
 
 Regenerate:
@@ -26,6 +26,7 @@ python Release-NMS-Deploy/custom-rules/generate.py
 - [Item tiers / Power Source / mutations](#item-tiers--power-source--mutations) — 12 rules
 - [Combat / spells](#combat--spells) — 47 rules
 - [Instances](#instances) — 5 rules
+- [Dimensional Vault / loot offers](#dimensional-vault--loot-offers) — 3 rules
 - [Economy / bags](#economy--bags) — 5 rules
 - [Seasonal / ops / GM](#seasonal--ops--gm) — 12 rules
 
@@ -166,6 +167,16 @@ Static (no respawn) and farming (long-respawn disabled) instance versions, plus 
 | `FarmingInstanceVersion` | INT | `254` | `FarmingInstanceTemplateVersion` | Instances with the version will load as FarmingInstanceTemplateVersion and have long-respawn mobs disabled |
 | `FarmingInstanceTemplateVersion` | INT | `0` | `FarmingInstanceVersion` | Template version for farming instances (long-respawn mobs disabled) |
 | `HubZones` | STRING | `"151,22"` | — | Hub zones to display in #zoneshard output |
+
+## Dimensional Vault / loot offers
+
+Optional /nmsloot offer pipe and Dimensional Vault. Both default off. Stock corpse loot and no vault when the rule is off or the tables are missing.
+
+| Rule | Type | Default | Related | Notes |
+| --- | --- | --- | --- | --- |
+| `DimensionalVault` | BOOL | `false` | `NmsLootOfferExpireSeconds` `NmsLootOffers` | Enable Dimensional Vault (#vault_*) storage, Proc Locker, clicky autoload, and vault bank/merchant. Off = no vault commands or combat hooks. |
+| `NmsLootOffers` | BOOL | `false` | `DimensionalVault` `NmsLootOfferExpireSeconds` | Send /nmsloot offer packets on corpse open and execute Keep/Sell/Tribute/Destroy/Pass on the server. Off = native corpse loot only. |
+| `NmsLootOfferExpireSeconds` | INT | `300` | `DimensionalVault` `NmsLootOffers` | Seconds before an unclaimed /nmsloot offer expires. Used only when NmsLootOffers is on. |
 
 ## Economy / bags
 
