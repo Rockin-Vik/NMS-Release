@@ -1414,6 +1414,10 @@ void Client::PurchaseAllAlternateAdvancementRanks(int starting_rank_id) {
 	AA::Rank* rank = zone->GetAlternateAdvancementRank(starting_rank_id);
 	bool told = false;
 	while (rank) {
+		if (!rank->base_ability) {
+			break;
+		}
+
 		if (HasAlreadyPurchasedRank(rank)) {
 			rank = rank->next;
 			continue;
