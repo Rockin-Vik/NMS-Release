@@ -981,14 +981,16 @@ bool Client::TrainDiscipline(uint32 itemid) {
 	}
 
 	//add it to PP.
+	if (HasDisciplineLearned(static_cast<uint16>(spell_id))) {
+		Message(Chat::Red, "You already know this discipline.");
+		SummonItem(itemid);
+		return false;
+	}
+
 	for (int r = 0; r < MAX_PP_DISCIPLINES; r++) {
-		if (m_pp.disciplines.values[r] == spell_id) {
-			Message(Chat::Red, "You already know this discipline.");
-			//summon them the item back...
-			SummonItem(itemid);
-			return false;
-		} else if (m_pp.disciplines.values[r] == 0) {
+		if (m_pp.disciplines.values[r] == 0) {
 			m_pp.disciplines.values[r] = spell_id;
+			LearnDiscId(static_cast<uint16>(spell_id));
 			database.SaveCharacterDiscipline(CharacterID(), r, spell_id);
 			SendDisciplineUpdate();
 			Message(Chat::White, "You have learned a new discipline!");
@@ -1111,6 +1113,7 @@ void Client::TrainDiscBySpellID(int32 spell_id)
 	for(i = 0; i < MAX_PP_DISCIPLINES; i++) {
 		if(m_pp.disciplines.values[i] == 0) {
 			m_pp.disciplines.values[i] = spell_id;
+			LearnDiscId(static_cast<uint16>(spell_id));
 			database.SaveCharacterDiscipline(CharacterID(), i, spell_id);
 			SendDisciplineUpdate();
 			Message(Chat::Yellow, "You have learned a new combat ability!");
@@ -1335,14 +1338,7 @@ void Client::ResetAllDisciplineTimers() {
 }
 
 bool Client::HasDisciplineLearned(uint16 spell_id) {
-	bool has_learned = false;
-	for (auto index = 0; index < MAX_PP_DISCIPLINES; ++index) {
-		if (GetPP().disciplines.values[index] == spell_id) {
-			has_learned = true;
-			break;
-		}
-	}
-	return has_learned;
+	return m_learned_discs.find(spell_id) != m_learned_discs.end();
 }
 
 void Client::SendDisciplineTimer(uint32 timer_id, uint32 duration)

@@ -166,6 +166,7 @@
     <ClCompile Include="MQ2Windows.cpp" />
     <ClCompile Include="Sprite.cpp" />
     <ClCompile Include="Text.cpp" />
+    <ClCompile Include="spellbook_volumes.cpp" />
     <ClCompile Include="waypoint_window.cpp" />
     <ClCompile Include="who_multiclass.cpp" />
   </ItemGroup>
@@ -209,6 +210,7 @@
     <ClInclude Include="RECTF.h" />
     <ClInclude Include="Renderable.h" />
     <ClInclude Include="RenderHooks.h" />
+    <ClInclude Include="spellbook_volumes.h" />
     <ClInclude Include="skills.h" />
     <ClInclude Include="Sprite.h" />
     <ClInclude Include="Text.h" />

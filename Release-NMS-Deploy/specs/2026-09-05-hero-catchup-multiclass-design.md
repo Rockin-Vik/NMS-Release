@@ -151,7 +151,7 @@ On success, in this order so a set bit never exists without a row:
 3. Call `SetEXP` with the current pool value. The delta is zero, but routing returns the minimum row (§6), so the pool drops and the stock loop levels the character down and fires `EVENT_LEVEL_DOWN`. `SetEXP` has no early return on an unchanged value (`exp.cpp:1065-1067` only rejects an invalid curve).
 4. `CalcBonuses()`, AA table refresh, guild roster update (existing `+1000` path), `SendBulkStatsUpdate()` (D11). Pet and buffs are not touched (D16).
 
-`RemoveExtraClass`: reject only if it would leave zero classes. Otherwise the existing body runs (it already unscribes, ejects class-locked gear, refunds AAs, `client.cpp:14587-14653`) and the row is **kept**. Re-add does not restore spells or gear. The pool follows the lowest remaining row in either direction before `SetEXP`, so the effective level follows the remaining classes.
+`RemoveExtraClass`: reject only if it would leave zero classes. Otherwise the existing body runs (ejects class-locked gear, refunds AAs) and the row is **kept**. Spells/discs/gems are hidden, not deleted; re-add and login restore them (`2026-09-07-spellbook-capacity.md`). The pool follows the lowest remaining row in either direction before `SetEXP`, so the effective level follows the remaining classes.
 
 `GetLevel()` stays `Mob::level`. Do not scatter `min()` at call sites.
 

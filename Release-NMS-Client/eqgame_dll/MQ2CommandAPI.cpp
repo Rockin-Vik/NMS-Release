@@ -21,6 +21,7 @@ GNU General Public License for more details.
 
 
 #include "MQ2Main.h"
+#include "spellbook_volumes.h"
 
 CRITICAL_SECTION gCommandCS;
 
@@ -308,6 +309,11 @@ public:
             } 
             GetArg(szCommand,szFullCommand,1); 
             strcpy(szArgs, GetNextArg(szFullCommand)); 
+
+            if (!stricmp(szCommand, "/book") && SpellbookVolumes_HandleBookCommand(szArgs)) {
+                strcpy(szLastCommand,szFullCommand);
+                return;
+            } 
 
             PMQCOMMAND pCommand=pCommands;
             while(pCommand)

@@ -633,7 +633,7 @@ bool ZoneDatabase::LoadCharacterSpellBook(uint32 character_id, PlayerProfile_Str
 	// Load them all so that server actions are valid..but, nix them in translators.
 
 	for (const auto& e : l) {
-		if (!EQ::ValueWithin(e.slot_id, 0, EQ::spells::SPELLBOOK_SIZE)) {
+		if (e.slot_id >= EQ::spells::SPELLBOOK_SIZE) {
 			continue;
 		}
 

@@ -1534,6 +1534,10 @@ void Client::OPMemorizeSpell(const EQApplicationPacket* app)
 				}
 
 				if (item && item->Scroll.Effect == static_cast<int32>(m->spell_id)) {
+					if (HasSpellScribed(static_cast<int>(m->spell_id))) {
+						Message(Chat::Red, "You already know this spell.");
+						break;
+					}
 					ScribeSpell(m->spell_id, m->slot);
 					DeleteItemInInventory(EQ::invslot::slotCursor, 1, true);
 				} else {
@@ -1545,7 +1549,7 @@ void Client::OPMemorizeSpell(const EQApplicationPacket* app)
 			break;
 		}
 		case memSpellMemorize: {
-			if (HasSpellScribed(m->spell_id)) {
+			if (HasSpellInBook(static_cast<int>(m->spell_id))) {
 				MemSpell(m->spell_id, m->slot);
 			} else {
 				std::string message = fmt::format("OP_MemorizeSpell [{}] but we don't have this spell scribed", m->spell_id);

@@ -1021,6 +1021,12 @@ void Client::CompleteConnect()
 
 	database.LoadAuras(this); // this ends up spawning them so probably safer to load this later (here)
 	database.LoadCharacterDisciplines(this);
+	for (int index = 0; index < MAX_PP_DISCIPLINES; index++) {
+		if (IsValidSpell(m_pp.disciplines.values[index])) {
+			LearnDiscId(static_cast<uint16>(m_pp.disciplines.values[index]));
+		}
+	}
+	ReconcileLearnedSpells(false, true, false);
 
 	entity_list.RefreshClientXTargets(this);
 
@@ -1574,6 +1580,9 @@ void Client::Handle_Connect_OP_ZoneEntry(const EQApplicationPacket *app)
 		m_pp.classes = Strings::ToInt(GetBucket("GestaltClasses"), GetPlayerClassBit(m_pp.class_));
 		LoadClassExp();
 	}
+
+	LoadLearnedKnowledge();
+	ReconcileLearnedSpells(true, false, false);
 
 	// we know our class now, so we might have to fix our consume timer!
 	if (class_ == Class::Monk)
@@ -6247,8 +6256,12 @@ void Client::Handle_OP_DeleteSpell(const EQApplicationPacket *app)
 		return;
 
 	if (m_pp.spell_book[dss->spell_slot] != SPELLBOOK_UNKNOWN) {
+		const uint32 erased_spell = m_pp.spell_book[dss->spell_slot];
 		m_pp.spell_book[dss->spell_slot] = SPELLBOOK_UNKNOWN;
 		database.DeleteCharacterSpell(CharacterID(), dss->spell_slot);
+		if (IsValidSpell(erased_spell)) {
+			ForgetSpellId(static_cast<uint16>(erased_spell));
+		}
 		dss->success = 1;
 	}
 	else

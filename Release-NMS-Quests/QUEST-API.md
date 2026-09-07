@@ -2031,7 +2031,7 @@ All `Mob` methods also available. These are Client-specific.
 | Method | Description | Example |
 |---|---|---|
 | `GetSpellIDMemorized(slot)` | Spell in gem slot | `local spell = client:GetSpellIDMemorized(0)` |
-| `HasSpellScribed(spell_id)` | Is spell in spellbook? | — |
+| `HasSpellScribed(spell_id)` | Ever learned this spell (not forgotten). Hidden after a spec change still counts. Visible pages are `GetScribedSpells`. | — |
 | `HasSpellMemorized(spell_id)` | Is spell memorized? | — |
 | `MemorizeSpell(slot, spell_id, type)` | Memorize spell | `client:MemorizeSpell(0, 1, 1)` |
 | `UnmemSpell(slot [,update [,remove]])` | Unmemorize spell | — |
@@ -2045,7 +2045,7 @@ All `Mob` methods also available. These are Client-specific.
 | `TrainSkill(skill_id, value)` | Train skill to value | — |
 | `UseDiscipline(spell_id)` | Activate discipline | — |
 | `GetDiscSlotBySpellID(spell_id)` | Get disc slot | — |
-| `HasDisciplineLearned(spell_id)` | Is disc learned? | — |
+| `HasDisciplineLearned(spell_id)` | Ever trained this disc (not forgotten). Hidden after a spec change still counts. | — |
 | `TrainDiscipline(item_id)` | Train a discipline | — |
 
 ### Tasks

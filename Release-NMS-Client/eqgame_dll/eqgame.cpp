@@ -10,6 +10,7 @@
 #include "xorstr.h"
 #include "waypoint_window.h"
 #include "who_multiclass.h"
+#include "spellbook_volumes.h"
 #include "core_log.h"
 
 
@@ -825,6 +826,15 @@ unsigned char __fastcall HandleWorldMessage_Detour(DWORD *con, DWORD edx,
       return 1; // MultiPet suppressed this packet — do not forward to client
   }
 
+  {
+    size_t book_size = size;
+    const SpellbookIncomingResult book_result = SpellbookVolumes_OnIncoming(opcode, buf, &book_size);
+    if (book_result == SpellbookIncomingSuppress) {
+      return 1;
+    }
+    size = book_size;
+  }
+
   switch (opcode) {
   // 0x6989 (OP_DisciplineTimer) must pass through UNTOUCHED: the banded TimerID (>=20) is the
   // g_discTimers map key. A pre-banding relic here rewrote it mod-20 "for" the native 20-slot
@@ -1021,6 +1031,10 @@ unsigned char __fastcall SendMessage_Detour(DWORD *con, unsigned __int32 unk,
   if (WaypointsWnd::OnOutgoingPacket((uint16_t)opcode, buf, size)) {
       SimpleLog("SendMessage_Detour: Outgoing packet suppressed by WaypointsWnd");
       return 1; // Suppressed
+  }
+
+  if (SpellbookVolumes_OnOutgoing(opcode, buf, size)) {
+      return 1;
   }
 
   // NMS: Hook OP_AAAction (0x424e or 0x01e9) to rewrite action from aaActionBuy (3) to aaActionBuyAll (4) if "Train All" checkbox is checked

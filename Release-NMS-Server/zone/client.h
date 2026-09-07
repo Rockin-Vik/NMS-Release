@@ -91,6 +91,8 @@ namespace EQ
 #include <float.h>
 #include <array>
 #include <set>
+#include <unordered_set>
+#include <unordered_map>
 #include <algorithm>
 #include <memory>
 #include <deque>
@@ -639,6 +641,10 @@ private:
 
 	std::map<uint8, uint64> m_class_exp;
 	bool                    m_class_exp_dirty = false;
+	std::unordered_set<uint32> m_learned_spells;
+	std::unordered_set<uint32> m_learned_discs;
+	std::unordered_map<uint32, uint16> m_learned_mem;
+	bool                    m_learned_ready = false;
 	// Set while SetEXP has routed the rows but not yet assigned the pool, so the Save() that
 	// SetLevel() fires mid-flight does not write the new rows against the old pool.
 	bool                    m_class_exp_save_deferred = false;
@@ -1117,10 +1123,10 @@ public:
 	bool CanThisClassTrack();
 
 	// defer save used when bulk saving
-	void UnscribeSpell(int slot, bool update_client = true, bool defer_save = false);
+	void UnscribeSpell(int slot, bool update_client = true, bool defer_save = false, bool forget_learned = true);
 	void UnscribeSpellAll(bool update_client = true);
 	void UnscribeSpellBySpellID(uint16 spell_id, bool update_client = true);
-	void UntrainDisc(int slot, bool update_client = true, bool defer_save = false);
+	void UntrainDisc(int slot, bool update_client = true, bool defer_save = false, bool forget_learned = true);
 	void UntrainDiscAll(bool update_client = true);
 	void UntrainDiscBySpellID(uint16 spell_id, bool update_client = true);
 	bool SpellGlobalCheck(uint16 spell_id, uint32 char_id);
@@ -1491,7 +1497,14 @@ public:
 	int GetNextAvailableSpellBookSlot(int starting_slot = 0);
 	int GetNextAvailableDisciplineSlot(int starting_slot = 0);
 	inline uint32 GetSpellByBookSlot(int book_slot) { return m_pp.spell_book[book_slot]; }
-	inline bool HasSpellScribed(int spellid) { return FindSpellBookSlotBySpellID(spellid) != -1; }
+	bool HasSpellScribed(int spellid);
+	bool HasSpellInBook(int spellid);
+	void LoadLearnedKnowledge();
+	void ReconcileLearnedSpells(bool include_book_and_gems, bool include_discs, bool update_client = true);
+	void LearnSpellId(uint16 spell_id);
+	void ForgetSpellId(uint16 spell_id);
+	void LearnDiscId(uint16 spell_id);
+	void ForgetDiscId(uint16 spell_id);
 	uint32 GetHighestScribedSpellinSpellGroup(uint32 spell_group);
 	std::unordered_map<uint32, std::vector<uint16>> LoadSpellGroupCache(uint8 min_level, uint8 max_level);
 	uint16 GetMaxSkillAfterSpecializationRules(EQ::skills::SkillType skillid, uint16 maxSkill);
