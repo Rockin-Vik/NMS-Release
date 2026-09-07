@@ -1699,6 +1699,27 @@ uint64 Client::GetHardExpCap() const
 	return next_level > 0 ? next_level - 1 : 0;
 }
 
+// The server cap alone, with no per-character CharMaxLevel bucket folded in. Used for
+// the login row truncation, which writes to disk: a bucket is a temporary administrative
+// ceiling and must never permanently destroy exp the character already earned.
+uint8 Client::GetServerExpLevelCap() const
+{
+	int cap_level = RuleI(Character, MaxExpLevel);
+
+	if (cap_level <= 1) {
+		cap_level = RuleI(Character, MaxLevel);
+	}
+
+	return static_cast<uint8>(std::clamp(cap_level, 1, 127));
+}
+
+uint64 Client::GetServerHardExpCap() const
+{
+	const uint64 next_level = GetEXPForLevel(static_cast<uint16>(GetServerExpLevelCap()) + 1);
+
+	return next_level > 0 ? next_level - 1 : 0;
+}
+
 // Stock SetEXP applies CharMaxLevel after KeepLevelOverMax. Shared so rule-off
 // login cannot leave a non-GM over their per-character bucket.
 uint64 Client::ApplyClientMaxLevelCap(uint64 candidate_exp) const
@@ -1953,7 +1974,7 @@ void Client::LoadClassExp()
 		return;
 	}
 
-	const uint64 hard_cap = GetHardExpCap();
+	const uint64 hard_cap = GetServerHardExpCap();
 
 	for (auto &row : m_class_exp) {
 		if (row.second > hard_cap) {
