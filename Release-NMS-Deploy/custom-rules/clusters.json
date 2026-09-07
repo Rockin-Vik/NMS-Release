@@ -10,6 +10,7 @@
         "HeroCatchupEnabled",
         "NewClassStartLevel",
         "UseDynamicAATimers",
+        "AAIgnoreExpansionGate",
         "BypassMulticlassStackConflict",
         "ServerAuthKey"
       ]
@@ -176,6 +177,7 @@
       "ServerAuthStats",
       "MulticlassingEnabled",
       "UseDynamicAATimers",
+      "AAIgnoreExpansionGate",
       "BypassMulticlassStackConflict"
     ],
     [
