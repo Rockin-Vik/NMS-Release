@@ -210,20 +210,37 @@ void HeroTab_OnStatsUpdated()
 	}
 
 	// OP_ServerAuthStats is not only the bulk push - the server also sends 2-entry HP,
-	// mana and endurance updates, several times a second in combat. Rebuilding the tab
-	// on each one meant a DeleteAll plus 16 AddString plus a full STML re-parse per tick,
-	// window closed or not, and DeleteAll also yanked the scroll position back. Only the
-	// class mask and the level are on display, so redraw when one of them actually moves.
+	// mana and endurance updates, several times a second in combat. Rebuilding the tab on
+	// each one meant a DeleteAll plus 16 AddString plus a full STML re-parse per tick,
+	// window closed or not, and DeleteAll also yanked the scroll position back.
+	//
+	// Nothing on this tab can change while it is not on screen, so the hidden case costs two
+	// int compares. While it IS on screen the selection is also watched, because RenderInfo
+	// now reads the highlighted row and a keyboard selection raises no XWM_LCLICK for
+	// HeroTab_HandleClick to catch.
 	static uint32_t s_lastMask  = 0xFFFFFFFFu;
 	static int      s_lastLevel = -1;
+	static int      s_lastSel   = -1;
+	static bool     s_dirty     = true;
 
 	const uint32_t mask  = NMS_GetClassesBitmask();
 	const int      level = EffectiveLevel();
-	if (mask == s_lastMask && level == s_lastLevel) {
+	if (mask != s_lastMask || level != s_lastLevel) {
+		s_lastMask  = mask;
+		s_lastLevel = level;
+		s_dirty     = true;
+	}
+
+	if (!((CXWnd *)pInventoryWnd)->IsReallyVisible()) {
 		return;
 	}
-	s_lastMask  = mask;
-	s_lastLevel = level;
+
+	const int selected = SelectedClass();
+	if (!s_dirty && selected == s_lastSel) {
+		return;
+	}
+	s_lastSel = selected;
+	s_dirty   = false;
 
 	RenderList(mask);
 	RenderInfo(mask);
