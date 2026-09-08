@@ -266,6 +266,11 @@ int16 EQ::InventoryProfile::PushCursorFront(const ItemInstance &inst) {
 	return invslot::slotCursor;
 }
 
+EQ::ItemInstance* EQ::InventoryProfile::PopCursorBack()
+{
+	return m_cursor.pop_back();
+}
+
 EQ::ItemInstance* EQ::InventoryProfile::GetCursorItem() {
 	return m_cursor.peek_front();
 }

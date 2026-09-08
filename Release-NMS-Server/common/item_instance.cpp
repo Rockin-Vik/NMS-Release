@@ -22,6 +22,7 @@
 //#include "global_define.h"
 //#include "item_instance.h"
 //#include "races.h"
+#include "nms_vault_item.h"
 #include "rulesys.h"
 #include "shareddb.h"
 #include "strings.h"
@@ -1019,6 +1020,29 @@ bool EQ::ItemInstance::IsSlotAllowed(int16 slot_id) const {
 	else { return false; }
 }
 
+bool EQ::ItemInstance::IsCharacterBound(bool recurse) const
+{
+	if (!m_item) {
+		return false;
+	}
+
+	if (m_attuned || NmsVaultIsArmoryItem(m_item->ID)) {
+		return true;
+	}
+
+	if (!recurse) {
+		return false;
+	}
+
+	for (auto iter : m_contents) {
+		if (iter.second && iter.second->IsCharacterBound(true)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 bool EQ::ItemInstance::IsDroppable(bool recurse) const
 {
 	if (!m_item) {
@@ -1026,8 +1050,24 @@ bool EQ::ItemInstance::IsDroppable(bool recurse) const
 	}
 	/*if (m_ornamentidfile) // not implemented
 		return false;*/
-	if (m_attuned) {
+
+	// Attuned gear, Armarium, and any bag/aug that holds them stay on the
+	// character. Inspect contents before the FV parent early-return: an
+	// ordinary FV-exempt bag must not make a bound child look droppable.
+	if (IsCharacterBound(false)) {
 		return false;
+	}
+
+	if (recurse) {
+		for (auto iter : m_contents) {
+			if (!iter.second) {
+				continue;
+			}
+
+			if (!iter.second->IsDroppable(true)) {
+				return false;
+			}
+		}
 	}
 
 	if (RuleI(World, FVNoDropFlag) == FVNoDropFlagRule::Enabled && m_item->FVNoDrop == 0) {
@@ -1036,18 +1076,6 @@ bool EQ::ItemInstance::IsDroppable(bool recurse) const
 
 	if (m_item->NoDrop == 0) {
 		return false;
-	}
-
-	if (recurse) {
-		for (auto iter: m_contents) {
-			if (!iter.second) {
-				continue;
-			}
-
-			if (!iter.second->IsDroppable(recurse)) {
-				return false;
-			}
-		}
 	}
 
 	return true;

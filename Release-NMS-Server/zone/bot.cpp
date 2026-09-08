@@ -4370,6 +4370,15 @@ void Bot::PerformTradeWithClient(int16 begin_slot_id, int16 end_slot_id, Client*
 			return;
 		}
 
+		// ^inventorygive uses the cursor no-drop path. Unattuned no-drop may
+		// go to the owner's bot; attuned gear, Armarium, and bags holding
+		// either stay on the character.
+		if (trade_instance->IsCharacterBound(true)) {
+			client->Message(Chat::White, "You may not give a bound item.");
+			client->ResetTrade();
+			return;
+		}
+
 		if (RuleI(Bots, StackSizeMin) != -1) {
 			if (
 				trade_instance->IsStackable() &&

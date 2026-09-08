@@ -23,8 +23,9 @@ Companion reverse-engineering (not in this repo): `NMSLoot_Spec.md`, `Dimensiona
 | D11 | **Clicky pages (vault 7–8, slots 61–80) auto-load on zone-in and login.** Bags in those slots have their click effects applied until death or zone. | Vault spec §2 help text and §6.7. |
 | D12 | **Send offers on NPC corpse create, zone-wide for the killer's group/raid.** Keep/Sell/Tribute/Destroy/Pass do not require standing on the corpse. Native loot range and raid loot type are unchanged for the stock window. | Pending used to fill only after `OP_LootRequest`. A group or raid member anywhere in the same zone/instance must see the kill. |
 | D13 | **Each entitled client gets an independent loot-table roll.** `/nmsloot` does not copy the corpse list. Two people can receive the same item. The offer row is the item; corpse decay does not revoke it. Native corpse loot stays the spawn roll (D4). | Shared Pending meant first-Keep-wins. Personal loot is the requested pipe. |
+| D14 | **Armarium (`9011013`) is the player-facing vault opener.** Auto-summoned if missing. Right-click opens the vault. Identity is `id >= 9011013` and `id % 1000000 = 11013` (not stock `11013`). Bound even under Firiona Vie. Not an inventory copy of clicky-page items. Do not call the item Dimensional Vault. | Spec `2026-09-07-armarium.md`. Economy: `2026-09-07-fv-attune-loop.md`. |
 
-## 0b. Six features this pass builds
+## 0b. Features this pass builds
 
 | # | Feature | Server work |
 | --- | --- | --- |
@@ -34,6 +35,7 @@ Companion reverse-engineering (not in this repo): `NMSLoot_Spec.md`, `Dimensiona
 | F4 | Proc Locker (slots 81–83) | Combat proc (and slot-82 shield stats) from locker items |
 | F5 | Clicky bag autoload (slots 61–80) | Apply click effects on zone-in / login |
 | F6 | Vault Bank / Merchant buttons | `#vault_bank` / `#vault_merchant` without a nearby NPC |
+| F7 | Armarium inventory clicky | Grant `9011013` if missing (cursor queue + corpses count); click opens vault page 1 |
 
 No one-active-looter gate (D3). TRIUNE chrome unchanged (D2). `/ptmap` and `/browser` stay out.
 
@@ -170,6 +172,7 @@ This repo today: no `command_vault`, no `character_vault` table, no `VAULTDATA` 
 - Proc Locker: weapon in slot 81, equipped weapon without that proc → hits use the locker proc; remove locker item → worn proc returns.
 - Clicky page: bag in 61–70, zone → click effects present; death or zone-out without the bag → they do not persist incorrectly.
 - `#vault_bank` / `#vault_merchant` open those windows with no nearby NPC.
+- Rule on, no Armarium in inventory/bank/vault/cursor-queue/corpse: item `9011013` is granted on zone-in. Right-click opens the vault. Deposit into vault is refused. Boots of Quickness (`11013`) do not count as Armarium.
 
 ## 8. Implementation map (this tree)
 
@@ -181,5 +184,6 @@ This repo today: no `command_vault`, no `character_vault` table, no `VAULTDATA` 
 | F4 Proc Locker | Cached locker IDs + `TryWeaponProc` + slot-82 bonuses (no shield+shield stack) |
 | F5 Clicky autoload | `NmsVaultApplyClickies` on `CompleteConnect`; fade on clicky-slot withdraw |
 | F6 Bank / Merchant | Separate bank vs merchant flags; `#vault_bank` / `#vault_merchant`; merchant depop on `SendMerchantEnd` |
+| F7 Armarium | Item `9011013`; identity `id >= 9011013 && id % 1000000 == 11013`; grant on zone-in; click → `NmsVaultHandlePage`; refuse vault store |
 
-Rules default **off**: `Custom:DimensionalVault`, `Custom:NmsLootOffers`. After merge onto current main: v35 creates `character_nms_vault`; v36 creates `character_nms_loot_offers`; v37 adds `corpse_serial`; v38 widens `corpse_serial` to `BIGINT UNSIGNED`; v39 adds `instance_id` and a Pass tombstone (`passed`); v40 adds `passed_from` for the client pass-from name. Stock corpse loot is unchanged. Do not enable either rule in production until a later QA pass.
+`Custom:DimensionalVault` compiled default is **on** (custom **v45** sets live `rule_values`). `Custom:NmsLootOffers` stays off. After merge onto current main: v35 creates `character_nms_vault`; v36 creates `character_nms_loot_offers`; v37 adds `corpse_serial`; v38 widens `corpse_serial` to `BIGINT UNSIGNED`; v39 adds `instance_id` and a Pass tombstone (`passed`); v40 adds `passed_from` for the client pass-from name; v41 adds vault instance-state columns; v42 adds learned-spell tables; v43 adds the Armarium item; v44 sets `World:FVNoDropFlag = 1`; v45 turns the vault/Armarium rule on. Stock corpse loot is unchanged while `NmsLootOffers` is off.

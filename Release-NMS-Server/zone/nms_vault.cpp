@@ -6,6 +6,8 @@
 #include "../common/rulesys.h"
 #include "../common/strings.h"
 #include "../common/eq_packet_structs.h"
+#include "../common/emu_constants.h"
+#include "../common/eq_constants.h"
 #include "../common/item_instance.h"
 #include "../common/item_data.h"
 #include "../common/spdat.h"
@@ -339,28 +341,10 @@ namespace {
 			return true;
 		}
 
-		// The push queued a copy in memory even though it did not persist, and the caller is
-		// about to restore the vault row - so that copy has to go, or the player could move
-		// it into a real slot and end up holding the item twice.
-		//
-		// It can only be taken back out when it was the ONLY thing on the cursor:
-		// PushCursor appends to the BACK of the queue while DeleteItemInInventory(slotCursor)
-		// pops the FRONT (inventory_profile.cpp:163, :465). With anything else queued, the
-		// removal would destroy a different item the player was already carrying, which is
-		// worse than the duplicate it is trying to prevent.
-		//
-		// So when the cursor was not empty the copy is left in place, and that case is NOT
-		// fully safe: nothing was persisted, so it disappears on the next zone or relog -
-		// but if the player drags it into a real inventory slot first, SaveInventory writes
-		// it and they end up with both it and the restored vault row. Reaching that needs a
-		// database write failure at exactly this moment, so it is rare rather than
-		// impossible; the LogError below is what makes it findable if it happens.
-		if (before == 0) {
-			c->DeleteItemInInventory(EQ::invslot::slotCursor, 0, true);
-		}
+		c->RollbackFailedItemPut(EQ::invslot::slotCursor, true);
 		LogError(
 			"NmsVault: cursor delivery for character {} did not persist (cursor held {} item(s) "
-			"beforehand); the item stays in the vault",
+			"beforehand); the appended clone was rolled back and the item stays in the vault",
 			c->CharacterID(),
 			before
 		);
@@ -676,6 +660,115 @@ namespace {
 		c->SetNmsVaultMerchantId(0);
 		c->SetNmsVaultMerchant(false);
 	}
+
+	enum class ArmoryPresence {
+		Absent,
+		Present,
+		Unknown
+	};
+
+	bool InstanceIsArmory(const EQ::ItemInstance *inst)
+	{
+		if (!inst) {
+			return false;
+		}
+		if (NmsVaultIsArmoryItem(inst->GetID())) {
+			return true;
+		}
+		if (!inst->IsClassBag() || !inst->GetItem()) {
+			return false;
+		}
+		for (uint8 bag_slot = EQ::invbag::SLOT_BEGIN; bag_slot < inst->GetItem()->BagSlots; ++bag_slot) {
+			if (InstanceIsArmory(inst->GetItem(bag_slot))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool CharacterHasArmory(Client *c)
+	{
+		if (!c) {
+			return false;
+		}
+		for (const int16 &slot_id : c->GetInventorySlots()) {
+			if (InstanceIsArmory(c->GetInv().GetItem(slot_id))) {
+				return true;
+			}
+		}
+		// GetItem(slotCursor) is only the visible head; a buried queue copy still owns the key.
+		for (auto it = c->GetInv().cursor_cbegin(); it != c->GetInv().cursor_cend(); ++it) {
+			if (InstanceIsArmory(*it)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	std::string ArmoryItemSql()
+	{
+		return fmt::format(
+			"item_id >= {} AND (item_id % 1000000) = {}",
+			NMS_VAULT_ARMORY_ITEM_ID,
+			NMS_VAULT_ARMORY_ITEM_ID % 1000000u
+		);
+	}
+
+	ArmoryPresence QueryArmoryPresence(const std::string &sql, bool invalidate_vault_ready)
+	{
+		auto results = database.QueryDatabase(sql);
+		if (!results.Success()) {
+			if (invalidate_vault_ready) {
+				tables_checked = false;
+				tables_ready = false;
+			}
+			return ArmoryPresence::Unknown;
+		}
+		return results.RowCount() > 0 ? ArmoryPresence::Present : ArmoryPresence::Absent;
+	}
+
+	ArmoryPresence VaultHasArmory(uint32 character_id)
+	{
+		return QueryArmoryPresence(
+			fmt::format(
+				"SELECT 1 FROM character_nms_vault WHERE character_id = {} AND {} LIMIT 1",
+				character_id,
+				ArmoryItemSql()
+			),
+			true
+		);
+	}
+
+	ArmoryPresence CorpseHasArmory(uint32 character_id)
+	{
+		return QueryArmoryPresence(
+			fmt::format(
+				"SELECT 1 FROM character_corpse_items i "
+				"INNER JOIN character_corpses c ON c.id = i.corpse_id "
+				"WHERE c.charid = {} AND {} LIMIT 1",
+				character_id,
+				ArmoryItemSql()
+			),
+			false
+		);
+	}
+
+	bool SlotFitsArmoryGrant(int16 slot)
+	{
+		return (slot >= EQ::invslot::GENERAL_BEGIN && slot <= EQ::invslot::GENERAL_END)
+			|| (slot >= EQ::invbag::GENERAL_BAGS_BEGIN && slot <= EQ::invbag::GENERAL_BAGS_END);
+	}
+
+	bool RefuseArmoryDeposit(Client *c, const EQ::ItemInstance *inst)
+	{
+		if (!inst || !InstanceIsArmory(inst)) {
+			return false;
+		}
+		if (c) {
+			c->Message(Chat::Red, "[NMS] The Armarium cannot be stored here.");
+		}
+		return true;
+	}
 }
 
 void NmsVaultRefreshCache(Client *c)
@@ -961,7 +1054,11 @@ void NmsVaultHandleDeposit(Client *c, int slot)
 		return;
 	}
 
-	if (!PeekCursor(c)) {
+	auto *cursor = PeekCursor(c);
+	if (!cursor) {
+		return;
+	}
+	if (RefuseArmoryDeposit(c, cursor)) {
 		return;
 	}
 
@@ -1114,6 +1211,9 @@ void NmsVaultHandleDepositBagItem(Client *c, int slot, int bag_slot)
 
 	auto *inst = PeekCursor(c);
 	if (!inst) {
+		return;
+	}
+	if (RefuseArmoryDeposit(c, inst)) {
 		return;
 	}
 	if (inst->IsClassBag()) {
@@ -1331,6 +1431,9 @@ int NmsVaultTryDepositInstance(Client *c, EQ::ItemInstance *inst)
 	if (!c || !inst || !NmsVaultEnabled() || !EnsureTables()) {
 		return 0;
 	}
+	if (RefuseArmoryDeposit(c, inst)) {
+		return 0;
+	}
 
 	std::vector<NmsVaultItem> items;
 	if (!NmsVaultLoad(c->CharacterID(), items)) {
@@ -1412,6 +1515,74 @@ void NmsVaultOnZoneIn(Client *c)
 	}
 
 	NmsVaultApplyClickies(c);
+	NmsVaultGrantArmory(c);
+}
+
+void NmsVaultGrantArmory(Client *c)
+{
+	if (!c || !NmsVaultEnabled() || !EnsureTables()) {
+		return;
+	}
+	const auto *item = database.GetItem(NMS_VAULT_ARMORY_ITEM_ID);
+	if (!item) {
+		return;
+	}
+	if (CharacterHasArmory(c)) {
+		return;
+	}
+	if (VaultHasArmory(c->CharacterID()) != ArmoryPresence::Absent) {
+		return;
+	}
+	if (CorpseHasArmory(c->CharacterID()) != ArmoryPresence::Absent) {
+		return;
+	}
+
+	int16 slot = c->GetInv().FindFirstFreeSlotThatFitsItem(item);
+	if (!SlotFitsArmoryGrant(slot)) {
+		// SaveCursor persists at most CURSOR_BAG_COUNT entries and still returns true
+		// when it drops the rest. Do not append a 201st in-memory ghost.
+		if (c->GetInv().CursorSize() >= EQ::invbag::CURSOR_BAG_COUNT) {
+			return;
+		}
+		slot = EQ::invslot::slotCursor;
+	}
+
+	auto *inst = database.CreateItem(item, item->MaxCharges);
+	if (!inst) {
+		return;
+	}
+	const bool saved = c->PutItemInInventory(slot, *inst, true);
+	safe_delete(inst);
+	if (!saved) {
+		if (slot != EQ::invslot::slotCursor) {
+			c->DeleteItemInInventory(slot, 0, true);
+		}
+		return;
+	}
+	if (slot == EQ::invslot::slotCursor && !CursorPersisted(c)) {
+		return;
+	}
+	if (!CharacterHasArmory(c)) {
+		return;
+	}
+
+	c->Message(
+		Chat::Yellow,
+		"[NMS] An Armarium has been bound to you. Right-click it to open storage, bank, merchant, Proc Locker, and clickies."
+	);
+}
+
+bool NmsVaultTryOpenFromItem(Client *c, uint32 item_id)
+{
+	if (!c || !NmsVaultIsArmoryItem(item_id)) {
+		return false;
+	}
+	if (!NmsVaultEnabled() || !EnsureTables()) {
+		c->Message(Chat::Red, "[NMS] The Armarium is sealed.");
+		return true;
+	}
+	NmsVaultHandlePage(c, 1);
+	return true;
 }
 
 void NmsVaultOnClientDestroy(Client *c)

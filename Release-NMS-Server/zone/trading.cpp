@@ -196,6 +196,60 @@ Mob *Trade::GetOwner() const
 }
 
 
+bool Client::ReturnTradeItemToInventory(int16 trade_slot, const EQ::ItemInstance *inst)
+{
+	if (!inst) {
+		return true;
+	}
+
+	int16 free_slot = m_inv.FindFreeSlotForTradeItem(inst);
+	if (free_slot == EQ::invslot::slotCursor && m_inv.CursorSize() >= EQ::invbag::CURSOR_BAG_COUNT) {
+		free_slot = INVALID_INDEX;
+	}
+
+	if (free_slot != INVALID_INDEX) {
+		if (PutItemInInventory(free_slot, *inst)) {
+			SendItemPacket(free_slot, inst, ItemPacketTrade);
+			DeleteItemInInventory(trade_slot);
+			return true;
+		}
+
+		RollbackFailedItemPut(free_slot, false);
+		Message(Chat::Red, "Could not return a trade item; it remains in the trade window.");
+		return false;
+	}
+
+	if (inst->IsDroppable(true) && DropInst(inst)) {
+		DeleteItemInInventory(trade_slot);
+		return true;
+	}
+
+	Message(Chat::Red, "Your inventory is full and the item cannot be dropped. It remains in the trade window.");
+	return false;
+}
+
+bool Client::PushTradeReturnOrRetain(int16 trade_slot, const EQ::ItemInstance *inst)
+{
+	if (!inst) {
+		DeleteItemInInventory(trade_slot);
+		return true;
+	}
+
+	if (m_inv.CursorSize() >= EQ::invbag::CURSOR_BAG_COUNT) {
+		Message(Chat::Red, "Your cursor is full. The item remains in the trade window.");
+		return false;
+	}
+
+	if (!PushItemOnCursor(*inst, true)) {
+		RollbackFailedItemPut(EQ::invslot::slotCursor, true);
+		Message(Chat::Red, "Could not return a trade item; it remains in the trade window.");
+		return false;
+	}
+
+	DeleteItemInInventory(trade_slot);
+	return true;
+}
+
 void Client::ResetTrade() {
 	AddMoneyToPP(trade->cp, trade->sp, trade->gp, trade->pp, true);
 
@@ -204,17 +258,7 @@ void Client::ResetTrade() {
 		const EQ::ItemInstance* inst = m_inv[trade_slot];
 
 		if (inst && inst->IsClassBag()) {
-			int16 free_slot = m_inv.FindFreeSlotForTradeItem(inst);
-
-			if (free_slot != INVALID_INDEX) {
-				PutItemInInventory(free_slot, *inst);
-				SendItemPacket(free_slot, inst, ItemPacketTrade);
-			}
-			else {
-				DropInst(inst);
-			}
-
-			DeleteItemInInventory(trade_slot);
+			ReturnTradeItemToInventory(trade_slot, inst);
 		}
 	}
 
@@ -304,17 +348,7 @@ void Client::ResetTrade() {
 		const EQ::ItemInstance* inst = m_inv[trade_slot];
 
 		if (inst) {
-			int16 free_slot = m_inv.FindFreeSlotForTradeItem(inst);
-
-			if (free_slot != INVALID_INDEX) {
-				PutItemInInventory(free_slot, *inst);
-				SendItemPacket(free_slot, inst, ItemPacketTrade);
-			}
-			else {
-				DropInst(inst);
-			}
-
-			DeleteItemInInventory(trade_slot);
+			ReturnTradeItemToInventory(trade_slot, inst);
 		}
 	}
 }
@@ -339,35 +373,36 @@ void Client::FinishTrade(Mob* tradingWith, bool finalizer, void* event_entry, st
 				if (inst && inst->IsClassBag()) {
 					LogTrading("Giving container [{}] ([{}]) in slot [{}] to [{}]", inst->GetItem()->Name, inst->GetItem()->ID, trade_slot, other->GetName());
 
-					// TODO: need to check bag items/augments for no drop..everything for attuned...
-					if (
-						inst->GetItem()->NoDrop != 0 ||
-						CanTradeFVNoDropItem() ||
-						other == this
-						) {
+					bool moved = false;
+					if (other == this || CanGiveItemInTrade(inst)) {
 						int16 free_slot = other->GetInv().FindFreeSlotForTradeItem(inst);
+						if (free_slot == EQ::invslot::slotCursor && other->GetInv().CursorSize() >= EQ::invbag::CURSOR_BAG_COUNT) {
+							free_slot = INVALID_INDEX;
+						}
 
 						if (free_slot != INVALID_INDEX) {
 							if (other->PutItemInInventory(free_slot, *inst, true)) {
 								inst->TransferOwnership(database, other->CharacterID());
 								LogTrading("Container [{}] ([{}]) successfully transferred, deleting from trade slot", inst->GetItem()->Name, inst->GetItem()->ID);
+								DeleteItemInInventory(trade_slot);
+								moved = true;
 							}
 							else {
+								other->RollbackFailedItemPut(free_slot, true);
 								LogTrading("Transfer of container [{}] ([{}]) to [{}] failed, returning to giver", inst->GetItem()->Name, inst->GetItem()->ID, other->GetName());
-								PushItemOnCursor(*inst, true);
 							}
 						}
 						else {
 							LogTrading("[{}]'s inventory is full, returning container [{}] ([{}]) to giver", other->GetName(), inst->GetItem()->Name, inst->GetItem()->ID);
-							PushItemOnCursor(*inst, true);
 						}
 					}
 					else {
 						LogTrading("Container [{}] ([{}]) is NoDrop, returning to giver", inst->GetItem()->Name, inst->GetItem()->ID);
-						PushItemOnCursor(*inst, true);
 					}
 
-					DeleteItemInInventory(trade_slot);
+					if (!moved) {
+						PushTradeReturnOrRetain(trade_slot, inst);
+					}
 				}
 			}
 
@@ -478,31 +513,36 @@ void Client::FinishTrade(Mob* tradingWith, bool finalizer, void* event_entry, st
 				if (inst) {
 					LogTrading("Giving item [{}] ([{}]) in slot [{}] to [{}]", inst->GetItem()->Name, inst->GetItem()->ID, trade_slot, other->GetName());
 
-					// TODO: need to check bag items/augments for no drop..everything for attuned...
-					if (inst->GetItem()->NoDrop != 0 || CanTradeFVNoDropItem() || other == this) {
+					bool moved = false;
+					if (other == this || CanGiveItemInTrade(inst)) {
 						int16 free_slot = other->GetInv().FindFreeSlotForTradeItem(inst);
+						if (free_slot == EQ::invslot::slotCursor && other->GetInv().CursorSize() >= EQ::invbag::CURSOR_BAG_COUNT) {
+							free_slot = INVALID_INDEX;
+						}
 
 						if (free_slot != INVALID_INDEX) {
 							if (other->PutItemInInventory(free_slot, *inst, true)) {
 								inst->TransferOwnership(database, other->CharacterID());
 								LogTrading("Item [{}] ([{}]) successfully transferred, deleting from trade slot", inst->GetItem()->Name, inst->GetItem()->ID);
+								DeleteItemInInventory(trade_slot);
+								moved = true;
 							}
 							else {
+								other->RollbackFailedItemPut(free_slot, true);
 								LogTrading("Transfer of Item [{}] ([{}]) to [{}] failed, returning to giver", inst->GetItem()->Name, inst->GetItem()->ID, other->GetName());
-								PushItemOnCursor(*inst, true);
 							}
 						}
 						else {
 							LogTrading("[{}]'s inventory is full, returning item [{}] ([{}]) to giver", other->GetName(), inst->GetItem()->Name, inst->GetItem()->ID);
-							PushItemOnCursor(*inst, true);
 						}
 					}
 					else {
 						LogTrading("Item [{}] ([{}]) is NoDrop, returning to giver", inst->GetItem()->Name, inst->GetItem()->ID);
-						PushItemOnCursor(*inst, true);
 					}
 
-					DeleteItemInInventory(trade_slot);
+					if (!moved) {
+						PushTradeReturnOrRetain(trade_slot, inst);
+					}
 				}
 			}
 
@@ -740,6 +780,21 @@ bool Client::CheckTradeLoreConflict(Client* other)
 	return has_lore_item;
 }
 
+bool Client::CanGiveItemInTrade(const EQ::ItemInstance *inst)
+{
+	if (!inst) {
+		return false;
+	}
+
+	// Bound items never leave. AdminOnly GMs may still give unattuned no-drop
+	// that IsDroppable rejects because FV is 2 rather than 1.
+	if (inst->IsCharacterBound(true)) {
+		return false;
+	}
+
+	return inst->IsDroppable(true) || CanTradeFVNoDropItem();
+}
+
 bool Client::CheckTradeNonDroppable()
 {
 	for (int16 index = EQ::invslot::TRADE_BEGIN; index <= EQ::invslot::TRADE_END; ++index){
@@ -747,7 +802,7 @@ bool Client::CheckTradeNonDroppable()
 		if (!inst)
 			continue;
 
-		if (!inst->IsDroppable())
+		if (!CanGiveItemInTrade(inst))
 			return true;
 	}
 

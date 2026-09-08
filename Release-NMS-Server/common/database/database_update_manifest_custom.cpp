@@ -1310,6 +1310,212 @@ WHERE disc_id IS NOT NULL AND disc_id <> 0;
 
 	ManifestEntry{
 		.version = 43,
+		.description = "2026_09_07_armarium_item",
+		.check = "SELECT id FROM items WHERE id = 9011013 AND Name = 'Armarium' AND itemclass = 0 AND itemtype = 33 AND bagslots = 0 AND bagtype = 0 AND book = 0 AND slots = 0 AND nodrop = 0 AND norent = 1 AND notransfer = 1 AND fvnodrop = 1 AND attuneable = 0 AND loregroup = -1 AND clicktype = 1 AND clickeffect = 1 AND clickname = 'Open Armarium' AND casttime = 0 AND maxcharges = -1",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+-- Armarium: lore / no-drop inventory key that opens vault storage (VAULTDATA).
+-- Cloned from Satchel of the Hero (9011010) through a temporary table so every live
+-- items column is copied. Then converted to a non-container key: right-click must
+-- fire the click, not open a bag. clickeffect 1 is a client dummy; the zone
+-- intercepts the click and never casts that spell. nodrop = 0 is NO DROP in this
+-- schema. norent = 1 is rentable: item_data.h treats NoRent == 0 as deleted after
+-- a long camp. Empty CREATE TEMPORARY TABLE ... AS SELECT is not an SQL error, so
+-- if both 9011010 and 9011013 are missing this INSERT of NULL into a NOT NULL
+-- column fails and custom_version is not stamped. UPDATE after INSERT IGNORE
+-- repairs a previously inserted row whose fields drifted (including norent = 0).
+DROP TEMPORARY TABLE IF EXISTS nms_armarium_need_source;
+CREATE TEMPORARY TABLE nms_armarium_need_source (must_exist TINYINT NOT NULL);
+INSERT INTO nms_armarium_need_source (must_exist)
+VALUES (CASE
+    WHEN EXISTS (SELECT 1 FROM items WHERE id = 9011010) THEN 1
+    WHEN EXISTS (SELECT 1 FROM items WHERE id = 9011013) THEN 1
+    ELSE NULL
+END);
+DROP TEMPORARY TABLE IF EXISTS nms_armarium_need_source;
+DROP TEMPORARY TABLE IF EXISTS nms_armarium_tmp;
+CREATE TEMPORARY TABLE nms_armarium_tmp AS SELECT * FROM items WHERE id = 9011010;
+UPDATE nms_armarium_tmp
+SET id = 9011013,
+    Name = 'Armarium',
+    lore = 'A bound key to your Armarium. Right-click to open storage, bank, merchant, Proc Locker, and clickies.',
+    comment = 'NMS Armarium vault opener (custom v43)',
+    itemclass = 0,
+    itemtype = 33,
+    bagsize = 0,
+    bagslots = 0,
+    bagtype = 0,
+    bagwr = 0,
+    book = 0,
+    nodrop = 0,
+    norent = 1,
+    notransfer = 1,
+    fvnodrop = 1,
+    loregroup = -1,
+    magic = 1,
+    slots = 0,
+    weight = 1,
+    size = 1,
+    price = 0,
+    sellrate = 0,
+    stackable = 0,
+    potionbelt = 0,
+    attuneable = 0,
+    clicktype = 1,
+    clickeffect = 1,
+    clicklevel = 0,
+    clicklevel2 = 0,
+    clickname = 'Open Armarium',
+    casttime = 0,
+    casttime_ = 0,
+    recastdelay = 0,
+    recasttype = 0,
+    maxcharges = -1;
+INSERT IGNORE INTO items SELECT * FROM nms_armarium_tmp;
+UPDATE items
+SET Name = 'Armarium',
+    lore = 'A bound key to your Armarium. Right-click to open storage, bank, merchant, Proc Locker, and clickies.',
+    comment = 'NMS Armarium vault opener (custom v43)',
+    itemclass = 0,
+    itemtype = 33,
+    bagsize = 0,
+    bagslots = 0,
+    bagtype = 0,
+    bagwr = 0,
+    book = 0,
+    nodrop = 0,
+    norent = 1,
+    notransfer = 1,
+    fvnodrop = 1,
+    loregroup = -1,
+    magic = 1,
+    slots = 0,
+    weight = 1,
+    size = 1,
+    price = 0,
+    sellrate = 0,
+    stackable = 0,
+    potionbelt = 0,
+    attuneable = 0,
+    clicktype = 1,
+    clickeffect = 1,
+    clicklevel = 0,
+    clicklevel2 = 0,
+    clickname = 'Open Armarium',
+    casttime = 0,
+    casttime_ = 0,
+    recastdelay = 0,
+    recasttype = 0,
+    maxcharges = -1
+WHERE id = 9011013;
+DROP TEMPORARY TABLE IF EXISTS nms_armarium_tmp;
+)",
+		.content_schema_update = true,
+	},
+
+	ManifestEntry{
+		.version = 44,
+		.description = "2026_09_07_firiona_vie_attune_loop",
+		.check = R"(
+SELECT rv.rule_value
+FROM rule_values rv
+WHERE rv.rule_name = 'World:FVNoDropFlag'
+  AND rv.rule_value IN ('1', '2')
+  AND rv.ruleset_id = COALESCE(
+    (
+      SELECT rs.ruleset_id
+      FROM rule_sets rs
+      INNER JOIN variables v ON v.varname = 'RuleSet' AND v.value = rs.`name`
+      LIMIT 1
+    ),
+    (
+      SELECT rs.ruleset_id
+      FROM rule_sets rs
+      WHERE rs.`name` = 'default'
+      LIMIT 1
+    ),
+    1
+  )
+)",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+-- Firiona Vie + attune: unattuned no-drop is tradable; wearable no-drop is
+-- promoted to attuneable at shared_memory load when this rule is not 0.
+-- The dump ships World:FVNoDropFlag = 0. Compiled default is now 1; this
+-- UPDATE is what live rule_values rows actually read. Only rewrite 0 so a
+-- deliberate AdminOnly (2) is not stomped. INSERT covers a ruleset that
+-- never received the stock row. Check is the active ruleset (RuleSet
+-- variable, else 'default', else id 1) already at 1 or 2.
+UPDATE rule_values
+SET rule_value = '1',
+    notes = 'Firiona Vie: unattuned no-drop is tradable; wearable no-drop attunes on equip. 1=all players, 2=GM only (unattuned no-drop), 0=stock no-drop. Attuned and Armarium stay bound. Re-run shared_memory after changing.'
+WHERE rule_name = 'World:FVNoDropFlag'
+  AND rule_value = '0';
+INSERT INTO rule_values (ruleset_id, rule_name, rule_value, notes)
+SELECT 1,
+       'World:FVNoDropFlag',
+       '1',
+       'Firiona Vie: unattuned no-drop is tradable; wearable no-drop attunes on equip. 1=all players, 2=GM only (unattuned no-drop), 0=stock no-drop. Attuned and Armarium stay bound. Re-run shared_memory after changing.'
+FROM DUAL
+WHERE NOT EXISTS (
+    SELECT 1 FROM rule_values WHERE rule_name = 'World:FVNoDropFlag'
+);
+)",
+		.content_schema_update = false,
+	},
+
+	ManifestEntry{
+		.version = 45,
+		.description = "2026_09_08_armarium_rule_on",
+		.check = R"(
+SELECT rv.rule_value
+FROM rule_values rv
+WHERE rv.rule_name = 'Custom:DimensionalVault'
+  AND rv.rule_value IN ('true', '1')
+  AND rv.ruleset_id = COALESCE(
+    (
+      SELECT rs.ruleset_id
+      FROM rule_sets rs
+      INNER JOIN variables v ON v.varname = 'RuleSet' AND v.value = rs.`name`
+      LIMIT 1
+    ),
+    (
+      SELECT rs.ruleset_id
+      FROM rule_sets rs
+      WHERE rs.`name` = 'default'
+      LIMIT 1
+    ),
+    1
+  )
+)",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+-- Armarium / vault storage. Compiled default is now true. Live servers read
+-- rule_values, so a leftover false/0 row would keep the vault sealed. Only
+-- rewrite false/0; a deliberate true is not stomped. INSERT if no row exists.
+UPDATE rule_values
+SET rule_value = 'true',
+    notes = 'Enable Dimensional Vault (#vault_*) storage, Proc Locker, clicky autoload, vault bank/merchant, and the Armarium inventory clicky. Off = no vault commands, grant, or combat hooks.'
+WHERE rule_name = 'Custom:DimensionalVault'
+  AND rule_value IN ('false', '0');
+INSERT INTO rule_values (ruleset_id, rule_name, rule_value, notes)
+SELECT 1,
+       'Custom:DimensionalVault',
+       'true',
+       'Enable Dimensional Vault (#vault_*) storage, Proc Locker, clicky autoload, vault bank/merchant, and the Armarium inventory clicky. Off = no vault commands, grant, or combat hooks.'
+FROM DUAL
+WHERE NOT EXISTS (
+    SELECT 1 FROM rule_values WHERE rule_name = 'Custom:DimensionalVault'
+);
+)",
+		.content_schema_update = false,
+	},
+
+	ManifestEntry{
+		.version = 46,
 		.description = "2026_09_08_rename_echo_of_memory_to_emperors_favor.sql",
 		// Guard on the player-visible alt-currency label rather than on a rule row: this entry is
 		// flagged as a content-schema update, so the check runs on the SAME connection the SQL

@@ -35,8 +35,10 @@
 #include "features.h"
 #include "ipc_mutex.h"
 #include "inventory_profile.h"
+#include "eq_constants.h"
 #include "memory_mapped_file.h"
 #include "mysql.h"
+#include "nms_vault_item.h"
 #include "rulesys.h"
 #include "shareddb.h"
 #include "strings.h"
@@ -1524,6 +1526,21 @@ void SharedDatabase::LoadItems(void *data, uint32 size, int32 items, uint32 max_
 			if (item.Slots > 0 && item.Classes > 0 && item.ID < 2000000 && !item.Stackable) {
 				item.Slots |= 2097152;
 			}
+		}
+
+		// Firiona Vie loop: loot is tradable until worn. The dump still has ~63k
+		// wearable no-drop rows that are not attuneable. Promote those at load so
+		// equip binds. Summoned / no-rent / Armarium stay out. DisableAttuneable
+		// and FV-off keep stock flags. Re-run shared_memory after changing FV.
+		if (!disable_attuneable
+			&& RuleI(World, FVNoDropFlag) != FVNoDropFlagRule::Disabled
+			&& item.NoDrop == 0
+			&& !item.Attuneable
+			&& !item.SummonedFlag
+			&& item.NoRent != 0
+			&& !NmsVaultIsArmoryItem(item.ID)
+			&& (item.Slots != 0 || item.ItemType == EQ::item::ItemTypeAugmentation)) {
+			item.Attuneable = true;
 		}
 
 		try {
