@@ -219,6 +219,13 @@ newest at the bottom.
   already listed both calling it. A file's exclusion must be justified by the grep that matches what is
   actually changing (the symbol), never by a different grep that happened to miss it; `perl -c` cannot
   catch it because `plugin::` resolves at runtime, so the handin fails silently in front of players.
+- I added manifest entry v43 and left `CUSTOM_BINARY_DATABASE_VERSION` at 42, so
+  `DatabaseUpdate` (`database_update.cpp:158`, `version_low + 1 .. version_high`) would never have
+  considered it — the exact miss commit `2560bbf1` already recorded. A custom migration is four
+  artifacts, not one: the manifest entry, the `common/version.h` bump, the CODEBASE.md declared/live
+  counts, and a probe in `utils/sql/nms_content_health_check.sql`. Ship all four or the entry is dead
+  code, and a rule *rename* fails worst of all — the binary reads the new key, the DB keeps the old
+  one, and every affected rule silently falls back to its compiled default with nothing logged.
 
 ## Project skills
 

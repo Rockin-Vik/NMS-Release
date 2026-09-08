@@ -1,6 +1,6 @@
 -- ============================================================================
 -- NMS content health check - verifies the DATA every custom-manifest version
--- (v18 through v42) is supposed to deliver, without trusting db_version.
+-- (v18 through v43) is supposed to deliver, without trusting db_version.
 --
 -- Why this exists: we have now twice found servers whose custom_version was
 -- stamped PAST an entry whose content never landed (a half-apply healed by a
@@ -17,7 +17,7 @@
 -- READ-ONLY: SELECT/SHOW only. Safe on any server, any number of times.
 -- ============================================================================
 
-SELECT 'db_version (expect 42 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
+SELECT 'db_version (expect 43 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
 
 -- ---- v18 / v23: Beastlord spell merchant + scrolls -------------------------
 SELECT 'v23 bl merchant npc (expect 1)' AS what, COUNT(*) AS value FROM npc_types WHERE id = 1120001300;
@@ -141,3 +141,29 @@ SELECT 'v42 learned carry-over tables (expect 3)' AS what, COUNT(*) AS value
   WHERE table_schema = DATABASE()
     AND table_name IN ('character_learned_spells', 'character_learned_discs',
                        'character_learned_mem');
+
+
+-- ---- v43: Echo of Memory -> Emperor's Favor rename ----------------------------
+-- The rename spans the item, the alt-currency window label and the five rule keys. The
+-- dangerous half is rule_values: the binary looks up Custom:EmperorsFavor*, so if the rows
+-- kept their old names every one of those rules silently falls back to its compiled default
+-- and any operator tuning is ignored with nothing logged.
+SELECT 'v43 item 46779 renamed (expect 1)' AS what, COUNT(*) AS value
+  FROM items WHERE id = 46779 AND Name = 'Emperor''s Favor';
+
+SELECT 'v43 alt-currency label rows (expect 2)' AS what, COUNT(*) AS value
+  FROM db_str WHERE id = 6 AND type IN (17, 18) AND value = 'Emperor''s Favor';
+
+SELECT 'v43 renamed rule keys (expect 5)' AS what, COUNT(*) AS value
+  FROM rule_values WHERE rule_name IN (
+    'Custom:EmperorsFavorDropChance',
+    'Custom:EmperorsFavorUnlockCharacterSets',
+    'Custom:EmperorsFavorUnlockCharacterSetCost',
+    'Custom:EmperorsFavorUnlockCharacterSlots',
+    'Custom:EmperorsFavorUnlockCharacterSlotCost');
+
+SELECT 'v43 stale EoM rule keys (expect 0)' AS what, COUNT(*) AS value
+  FROM rule_values WHERE rule_name LIKE 'Custom:EoM%' OR rule_name = 'Custom:EventEOMDropChance';
+
+SELECT 'v43 stale EoM award buckets (expect 0)' AS what, COUNT(*) AS value
+  FROM data_buckets WHERE `key` = 'EoM-Award';

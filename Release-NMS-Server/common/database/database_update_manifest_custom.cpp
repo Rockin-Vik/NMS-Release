@@ -1447,9 +1447,11 @@ UPDATE `data_buckets` SET `key` = 'EmperorsFavor-Award' WHERE `key` = 'EoM-Award
 --    helpers. Stale rows are not merely untidy: an old link in a player's chat window would
 --    still say "Echo of Memory", and the GM "#find item echo of memory" link returns nothing
 --    once the item is renamed. Keyed on `phrase`, not on a literal id, because ids are
---    assigned per server. `phrase` is varchar(64) with a NON-unique index, so a plain UPDATE
---    cannot collide. "#find item emperor" rather than the full name: #find does a substring
---    match, and this avoids depending on how the apostrophe survives the say path.
+--    assigned per server. `phrase` is varchar(64) with a NON-unique index -- read from the
+--    `CREATE TABLE saylink` in release-peq.sql: PRIMARY KEY (`id`), KEY `phrase_index`
+--    (`phrase`) USING BTREE -- so a plain UPDATE cannot raise a duplicate-key error.
+--    "#find item emperor" rather than the full name: #find does a substring match, and this
+--    avoids depending on how the apostrophe survives the say path.
 UPDATE `saylink` SET `phrase` = 'Emperor''s Favor' WHERE `phrase` = 'Echo of Memory';
 UPDATE `saylink` SET `phrase` = '#find item emperor' WHERE `phrase` = '#find item echo of memory';
 

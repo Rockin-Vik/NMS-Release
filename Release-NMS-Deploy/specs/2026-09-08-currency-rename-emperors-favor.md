@@ -297,6 +297,12 @@ SELECT character_id, `key`, value FROM data_buckets WHERE `key` = 'EoM-Award';
    `.condition` like the existing entries, and using `INSERT ... ON DUPLICATE KEY` for rule rows, not
    a bare `UPDATE` — the manifest's own v18 comment records that a bare `UPDATE` silently no-ops when
    the row is absent.
+   **A migration is four artifacts, not one.** Bump `CUSTOM_BINARY_DATABASE_VERSION` in
+   `common/version.h` to 43, update the declared/live counts in CODEBASE.md, and add a v43 probe to
+   `utils/sql/nms_content_health_check.sql`. Without the version bump `DatabaseUpdate` never even
+   considers the entry (`database_update.cpp:158` loops `version_low + 1 .. version_high`), and the
+   rule renames then fail in the worst way: the binary reads the new keys, the DB keeps the old ones,
+   and every affected rule falls back to its compiled default with nothing logged.
 2. **Server C++** — rules (including the 150 default), `attack.cpp` rename + removal of both gates,
    `world/client.*`, `award.cpp`, `command.cpp`, `mob.h` comment. Every new symbol checked against
    its declaration. **This checkout cannot compile it.**
