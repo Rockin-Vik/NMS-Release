@@ -15143,6 +15143,9 @@ bool Client::RemoveExtraClass(int class_id) {
     SendAlternateAdvancementTable();
     SendAlternateAdvancementPoints();
     SendAlternateAdvancementStats();
+    // The clear above also forgets every running cooldown on the client; the server still holds
+    // them (nothing above wiped p_timers), so replay them onto the rebuilt window.
+    SendAlternateAdvancementTimers();
 
     // Save changes
 	// The pool is a cache of the lowest held row. Once the class is gone the pool follows the

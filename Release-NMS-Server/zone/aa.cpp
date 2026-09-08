@@ -1064,10 +1064,13 @@ void Client::SendAlternateAdvancementRank(int aa_id, int level) {
 	aai->total_prereqs = rank->prereqs.size();
 
 	if (RuleB(Custom, UseDynamicAATimers)) {
-		if (aai->classes == 0xFFFFFFF && rank->base_ability->first->recast_time > 0 && !rank->base_ability->grant_only) {
-			// An owned timed ability gets its own index (allocated here on first send); an unowned
-			// one is sent as 0. It cannot be activated, so dimming with the index-0 group costs
-			// nothing, and it keeps the per-character pool for abilities that can fire.
+		if (rank->base_ability->first && rank->base_ability->first->recast_time > 0) {
+			// An owned timed ability gets its own index (allocated here on first send), grant-only
+			// ones included: their stock ids sit inside 1..98 and would share a cooldown with
+			// whichever purchased ability drew that number. An unowned one is sent as 0. It cannot
+			// be activated, so dimming with the index-0 group costs nothing, and it keeps the
+			// per-character pool for abilities that can fire. A rank reaches this point only for a
+			// class the character holds, whichever way the classes field was filled above.
 			aai->spell_type = 0;
 			if (GetAA(rank->base_ability->first_rank_id) > 0) {
 				aai->spell_type = AcquireDynamicAATimer(rank->base_ability->id);
@@ -1330,13 +1333,19 @@ int Client::AcquireDynamicAATimer(int aa_id) {
 			LogDebug("Recycled AA timer index [{}] from AA [{}] for character [{}]", id, holder[id], CharacterID());
 		}
 
-		auto e = CharacterDynamicAaTimersRepository::NewEntity();
-		e.character_id = CharacterID();
-		e.aa_id        = aa_id;
-		e.timer_id     = id;
-
-		auto r = CharacterDynamicAaTimersRepository::InsertOne(database, e);
-		if (r.character_id != 0) {
+		// The table has no auto-increment column, so the repository's InsertOne (which reports
+		// success through LastInsertedID) cannot tell a landed row from a failed one: run the
+		// insert directly and trust the query result.
+		auto results = database.QueryDatabase(
+			fmt::format(
+				"{} VALUES ({}, {}, {})",
+				CharacterDynamicAaTimersRepository::BaseInsert(),
+				CharacterID(),
+				aa_id,
+				id
+			)
+		);
+		if (results.Success()) {
 			m_aa_timers_cache[aa_id] = id;
 			LogDebugDetail("AA [{}] -> timer index [{}] for character [{}]", aa_id, id, CharacterID());
 			return id;
@@ -1344,7 +1353,7 @@ int Client::AcquireDynamicAATimer(int aa_id) {
 
 		// A row this cache does not know about holds the index (UNIQUE character_id, timer_id).
 		// Try the next one rather than hand back 0.
-		LogError("AA timer index [{}] insert failed for character [{}] AA [{}]; trying the next index", id, CharacterID(), aa_id);
+		LogError("AA timer index [{}] insert failed for character [{}] AA [{}] ([{}]); trying the next index", id, CharacterID(), aa_id, results.ErrorMessage());
 	}
 
 	if (!m_aa_timer_pool_exhausted_logged) {
@@ -1355,12 +1364,15 @@ int Client::AcquireDynamicAATimer(int aa_id) {
 		);
 	}
 
+	// Remembered for this zone session only (no row): the client was sent 0 for it, and a
+	// lookup must tell "sits on the overflow index" from "never had an index".
+	m_aa_timers_cache[aa_id] = 0;
 	return 0;
 }
 
-int Client::ResolveAATimerIndex(AA::Rank *rank) {
+int Client::ResolveAATimerIndex(AA::Rank *rank, bool allocate) {
 	if (!rank || !rank->base_ability) {
-		return 0;
+		return kNoAATimerIndex;
 	}
 
 	if (!RuleB(Custom, UseDynamicAATimers)) {
@@ -1368,21 +1380,33 @@ int Client::ResolveAATimerIndex(AA::Rank *rank) {
 	}
 
 	auto ability = rank->base_ability;
-	const bool timed = ability->first && ability->first->recast_time > 0 && !ability->grant_only;
+	const bool timed = ability->first && ability->first->recast_time > 0;
 	if (!timed) {
-		return 0; // nothing to key: an untimed ability never holds a cooldown
+		return kNoAATimerIndex; // nothing to key: an untimed ability never holds a cooldown
 	}
 
-	int id = GetDynamicAATimer(ability->id);
-	if (id == 0 && GetAAByAAID(ability->id) > 0) {
-		// Owned but never sent with an id (a path that reached activation without a table send).
-		// Allocate, and re-send the table: the client only takes a new index for a rank it
-		// already holds through a full table re-send.
-		id = AcquireDynamicAATimer(ability->id);
-		if (id > 0) {
-			SendClearPlayerAA();
-			SendAlternateAdvancementTable();
-		}
+	if (!m_aa_timers_loaded) {
+		GetDynamicAATimers();
+	}
+
+	auto cached = m_aa_timers_cache.find(ability->id);
+	if (cached != m_aa_timers_cache.end()) {
+		return cached->second; // 1..98, or 0 for an ability sitting on the overflow index
+	}
+
+	if (!allocate || GetAAByAAID(ability->id) == 0) {
+		// A reset path (interrupt, stop-cast, death) or an unowned ability: there is no cooldown
+		// keyed on a dynamic index for it, so there is nothing to clear and nothing to start.
+		return kNoAATimerIndex;
+	}
+
+	// Owned but never sent with an id (a path that reached activation without a table send).
+	// Allocate, and re-send the table: the client only takes a new index for a rank it
+	// already holds through a full table re-send.
+	int id = AcquireDynamicAATimer(ability->id);
+	if (id > 0) {
+		SendClearPlayerAA();
+		SendAlternateAdvancementTable();
 	}
 
 	return id;
@@ -1409,24 +1433,32 @@ void Client::RepairDynamicAATimers() {
 	}
 
 	// Rows above 98 came from the old unbounded allocator; the client discards those indexes, so
-	// the ability gets a fresh one at the table send that follows.
+	// the ability gets a fresh one at the table send that follows. Rows for abilities the
+	// character no longer holds (the old allocator gave every visible rank one; a dropped class's
+	// ability keeps its row only while its cooldown runs) go too, so the table sends 0 for them
+	// and their indexes are free. aa_ranks and p_timers are both loaded by now.
 	int repaired = 0;
+	int released = 0;
 	for (auto it = m_aa_timers_cache.begin(); it != m_aa_timers_cache.end();) {
-		if (it->second < 1 || it->second > kDynamicAATimerMax) {
+		const bool out_of_range = it->second < 1 || it->second > kDynamicAATimerMax;
+		if (out_of_range || !IsDynamicAATimerHeld(it->first, it->second)) {
 			p_timers.Clear(&database, pTimerAAStart + it->second);
 			CharacterDynamicAaTimersRepository::DeleteWhere(
 				database,
 				fmt::format("character_id = {} AND aa_id = {}", CharacterID(), it->first)
 			);
 			it = m_aa_timers_cache.erase(it);
-			++repaired;
+			out_of_range ? ++repaired : ++released;
 		} else {
 			++it;
 		}
 	}
 
-	if (repaired) {
-		LogInfo("Repaired [{}] dynamic AA timer rows above index {} for character [{}]", repaired, kDynamicAATimerMax, CharacterID());
+	if (repaired || released) {
+		LogInfo(
+			"Dynamic AA timers for character [{}]: dropped [{}] rows above index {} and [{}] rows for abilities no longer held",
+			CharacterID(), repaired, kDynamicAATimerMax, released
+		);
 	}
 }
 
@@ -1445,7 +1477,9 @@ void Client::ResetAlternateAdvancementTimer(int ability) {
 	// index is whatever that ability is keyed on (dynamic or stock).
 	AA::Rank *rank = zone->GetAlternateAdvancementRank(casting_spell_aa_id ? casting_spell_aa_id : ability);
 	if (rank) {
-		ResetAlternateAdvancementTimerByIndex(ResolveAATimerIndex(rank));
+		// Lookup only: a reset never allocates or rebuilds the AA window. A miss (kNoAATimerIndex)
+		// means no cooldown is keyed for it, and ByIndex refuses a negative index.
+		ResetAlternateAdvancementTimerByIndex(ResolveAATimerIndex(rank, false));
 	}
 }
 
@@ -1498,8 +1532,13 @@ void Client::ResetOnDeathAlternateAdvancement() {
 			continue;
 
 		// since they're dying, we just need to clear the DB
-		if (ability->reset_on_death)
-			p_timers.Clear(&database, ResolveAATimerIndex(rank) + pTimerAAStart);
+		if (ability->reset_on_death) {
+			// Lookup only: dying never allocates an index or rebuilds the AA window.
+			const int index = ResolveAATimerIndex(rank, false);
+			if (index >= 0) {
+				p_timers.Clear(&database, index + pTimerAAStart);
+			}
+		}
 	}
 }
 
@@ -1591,24 +1630,29 @@ void Client::FinishAlternateAdvancementPurchase(AA::Rank *rank, bool ignore_cost
 		SetAA(rank_id, rank->current_value, rank->base_ability->charges);
 	} else {
 		SetAA(rank_id, rank->current_value, 0);
+	}
 
-		// Dynamic timers: the first rank of a timed ability makes it owned, so it needs its own
-		// index now, and the client only takes a new index for a rank it already holds through a
-		// full table re-send. Later ranks change nothing: cooldowns are keyed by the index.
-		if (
-			RuleB(Custom, UseDynamicAATimers) &&
-			rank->current_value == 1 &&
-			rank->base_ability->first &&
-			rank->base_ability->first->recast_time > 0 &&
-			!rank->base_ability->grant_only &&
-			GetDynamicAATimer(rank->base_ability->id) == 0
-		) {
-			if (AcquireDynamicAATimer(rank->base_ability->id) > 0 && send_message_and_save) {
-				SendClearPlayerAA();
-				SendAlternateAdvancementTable();
-			}
+	// Dynamic timers: the first rank of a timed ability makes it owned, so it needs its own index
+	// now, and the client only takes a new index for a rank it already holds through a full table
+	// re-send. The re-send is unconditional: the table packet for the unowned rank carried 0, so
+	// even an index remembered from before (a re-added class whose cooldown was still running when
+	// the class was dropped) is news to the client. Later ranks change nothing: cooldowns are keyed
+	// by the index. Expendable (charges) abilities take the same path; the batch grant at login
+	// sends its own clear and table after the loop.
+	if (
+		RuleB(Custom, UseDynamicAATimers) &&
+		rank->current_value == 1 &&
+		rank->base_ability->first &&
+		rank->base_ability->first->recast_time > 0
+	) {
+		AcquireDynamicAATimer(rank->base_ability->id);
+		if (send_message_and_save) {
+			SendClearPlayerAA();
+			SendAlternateAdvancementTable();
 		}
+	}
 
+	if (!rank->base_ability->charges) {
 		//if not max then send next aa
 		if (rank->next && send_message_and_save) {
 			SendAlternateAdvancementRank(rank->base_ability->id, rank->next->current_value);
@@ -1753,12 +1797,15 @@ void Client::ActivateAlternateAdvancementAbility(int rank_id, int target_id) {
 	if (ability->charges > 0 && charges < 1)
 		return;
 
-	// An untimed ability never holds a cooldown and is keyed on index 0 under dynamic timers; it
-	// must not be refused by an overflow ability's cooldown sitting on that index.
+	// An untimed ability never holds a cooldown; under dynamic timers it has no index at all
+	// (spell_type is kNoAATimerIndex), so it is neither refused by nor restarts the index-0 group.
+	// With the rule off spell_type is the stock value and the stock timer calls below run as before.
 	const bool timed_ability = ability->first && ability->first->recast_time > 0;
+	const bool has_timer_index = spell_type >= 0;
+	const uint32 timer_type = has_timer_index ? static_cast<uint32>(spell_type + pTimerAAStart) : 0xFFFFFFFF;
 
 	//check cooldown
-	if (timed_ability && !p_timers.Expired(&database, spell_type + pTimerAAStart, false)) {
+	if (timed_ability && has_timer_index && !p_timers.Expired(&database, spell_type + pTimerAAStart, false)) {
 		LogDebug("Got Timer Expired: [{}]", spell_type + pTimerAAStart);
 		uint32 aaremain = p_timers.GetRemainingTime(spell_type + pTimerAAStart);
 		uint32 aaremain_hr = aaremain / (60 * 60);
@@ -1835,17 +1882,19 @@ void Client::ActivateAlternateAdvancementAbility(int rank_id, int target_id) {
 				return;
 			}
 			if (!SpellFinished(rank->spell, entity_list.GetMob(target_id), EQ::spells::CastingSlot::AltAbility, spells[rank->spell].mana, -1, spells[rank->spell].resist_difficulty, false, -1,
-				spell_type + pTimerAAStart, timer_duration, false, rank->id)) {
+				timer_type, timer_duration, false, rank->id)) {
 					LogDebug("Casting Failed?");
 				return;
 			}
 
 			TryTriggerOnCastFocusEffect(focusTriggerOnCast, rank->spell, true);
 
-			p_timers.Start(spell_type + pTimerAAStart, timer_duration);
+			if (has_timer_index) {
+				p_timers.Start(spell_type + pTimerAAStart, timer_duration);
+			}
 		}
 		else {
-			if (!CastSpell(rank->spell, target_id, EQ::spells::CastingSlot::AltAbility, effective_cast_time, 0, 0, -1, spell_type + pTimerAAStart, timer_duration, nullptr, rank->id)) {
+			if (!CastSpell(rank->spell, target_id, EQ::spells::CastingSlot::AltAbility, effective_cast_time, 0, 0, -1, timer_type, timer_duration, nullptr, rank->id)) {
 				return;
 			}
 		}

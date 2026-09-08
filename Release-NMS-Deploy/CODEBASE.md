@@ -124,10 +124,11 @@ It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `Player
 
 Supporting rules: `Custom:ServerAuthStats` (server-authoritative stats, requires the DLL),
 `Custom:UseDynamicAATimers` (+ `character_dynamic_aa_timers` table: every timed AA a character
-owns gets its own client shared-timer index, 1..98 per character, allocated at the table send
-and on a first-rank purchase; unowned ranks go out as 0; the RoF2 client discards indexes above
-99, so rows above 98 are repaired at zone entry; a dropped class's index frees itself once its
-cooldown ends; spec `specs/2026-09-08-aa-reuse-timer-ids.md`), `Custom:AAIgnoreExpansionGate` (skip `aa_ranks.expansion` vs the
+owns, grant-only ones included, gets its own client shared-timer index, 1..98 per character,
+allocated at the table send and on a first-rank purchase; unowned ranks go out as 0; the RoF2
+client discards indexes above 99, so rows above 98 and rows for abilities no longer held are
+dropped at zone entry; a dropped class's index frees itself once its cooldown ends; spec
+`specs/2026-09-08-aa-reuse-timer-ids.md`), `Custom:AAIgnoreExpansionGate` (skip `aa_ranks.expansion` vs the
 character/World bitmask so later-era AAs remain trainable; off = stock refuse),
 `Custom:BypassMulticlassStackConflict`, `Custom:MaxMulticlasses`,
 `Custom:HeroCatchupEnabled`, `Custom:NewClassStartLevel`, and the `character_aa_disabled` table.

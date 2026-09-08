@@ -1190,18 +1190,21 @@ public:
 	inline PTimerList &GetPTimers() { return(p_timers); }
 
 	// Dynamic AA reuse timers (Custom:UseDynamicAATimers). Every timed ability a character OWNS
-	// gets its own client shared-timer index, 1..98 per character, handed out at the table send,
-	// so two classes' unrelated abilities never lock each other out. The RoF2 client keeps a
-	// 100-entry table indexed 0..99 and silently discards anything above (spike, 2026-09-08):
-	// 0 means "no id" (unowned ranks, and overflow past 98); 99 is Situational Awareness on the
-	// wire. Spec: Release-NMS-Deploy/specs/2026-09-08-aa-reuse-timer-ids.md.
+	// (grant-only ones included: their stock ids sit inside 1..98) gets its own client
+	// shared-timer index, 1..98 per character, handed out at the table send, so two abilities
+	// never lock each other out. The RoF2 client keeps a 100-entry table indexed 0..99 and
+	// silently discards anything above (spike, 2026-09-08): 0 means "no id" (unowned ranks, and
+	// overflow past 98); 99 is Situational Awareness on the wire. An untimed ability has no
+	// index at all (kNoAATimerIndex) so it never touches the index-0 group.
+	// Spec: Release-NMS-Deploy/specs/2026-09-08-aa-reuse-timer-ids.md.
 	static const int kDynamicAATimerMax = 98;
+	static const int kNoAATimerIndex = -1;
 	void GetDynamicAATimers();                        // load the mapping rows into the cache
-	int  GetDynamicAATimer(int aa_id);                // lookup only; 0 when the ability has no id
+	int  GetDynamicAATimer(int aa_id);                // lookup only; 0 when the ability has no id (or sits on the overflow index)
 	int  AcquireDynamicAATimer(int aa_id);            // stored id, else the lowest free id (released ones are recycled); 0 on exhaustion
-	int  ResolveAATimerIndex(AA::Rank *rank);         // the index every timer composer uses: dynamic with the rule on, stock spell_type otherwise
+	int  ResolveAATimerIndex(AA::Rank *rank, bool allocate = true); // the index every timer composer uses: dynamic with the rule on (an owned miss allocates unless allocate is false), stock spell_type otherwise; kNoAATimerIndex when untimed under the rule, or on a lookup-only miss
 	bool IsDynamicAATimerHeld(int aa_id, int timer_id); // owned by a held class, or its cooldown still running
-	void RepairDynamicAATimers();                     // zone entry, after p_timers.Load: drop rows above 98; rule off: drop every row
+	void RepairDynamicAATimers();                     // zone entry, after p_timers.Load: drop rows above 98 and rows no longer held; rule off: drop every row
 	void ClearDynamicAATimers();                      // every mapping row and every AA cooldown (the reset paths)
 	void ResetAlternateAdvancementTimerByIndex(int index);
 
