@@ -1870,19 +1870,25 @@ function Invoke-StageMigrate {
 
         if ($settled) {
             Write-Ok "Migrations complete at $targetVersion/$targetCustom."
-            # v44 can flip World:FVNoDropFlag after the SHM pass above. Promotion
-            # is a load-time mutation; rebuild items now so the next zone start
-            # does not serve tradable no-drop that will not attune on equip.
-            Write-Step 'Re-running shared_memory after migrations (FV attune promotion)...'
-            $sm2 = Start-Process -FilePath (Join-Path $script:ServerRoot 'shared_memory.exe') `
-                -WorkingDirectory $script:ServerRoot -NoNewWindow -Wait -PassThru
-            if ($sm2.ExitCode -ne 0) {
-                Write-Warn "shared_memory exited with code $($sm2.ExitCode) after migrate. Check logs\."
-            } else { Write-Ok 'shared_memory rebuilt after migrations.' }
         } else {
             Write-Warn "Did not reach $targetVersion/$targetCustom within the window."
             Write-Warn 'The health stage will show what actually landed. Check logs\ too.'
         }
+
+        # Unconditional, NOT gated on $settled. Two load-time mutations depend on this
+        # pass: v44 flips World:FVNoDropFlag (wearable no-drop is promoted to attuneable
+        # at shared_memory load) and v43 adds the Armarium, which zone only grants when
+        # GetItem(9011013) resolves from shared memory. A PARTIAL migrate is exactly the
+        # case that needs the rebuild most - if v43/v44 landed and the window then
+        # expired, skipping this serves tradable no-drop that never attunes and an
+        # Armarium that silently never grants. Rebuilding when nothing changed is a
+        # cheap no-op; skipping it after a partial apply is a silent content bug.
+        Write-Step 'Re-running shared_memory after migrations (FV attune promotion, Armarium)...'
+        $sm2 = Start-Process -FilePath (Join-Path $script:ServerRoot 'shared_memory.exe') `
+            -WorkingDirectory $script:ServerRoot -NoNewWindow -Wait -PassThru
+        if ($sm2.ExitCode -ne 0) {
+            Write-Warn "shared_memory exited with code $($sm2.ExitCode) after migrate. Check logs\."
+        } else { Write-Ok 'shared_memory rebuilt after migrations.' }
 
     } finally { Pop-Location }
 

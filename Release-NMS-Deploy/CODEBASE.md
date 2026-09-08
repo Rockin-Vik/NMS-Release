@@ -256,6 +256,43 @@ stays bound (`fvnodrop = 1` plus identity in `IsDroppable`; vault refuse is
 recursive). Re-run `shared_memory` after changing the FV rule.
 `Items:DisableAttuneable` or FV `0` keeps stock item flags.
 
+Spec: `Release-NMS-Deploy/specs/2026-09-07-fv-attune-loop.md` (decisions D1-D6).
+
+### 3.9 Armarium — the inventory clicky that opens vault storage
+
+One lore / no-drop inventory key, item **`9011013`**, named **Armarium**. Right-click opens the
+vault window on page 1. Gated by `Custom:DimensionalVault` (compiled default **true**; custom
+**v45** sets the live `rule_values` row).
+
+- **Auto-summoned** on zone-in / login when the character does not already hold one. "Already
+  holds one" means inventory, bags, the **entire** cursor queue, bank, shared bank, the vault
+  itself, **and the character's corpses** — vault storage is invisible to `CountItem`, so a
+  location missed here is a duplicate key.
+- **Identity is two-part:** `id >= 9011013 && id % 1000000 == 11013`
+  (`common/nms_vault_item.h`). Remainder alone would match stock `11013`, Boots of Quickness.
+- **Vault deposit is refused, recursively** — cursor deposit, a bag containing the key,
+  bag-in-vault, and `/nmsloot` Vault. Deposit-then-regrant would duplicate it.
+- **The click is intercepted server-side.** `clickeffect` is spell id `1`, a dummy that only
+  exists so the RoF2 client draws a clicky; the zone never casts it and `IsValidSpell` rejects
+  ids below 2. Opening storage is `NmsVaultHandlePage(c, 1)` → `VAULTDATA|` — the same wire as
+  `#vault_page 1`, so no client change was needed.
+- **Fail closed:** rule off, tables missing, item absent from `items` or shared memory, or an
+  ownership query that *fails* rather than returning no rows — none of those grant. A query
+  failure is not "not owned".
+- Bound even under Firiona Vie, and bound regardless of the vault rule.
+
+⚠️ The two-part identity test protects the Armarium's own checks, **not** the generic
+`% 1000000` normalization this fork uses elsewhere. NPC hand-ins (`zone/npc.cpp:5915`) match on
+the remainder, and the bound-item trade guard (`zone/inventory.cpp:2255`) only fires for
+player-to-player trades, so an NPC quest requiring Boots of Quickness (`11013`) would accept and
+consume an Armarium — which the next zone-in re-grants. No shipped quest requires `11013`
+(verified against `Release-NMS-Quests/` and the dump: only `11013` and `9011013` share that
+remainder), so this is latent, not live. Check before adding one:
+`SELECT id, Name FROM items WHERE id % 1000000 = 11013;`
+
+Spec: `Release-NMS-Deploy/specs/2026-09-07-armarium.md` (decisions D1-D9, and §4 as the
+acceptance checklist).
+
 ---
 
 ## 4. The migration system — read this before touching the DB
@@ -267,7 +304,7 @@ NMS runs a **second migration manifest in parallel with stock EQEmu's**:
 | Manifest | File | Version column | Current |
 | --- | --- | --- | --- |
 | Stock | `database_update_manifest.cpp` | `db_version.version` | 9325 |
-| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **46** |
+| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **47** |
 | Bots | `database_update_manifest_bots.cpp` | `db_version.bots_database_version` | |
 
 Both are `#include`d directly into `common/database/database_update.cpp` (lines 9–11) and run
@@ -288,7 +325,7 @@ ALTER TABLE db_version ADD COLUMN custom_version INT UNSIGNED NOT NULL DEFAULT 0
 
 ### 4.2 What is actually in the custom manifest
 
-46 entries declared (v1–v46), **43 live**. Numbering is a plain sequence independent of the 9325
+47 entries declared (v1–v47), **44 live**. Numbering is a plain sequence independent of the 9325
 stock number. Entries carry `content_schema_update` to target the content DB rather than the
 player DB.
 
@@ -315,6 +352,8 @@ player DB.
 | v43 | Armarium item `9011013` (inventory clicky that opens vault storage; `Custom:DimensionalVault`). Identity is `id >= 9011013` and `id % 1000000 = 11013` so stock `11013` is not the key. `norent = 1`, `fvnodrop = 1`, `attuneable = 0`. Missing clone source `9011010` (and missing dest) is an SQL error, not a silent stamp. | Live |
 | v44 | `World:FVNoDropFlag = 1` on the active player `rule_values` row (dump `0` only; does not stomp `2`). Firiona Vie + attune loop. Wearable no-drop is promoted at `shared_memory` load, not by rewriting the dump. | Live |
 | v45 | `Custom:DimensionalVault = true` on the active player `rule_values` row (does not stomp an existing true). Armarium grant and vault commands are on. | Live |
+| v46 | **Content half** of the Emperor's Favor rename: item `46779` name and `lore`, the `db_str` alt-currency label, the two themed merchant NPCs, the `spawngroup` key. Guards on the `db_str` label, so a fresh install from the regenerated dump skips it. | Live |
+| v47 | **Player half** of the same rename: the five `Custom:EmperorsFavor*` rule keys (drop chance to 150), the `EmperorsFavor-Award` bucket, the stale `saylink` rows. Separate entry so a split content/player deployment routes each half to the right connection. Guards on the renamed rule key. | Live |
 
 ### 4.3 ⚠️ The version number is a claim, not a fact
 
@@ -544,6 +583,9 @@ Quick reference. Each links to the section above.
 | 4c | `SummonItem()` rolls an upgrade tier; use `SummonFixedItem()` for an exact item | QUEST-API §0.1 |
 | 5 | Quest hand-ins must normalize item ids with `% 1000000` | 3.4 |
 | 6 | Item stat changes need `shared_memory` re-run | 3.4 |
+| 6b | Changing `World:FVNoDropFlag` needs a `shared_memory` re-run — the wearable no-drop promotion is a load-time mutation | 3.8 |
+| 6c | Armarium identity is `id >= 9011013` **and** `id % 1000000 == 11013`; remainder alone matches stock Boots of Quickness | 3.9 |
+| 6d | **Latent:** NPC hand-ins normalize with `% 1000000` (`npc.cpp:5915`), so the Armarium would satisfy a quest requiring Boots of Quickness (`11013`) and be consumed, then re-granted. No shipped quest requires `11013`. Do not write one. | 3.9 |
 | 7 | `db_version.custom_version` is a claim — audit with the health-check SQL | 4.3 |
 | 8 | Migrations create schema only; content comes from the dump | 4.4 |
 | 9 | Waypoint seed data exists **only** as a comment in `nms_waypoints.h` | 4.4 |

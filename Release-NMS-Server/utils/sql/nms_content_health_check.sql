@@ -1,6 +1,6 @@
 -- ============================================================================
 -- NMS content health check - verifies the DATA every custom-manifest version
--- (v18 through v46) is supposed to deliver, without trusting db_version.
+-- (v18 through v47) is supposed to deliver, without trusting db_version.
 --
 -- Why this exists: we have now twice found servers whose custom_version was
 -- stamped PAST an entry whose content never landed (a half-apply healed by a
@@ -22,7 +22,7 @@
 -- READ-ONLY: SELECT/SHOW only. Safe on any server, any number of times.
 -- ============================================================================
 
-SELECT 'db_version (expect 46 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
+SELECT 'db_version (expect 47 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
 
 -- ---- v18 / v23: Beastlord spell merchant + scrolls -------------------------
 SELECT 'v23 bl merchant npc (expect 1)' AS what, COUNT(*) AS value FROM npc_types WHERE id = 1120001300;
@@ -205,6 +205,20 @@ SELECT 'v44 World:FVNoDropFlag active (expect 1 or 2)' AS what, rv.rule_value AS
    )
  LIMIT 1;
 
+-- Absence probe: the value SELECT above returns NO ROW when the rule is missing on
+-- the active ruleset, which reads identically to 'this file was never run'. COUNT(*)
+-- always returns exactly one row, so 0 is unambiguous.
+SELECT 'v44 World:FVNoDropFlag row present (expect 1)' AS what, COUNT(*) AS value
+  FROM rule_values rv
+ WHERE rv.rule_name = 'World:FVNoDropFlag'
+   AND rv.ruleset_id = COALESCE(
+     (SELECT rs.ruleset_id FROM rule_sets rs
+       INNER JOIN variables v ON v.varname = 'RuleSet' AND v.value = rs.`name`
+       LIMIT 1),
+     (SELECT rs.ruleset_id FROM rule_sets rs WHERE rs.`name` = 'default' LIMIT 1),
+     1
+   );
+
 -- ---- v45: Armarium / vault rule on ----------------------------------------
 -- Player schema (rule_values). Expect true or 1 on the active ruleset.
 SELECT 'v45 Custom:DimensionalVault active (expect true or 1)' AS what, rv.rule_value AS value
@@ -219,8 +233,22 @@ SELECT 'v45 Custom:DimensionalVault active (expect true or 1)' AS what, rv.rule_
    )
  LIMIT 1;
 
+-- Absence probe: the value SELECT above returns NO ROW when the rule is missing on
+-- the active ruleset, which reads identically to 'this file was never run'. COUNT(*)
+-- always returns exactly one row, so 0 is unambiguous.
+SELECT 'v45 Custom:DimensionalVault row present (expect 1)' AS what, COUNT(*) AS value
+  FROM rule_values rv
+ WHERE rv.rule_name = 'Custom:DimensionalVault'
+   AND rv.ruleset_id = COALESCE(
+     (SELECT rs.ruleset_id FROM rule_sets rs
+       INNER JOIN variables v ON v.varname = 'RuleSet' AND v.value = rs.`name`
+       LIMIT 1),
+     (SELECT rs.ruleset_id FROM rule_sets rs WHERE rs.`name` = 'default' LIMIT 1),
+     1
+   );
 
--- ---- v46: Echo of Memory -> Emperor's Favor rename ----------------------------
+
+-- ---- v46 / v47: Echo of Memory -> Emperor's Favor rename ---------------------
 -- The rename spans the item, the alt-currency window label and the five rule keys. The
 -- dangerous half is rule_values: the binary looks up Custom:EmperorsFavor*, so if the rows
 -- kept their old names every one of those rules silently falls back to its compiled default

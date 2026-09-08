@@ -1516,27 +1516,22 @@ WHERE NOT EXISTS (
 
 	ManifestEntry{
 		.version = 46,
-		.description = "2026_09_08_rename_echo_of_memory_to_emperors_favor.sql",
-		// Guard on the player-visible alt-currency label rather than on a rule row: this entry is
-		// flagged as a content-schema update, so the check runs on the SAME connection the SQL
-		// below runs on (db_str is a content table, rule_values is not). "missing" -> run only
-		// while the label does not already say Emperor. An absent db_str row also reads as
-		// missing, which is right: the rest of the rename still has to happen.
+		.description = "2026_09_08_rename_echo_of_memory_to_emperors_favor_content",
+		// CONTENT half of the rename: items, db_str, npc_types, spawngroup. The player half
+		// (rule_values, data_buckets, saylink) is v47 with content_schema_update = false, so a
+		// split content/player deployment routes each half to the right connection. Guard on
+		// the alt-currency label, which lives on this same connection: "missing" runs only
+		// while it does not already say Emperor. An absent db_str row also reads as missing,
+		// which is right - the rename still has to happen.
 		.check = "SELECT `value` FROM `db_str` WHERE `id` = 6 AND `type` = 17",
 		.condition = "missing",
 		.match = "Emperor",
 		.sql = R"(
--- Rename the "Echo of Memory" currency to "Emperor's Favor", and set the drop chance to 150.
+-- Rename the "Echo of Memory" currency to "Emperor's Favor".
 -- Spec: Release-NMS-Deploy/specs/2026-09-08-currency-rename-emperors-favor.md
 --
 -- Apostrophes are escaped SQL-standard style by DOUBLING them (''), never with a backslash,
 -- so these statements are correct with or without NO_BACKSLASH_ESCAPES.
---
--- This entry touches content tables (items, db_str, npc_types, spawngroup) and rule_values /
--- data_buckets, which are not content tables. It is flagged content_schema_update = true,
--- exactly like version 19 above (npc_types + db_str + rule_values in one entry): this
--- deployment runs a single database for both schemas. If the schemas are ever split, this
--- entry has to be split with them.
 
 -- 1. The currency item. Alternate currency 6 maps to item 46779 (alternate_currency row).
 --    The player-visible description text lives in `items`.`lore` varchar(80) -- the items
@@ -1557,6 +1552,27 @@ UPDATE `npc_types` SET `name` = 'Imperial Exchanger' WHERE `id` = 1120001290;
 
 -- 4. Internal spawngroup key. No apostrophe on purpose -- this is a lookup key, not player copy.
 UPDATE `spawngroup` SET `name` = 'bazaar_Emperors Favor000_682659186' WHERE `id` = 5003654;
+)",
+		.content_schema_update = true,
+	},
+
+	ManifestEntry{
+		.version = 47,
+		.description = "2026_09_08_rename_echo_of_memory_to_emperors_favor_player",
+		// PLAYER half of the rename: rule_values, data_buckets and the saylink cache. None of
+		// those are content tables, so this entry is content_schema_update = false and both
+		// its check and its SQL run on the player connection - matching v44/v45, which write
+		// rule_values the same way. Guard on the renamed rule key rather than on db_str: db_str
+		// lives on the other connection and would be unreadable here on a split deployment.
+		.check = "SELECT `rule_name` FROM `rule_values` WHERE `rule_name` = 'Custom:EmperorsFavorDropChance'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+-- Rename the "Echo of Memory" currency to "Emperor's Favor".
+-- Spec: Release-NMS-Deploy/specs/2026-09-08-currency-rename-emperors-favor.md
+--
+-- Apostrophes are escaped SQL-standard style by DOUBLING them (''), never with a backslash,
+-- so these statements are correct with or without NO_BACKSLASH_ESCAPES.
 
 -- 5. The five rule renames.
 --
@@ -1664,7 +1680,7 @@ UPDATE `saylink` SET `phrase` = '#find item emperor' WHERE `phrase` = '#find ite
 -- Deliberately NOT touched: player_event_logs and player_event_merchant_sell. Those are
 -- historical telemetry and must keep the names the events were recorded under.
 )",
-		.content_schema_update = true,
+		.content_schema_update = false,
 	},
 
 	// Used for testing
