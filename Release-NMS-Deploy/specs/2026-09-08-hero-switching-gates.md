@@ -1,6 +1,6 @@
 # Switching gates: free, instant, out of combat only, no announcements
 
-Status: draft v2 for review, 2026-09-08. Third item under the hero class-switching decision (local ADR-0002, rules 6 and 7, and the owner's 2026-09-08 decision that first-of-a-kind announcements stop firing). Not built. Lands after the AA reuse timer spec and the skills + AAs persistence spec, so that nobody can switch freely into a class drop that still refunds and zeroes. v1 was verified by three independent readers against the tree; their confirmed findings are folded in.
+Status: draft v3 for review, 2026-09-08. Third item under the hero class-switching decision (local ADR-0002, rules 6 and 7, and the owner's 2026-09-08 decision that first-of-a-kind announcements stop firing). Not built. Lands after the AA reuse timer spec and the skills + AAs persistence spec, so that nobody can switch freely into a class drop that still refunds and zeroes. v1 was verified by three independent readers against the tree; v2 went through a twelve-agent adversarial review (GO-WITH-FIXES); every confirmed finding is folded in.
 
 ## 1. Problem
 
@@ -11,7 +11,7 @@ Switching a class today runs through four gates that rule 6 says should not exis
 | Removal fee | `NMS_multiclass_utils.pl:398` `RemoveClassCost` | 10 Echo of Memory | none |
 | Removal lockout | `NMS_multiclass_utils.pl:399` `RemoveClassLockoutDays`; expedition lockout `"Class Removal Lockout"` (`:417`, `:427`) | 7 days | none |
 | First removal free | per-character bucket `free_remove_class_used` (`:405`, `:407`; `Vision_of_Ayonae.pl:268`) | one per character | none |
-| Zone too high to add | `client.cpp:14930-14937` `AddClassResult::ZoneTooHigh` | refuses an add in any zone whose `min_level` exceeds `Custom:NewClassStartLevel` | none |
+| Zone too high to add | `client.cpp:14930-14937` `AddClassResult::ZoneTooHigh` | refuses an add when **all three** hold: `Custom:HeroCatchupEnabled` is on (compiled default `false`, `ruletypes.h:1199`; the live value is the one that matters), the add is not `join_at_watermark`, and the zone's `min_level` exceeds `Custom:NewClassStartLevel`. With catch-up off the block never fires today, so nothing about it can be observed on a stock boot | none |
 | Zone minimum level on entry | `zoning.cpp:1443` `CanEnterZone` | kick to bind on zone-in (`client_packet.cpp:1091`) or `ZoneNoExperience` on a zone line (`zoning.cpp:348`) when `GetLevel() < min_level` | bypassed for a hero holding more than one class |
 | In combat | `client.cpp:14926` `AddClassResult::InCombat` | aggro, feign, duel refuse an **add** only | the only gate; applies to add **and** remove |
 
@@ -26,11 +26,11 @@ One gap in the other direction: rule 6 makes out of combat *the* check on switch
 
 ## 2. Decision
 
-Removal and addition are free and immediate. The only refusal that reads game state is **in combat** (aggro count, feign death, duel), and it applies to **both** add and remove at every door. `Custom:MaxMulticlasses` stays as the structural cap. A hero holding more than one class enters and stays in any zone regardless of its minimum level. No world announcement fires on a class change. No new rule, no opcode change, no schema change.
+Removal and addition are free and immediate. The only refusal that reads the character's **situation** is **in combat** (aggro count, feign death, duel), and it applies to **both** add and remove at every door. Every refusal that remains, so the word "only" is not misread: rule off (`MulticlassingDisabled`, `client.cpp:14894`; `Custom:ServerAuthStats` off at the tab, `client_packet.cpp:17283`), `Character:UseOldClassExpPenalties` on (`OldClassPenaltyRuleOn`, `:14899`), class id out of range, already held / not held, at `Custom:MaxMulticlasses`, race not allowed, last class (`:15078`), in combat, and the row insert failing. All of those are structural or rule-driven; none is a cost, a lockout, a zone or a timer. A hero holding more than one class enters and stays in any zone regardless of its minimum level. No world announcement fires on a class change. No new rule, no opcode change, no schema change.
 
 ### D1. One `RemoveClass` in the plugin
 
-`plugin::RemoveClass` (`NMS_multiclass_utils.pl:379-395`) is the survivor: `RemoveExtraClass`, the yellow message, `BuffFadeAll`. `RemoveClassFree` (`:401-409`), `RemoveClassPaid` (`:411-429`), `RemoveClassCost` (`:398`) and `RemoveClassLockoutDays` (`:399`) are deleted with their header comment (`:397`). Every caller and what it becomes:
+`plugin::RemoveClass` (`NMS_multiclass_utils.pl:379-395`) is the survivor: `RemoveExtraClass`, the yellow message, and `BuffFadeAll` (`:389`) **only if the persistence spec kept it**; that spec's D10 default deletes the buff wipe, and this spec must not restore it by copying the sub as it stands today. `RemoveClassFree` (`:401-409`), `RemoveClassPaid` (`:411-429`), `RemoveClassCost` (`:398`) and `RemoveClassLockoutDays` (`:399`) are deleted with their header comment (`:397`). Every caller and what it becomes:
 
 | Caller | Today | Becomes |
 | --- | --- | --- |
@@ -49,7 +49,7 @@ The `HeroRequest` header comment (`:431-433`, "free first removal, then fee + lo
 
 ### D2. Out of combat applies to removal too, at every door
 
-Required by rule 6, not optional. One helper, `Client::CanRemoveExtraClass(int class_id)` returning a reason code from a new `RemoveClassResult` enum (`Ok`, `MulticlassingDisabled`, `InvalidClass`, `NotHeld`, `LastClass`, `InCombat`) with a matching `RemoveClassResultMessage`, mirroring the add side. `InCombat` uses the same test as `client.cpp:14926` (`GetAggroCount() > 0 || GetFeigned() || IsDueling()`). Red message: `You cannot remove a class while fighting, feigning, or dueling.`
+Required by rule 6, not optional. One helper, `Client::CanRemoveExtraClass(int class_id)` returning a reason code from a new `RemoveClassResult` enum (`Ok`, `MulticlassingDisabled`, `InvalidClass`, `NotHeld`, `LastClass`, `InCombat`) with a matching `RemoveClassResultMessage`, mirroring the add side. `InCombat` uses the same test as `client.cpp:14926` (`GetAggroCount() > 0 || GetFeigned() || IsDueling()`). `LastClass` is `!HasMultipleClasses()` (D4), so the bit-count loop lives in one place. Red message: `You cannot remove a class while fighting, feigning, or dueling.`
 
 Callers:
 
@@ -62,7 +62,7 @@ A refused removal through Perl still prints `plugin::RemoveClass`'s "Remove Clas
 
 Delete the block at `client.cpp:14930-14937`. Keep:
 
-- `AddClassResult::ZoneTooHigh = 8` in `client.h:268-279`, annotated the way `RaceNotAllowed` is (`client.cpp:14923-14924`): retired, kept so Perl and Lua reason codes do not shift. Readers of the integer: `NMS_multiclass_utils.pl:304-312`, `:553`; `global/global_npc.pl:35`, `:67`; `Vision_of_Ayonae.pl:49`.
+- `AddClassResult::ZoneTooHigh = 8` in `client.h:268-279`, annotated the way `RaceNotAllowed` is (`client.cpp:14923-14924`): retired, kept so Perl and Lua reason codes do not shift. The enum has no explicit initialisers, so deleting the enumerator would silently move `RowInsertFailed` from 9 to 8; add `static_assert(static_cast<int>(AddClassResult::ZoneTooHigh) == 8 && static_cast<int>(AddClassResult::RowInsertFailed) == 9)` beside the retirement note so the "keeps its values" claim is compiler-checked. Readers of the integer: `NMS_multiclass_utils.pl:304-312`, `:553`; `global/global_npc.pl:35`, `:67`; `Vision_of_Ayonae.pl:49`.
 - The `case AddClassResult::ZoneTooHigh:` line in `AddClassResultMessage` (`client.cpp:14953`), dead but mapped, same as `RaceNotAllowed` at `:14951`.
 - The `join_at_watermark` parameter of `CanAddExtraClass`. After the deletion it is unused inside that function (the Perl and Lua exports call the one-argument form, `perl_client.cpp:2222`, `lua_client.cpp:205`, and the join level is chosen in `AddExtraClass` at `client.cpp:14985-14990` from its own read). Keep it for signature stability, mark it `[[maybe_unused]]`.
 
@@ -80,7 +80,9 @@ The single enforcement point is `Client::CanEnterZone` (`zoning.cpp:1425-1456`).
 | `zoning.cpp:348` `Handle_OP_ZoneChange` (zone lines, solicited zones, `#zone` for non-GMs via `MovePC`) | `SendZoneError(ZoneNoExperience)` | none; fixed by the bypass |
 | `perl_client.cpp:3132`, `:3137`; `lua_client.cpp:3165`, `:3170` | returns the bool | none; no quest or plugin calls them |
 
-`Handle_OP_GMZoneRequest` (`client_packet.cpp:7492-7552`) compares against a hard-coded 0 (`:7509`, `:7543`) and never refuses on level. `world/` has no zone `min_level` test. So there is one edit: at `zoning.cpp:1443`, `if (!GetGM() && !HasMultipleClasses() && GetLevel() < z->min_level)`. `HasMultipleClasses()` is a new inline const helper on `Client` next to `GetClassesBits()` (`client.h:620`), true when more than one bit is set, reusing the bit-count loop at `client.cpp:14913-14916` (and the one in the packet handler, `client_packet.cpp:17321-17324`, which the helper replaces). A single-class character keeps the stock rule.
+`Handle_OP_GMZoneRequest` (`client_packet.cpp:7492-7552`) compares against a hard-coded 0 (`:7509`, `:7543`) and never refuses on level. `world/` has no zone `min_level` test. So there is one edit: at `zoning.cpp:1443`, `if (!GetGM() && !HasMultipleClasses() && GetLevel() < z->min_level)`. `HasMultipleClasses()` is a new inline const helper on `Client` next to `GetClassesBits()` (`client.h:620`), true when more than one bit is set, reusing the bit-count loop at `client.cpp:14913-14916` (and the one in the packet handler, `client_packet.cpp:17321-17324`, which D2's helper replaces; the packet handler then calls `CanRemoveExtraClass`, which calls `HasMultipleClasses`, so the loop is written once). The persistence spec also needs this helper (its D5, D9 and D11); whichever of the two PRs lands first defines it with this exact meaning and the other reuses it. A single-class character keeps the stock rule.
+
+**Owner decision, what "hero" means for the bypass.** Keyed on *currently holds more than one class*, a hero that stands in a `min_level` 50 zone at level 1 with a 70 class held, then drops the 70 there, becomes a single-class level-1 character with shelved rows and is sent to bind on its next zone-in (`client_packet.cpp:1091` → `GoToBind()`). Under the persistence spec that character still *has* the shelved class. Default: keep the bypass on the current hold (the code can read it without a query, and a single-class character is a single-class character); the alternative is "has ever held more than one class", which needs the shelved rows read at zone-in. Step 11 below exercises the case either way.
 
 **Owner decision, rule 7 wording.** Rule 7's headline is "No zone level requirement applies to a hero"; its second clause says "the stock zone minimum level is bypassed". This spec bypasses the **minimum** only and leaves the `max_level` test at `zoning.cpp:1453` as stock. A hero's level is its lowest class, so it can never exceed a zone maximum in a way a single class could not. If the owner reads rule 7 as both bounds, the change is the same one-condition edit on line 1453.
 
@@ -97,19 +99,21 @@ Kept: the per-player yellow "You have permanently gained access to the $class_na
 - "$name ($full_class_name) has logged in for the first time." (`global/global_player.pl:112-121`, keyed on the `First-Login` bucket).
 - "$name has cast themselves upon the whims of blind fate, choosing random classes ($full_class_name)." (`Vision_of_Ayonae.pl:108`).
 
+**Owner decision** on one blind-fate line this spec makes stale: the warning at `Vision_of_Ayonae.pl:38` ends "This decision cannot be reversed." Blind fate removes the original class (`:87`) and assigns random ones; once removal and addition are free the original class is one guildmaster hail away, so the sentence is no longer true. Default: rewrite to "Your current classes are dropped and random ones assigned; they can be changed again afterwards." The owner may prefer to keep the dramatic line.
+
 ### D6. Rows already in the database
 
-Three kinds of rows exist from the old policy. Nothing left in the tree reads any of them after D1 and D5:
+Three kinds of rows exist from the old policy. Nothing left in the tree reads any of them after D1, D5 **and D7** (the Ayonae hail and menu read the bucket and the lockout until D7 deletes those lines):
 
 | Rows | Table | Readers after this spec |
 | --- | --- | --- |
-| `free_remove_class_used = 1`, per character | `data_buckets` (character-scoped) | none (were `NMS_multiclass_utils.pl:405`, `Vision_of_Ayonae.pl:268`) |
-| `"Class Removal Lockout"`, event name empty, 7-day expiry | `character_expedition_lockouts` | none (were `NMS_multiclass_utils.pl:417`, `Vision_of_Ayonae.pl:272`) |
-| `class-<bits>`, global | `data_buckets` | none (was `CheckUniqueClass`, `:455`) |
+| `free_remove_class_used = 1`, per character | `data_buckets` (character-scoped) | none (were `NMS_multiclass_utils.pl:405` via D1; `Vision_of_Ayonae.pl:22` and `:268` via D7) |
+| `"Class Removal Lockout"`, event name empty, 7-day expiry | `character_expedition_lockouts` | none (were `NMS_multiclass_utils.pl:417` via D1; `Vision_of_Ayonae.pl:272` via D7) |
+| `class-<bits>`, global | `data_buckets` | none (was `CheckUniqueClass`, `:455`, via D5) |
 
 Default: **leave them**. A player under a live lockout is not refused because nothing asks `HasExpeditionLockout` for that name any more; the row expires on its own. The buckets are inert strings. No migration.
 
-**Owner decision** if a tidy-up is wanted: one custom manifest entry, content schema, idempotent. Note the `data_buckets` column is literally named `key`, a reserved word the repository maps as `key_` (`base_data_buckets_repository.h:39`), so it must be backtick-quoted, and the pattern must be anchored: `` DELETE FROM data_buckets WHERE `key` = 'free_remove_class_used' OR `key` REGEXP '^class-[0-9]+$' `` and `DELETE FROM character_expedition_lockouts WHERE expedition_name = 'Class Removal Lockout'`. Column names to be confirmed against the live schema first.
+**Owner decision** if a tidy-up is wanted: one custom manifest entry, idempotent, with `content_schema_update = false`. Both tables are **player** tables (`common/database_schema.h` `GetPlayerTables()`: `character_expedition_lockouts` at `:135`, `data_buckets` at `:161`), so a content-schema entry would run against the wrong database. Note the `data_buckets` column is literally named `key`, a reserved word the repository maps as `key_` (`base_data_buckets_repository.h:23`; the column list at `:61` is the line that quotes it as `` `key` ``), so it must be backtick-quoted, and the pattern must be anchored: `` DELETE FROM data_buckets WHERE `key` = 'free_remove_class_used' OR `key` REGEXP '^class-[0-9]+$' `` and `DELETE FROM character_expedition_lockouts WHERE expedition_name = 'Class Removal Lockout'`. Column names to be confirmed against the live schema first.
 
 ### D7. Copy, exact strings
 
@@ -128,7 +132,7 @@ Default: **leave them**. A player under a live lockout is not refused because no
 
 The reforge intro at `:134` ("granting you the rare privilege of choosing another") is flavour and is left alone; the owner may trim "rare". The Echo of Memory AA reset (`:12`, `:27-30`, `:240-263`) is a separate sink outside ADR-0002 and is untouched.
 
-**Plugin `RemoveClass` message** (`NMS_multiclass_utils.pl:388`). Before: `You are NO LONGER a $class_name, and have lost access to all Spells, Disciplines, Skills, and Abilities of that class.` After: `You are no longer a $class_name. Everything it earned is kept and returns when you take it up again.` This spec owns every player-facing string at the three doors so there is one place to look; the persistence spec does not touch copy. Until this spec lands the old wording is wrong for a short while after persistence ships; accepted.
+**Plugin `RemoveClass` message** (`NMS_multiclass_utils.pl:388`). Before: `You are NO LONGER a $class_name, and have lost access to all Spells, Disciplines, Skills, and Abilities of that class.` After: `You are no longer a $class_name. Everything it earned is kept and returns when you take it up again.` This spec owns every player-facing string at the three doors so there is one place to look; the persistence spec does not touch copy. Until this spec lands the old wording is wrong for a short while after persistence ships; accepted. The reverse is not: the three "kept" strings (here, the info box, the tooltip) are **true only after the persistence spec** has removed the skill zeroing and the AA refund, so this spec does not ship before it, and step 4a below proves the copy against the rows rather than taking the landing order on trust.
 
 **Guildmasters** (`global/global_npc.pl:53-57`): no string changes. Adds are already free; the hail copy ("A new class begins at level 1 and your effective level becomes the lowest of your classes until it catches up.", `:55`) matches rule 1. The only visible change is D3.
 
@@ -171,15 +175,17 @@ Preconditions that decide whether a pass means anything:
 1. Three-class hero at 70 in a zone with `min_level > 1`. Add a fourth class at the Hero tab. **Expect:** add succeeds, hero level 1, no "You cannot begin that class in this zone.", no world announcement in any channel or the world log, no new `class-<bits>` row.
 2. Same hero, still there: camp, log back in, cross a zone line into another `min_level > 1` zone. **Expect:** no kick to bind (the `does not meet minimum level requirement` log line absent), no zone error, hero in the new zone at level 1.
 3. Control: a single-class level-1 character on the same account tries the same zone line. **Expect:** stock `ZoneNoExperience` refusal, proving the bypass is keyed on class count.
-4. Hero tab Remove on a held class, out of combat, with 0 Echo of Memory and a `Class Removal Lockout` row planted for this character. **Expect:** removal succeeds at once; no fee, lockout or Echo of Memory text; the info box reads the D7 line before the press and the tooltip reads the D7 text.
+4. Hero tab Remove on a held class, out of combat, with 0 Echo of Memory, a `Class Removal Lockout` row planted for this character, **and the `free_remove_class_used` bucket set to 1 first** (without that, today's code takes the free path and the step passes on the old policy too). **Expect:** removal succeeds at once; no fee, lockout or Echo of Memory text; the info box reads the D7 line before the press and the tooltip reads the D7 text.
+   4a. Straight after: `SELECT` the dropped class's rows in `character_alternate_abilities` (its class-only ranks) and the raw values of a skill only it can hold in the profile. **Expect:** all still present. This is what makes the "kept" copy true; if either is gone the persistence spec has not landed and this spec must not ship.
 5. Remove another held class straight away (after 1 s). **Expect:** succeeds.
 6. In combat (pull one mob, keep aggro), more than 1 s apart: press Add, then Remove. **Expect:** red `You cannot add a class while fighting, feigning, or dueling.` then red `You cannot remove a class while fighting, feigning, or dueling.`, no "Remove Class Operation Failed." (the tab is refused in C++ before Perl), class list unchanged. Repeat feigned and in a duel. Then via Ayonae's `remove_<id>` in combat: the red line **and** "Remove Class Operation Failed.".
 7. Vision of Ayonae out of combat: hail, `reforge your path`, pick a `del_class_<id>` link. **Expect:** no free-removal notice on hail, one yellow line naming the class with a single `Proceed` link, removal on click, the new plugin message, no cost text anywhere.
 8. Last class. Single-class character: the tab's Remove button says `You cannot remove your last class.` from the add-on (`hero_tab.cpp:307-308`); the server is never asked. Two-class character: remove one, then say Ayonae's `remove_<id>` for the other. **Expect:** the server's red `You cannot remove your last class.`.
 9. Guildmaster in a `min_level > 1` zone: hail with a class not held. **Expect:** the "A new class begins at level 1..." offer, never "You cannot begin that class in this zone.".
-10. Reason codes from a scratch quest printing `$client->CanAddExtraClass($id)`: already held → 4 (`AlreadyHeld`); at cap → 5 (`AtCap`); with aggro → 7 (`InCombat`); in a `min_level > 1` zone with a free slot and no aggro → 0 (never 8). Same integers as before the change.
+10. Reason codes from a scratch quest printing `$client->CanAddExtraClass($id)`: already held → 4 (`AlreadyHeld`); at cap → 5 (`AtCap`); with aggro → 7 (`InCombat`); in a `min_level > 1` zone with a free slot and no aggro → 0 (never 8). Same integers as before the change; the `static_assert` in D3 is what proves 8 and 9 did not move.
+11. Two-class hero at level 1 (one class 70) standing in a `min_level > 1` zone: remove the 70 class there, then cross a zone line. **Expect (default D4):** the now single-class level-1 character is refused with the stock `ZoneNoExperience` and, on camping and logging in, sent to bind. That is the documented consequence of keying on the current hold; if the owner chooses "has ever held", expect the opposite and the bypass reads the shelved rows.
 
-Local, before any of that: `build zone` green; a rebuilt `dinput8.dll` with the `RenderInfo` change, verified by grepping the binary for the new held-line string and for the absence of "7-day lockout"; the adversarial handoff on the diff; `git grep` for `RemoveClassFree`, `RemoveClassPaid`, `RemoveClassCost`, `RemoveClassLockoutDays`, `CheckUniqueClass`, `free_remove_class_used`, `Class Removal Lockout`, `class-$class_bits`, `ZoneTooHigh` (outside the enum, the message case and the retirement comment) across `Release-NMS-Quests`, `Release-NMS-Plugins`, `Release-NMS-Server/zone`, `Release-NMS-Client`, with every hit and its fate in the PR body; `python Release-NMS-Deploy/custom-rules/generate.py --check` (no rule change, must pass unchanged).
+Local, before any of that: `build zone` green; a rebuilt `dinput8.dll` (Release, Win32, the configuration the client README names) with the `RenderInfo` change, verified by grepping the binary for the new held-line string and for the absence of "7-day lockout"; its hash recorded in the PR body and that same file installed on the client used for steps 4-6 (the tooltip lives in `EQUI_Inventory.xml`, a text file the binary grep says nothing about, so it is checked with `git diff` and by reading it in game); the adversarial handoff on the diff; `git grep` for `RemoveClassFree`, `RemoveClassPaid`, `RemoveClassCost`, `RemoveClassLockoutDays`, `CheckUniqueClass`, `free_remove_class_used`, `Class Removal Lockout`, `class-$class_bits`, `ZoneTooHigh` (outside the enum, the message case and the retirement comment) across `Release-NMS-Quests`, `Release-NMS-Plugins`, `Release-NMS-Server/zone`, `Release-NMS-Client`, with every hit and its fate in the PR body; `python Release-NMS-Deploy/custom-rules/generate.py --check` (no rule change, must pass unchanged).
 
 ## 5. Files
 
@@ -192,15 +198,16 @@ Local, before any of that: `build zone` green; a rebuilt `dinput8.dll` with the 
 - `Release-NMS-Server/common/eq_packet_structs.h:1621-1623`: comment only.
 - `Release-NMS-Client/eqgame_dll/hero_tab.cpp` `RenderInfo` `:128-130`. **DLL rebuild required**; no opcode or struct change.
 - `Release-NMS-Client/ClientFiles/uifiles/default/EQUI_Inventory.xml:10079`: tooltip.
-- `Release-NMS-Deploy/CODEBASE.md:85-88`: replace the "Ayonae removal policy (`RemoveClassFree` / `RemoveClassPaid` ...)" sentence with "one free `RemoveClass`; the C++ gates (in combat, last class, `MaxMulticlasses`) are the whole policy".
+- `Release-NMS-Deploy/CODEBASE.md:85-88`: replace the "Ayonae removal policy (`RemoveClassFree` / `RemoveClassPaid` ...)" sentence with "one `RemoveClass`, always free; the C++ gates (in combat, last class, `MaxMulticlasses`) are the whole policy" ("one free `RemoveClass`" reads as the old first-free policy and is avoided). The timer and persistence specs also touch the hero paragraph of CODEBASE.md; the three PRs edit it in landing order and each rewrites only its own sentence.
 - `Release-NMS-Deploy/specs/2026-09-05-hero-catchup-multiclass-design.md:226-228` and `:272-275`: one "superseded" pointer each, naming the PR number and the CODEBASE.md paragraph (the ADR is local-only and cannot be linked from a tracked file).
-- `Release-NMS-Quests/QUEST-API.md:90-91`, `:406`: optional one clause that removal has no fee; neither line names the deleted subs today.
+- `Release-NMS-Quests/QUEST-API.md:79`: the `CanAddExtraClass` row lists "zone" among the nonzero reasons; drop that word in the same PR. `:90-91`, `:406`: optional one clause that removal has no fee; neither line names the deleted subs today.
 - No rule change, no migration (D6 default), no opcode change.
 
 ## 6. Not in this spec
 
 - What a dropped class keeps: `RemoveExtraClass` also zeroes skills (`client.cpp:15104-15107`), clears AA timers (`:15121`) and refunds AAs (`:15139`). Those are the persistence spec and the AA timer spec, which land first; this spec only changes the doors and the copy.
-- The `BuffFadeAll()` after removal (`NMS_multiclass_utils.pl:389`): the persistence spec decides.
+- The `BuffFadeAll()` after removal (`NMS_multiclass_utils.pl:389`): the persistence spec decides (its default deletes it; D1 above follows whatever it decided).
+- Memorized gems on the level drop that a free add now makes routine: the persistence spec's D11 hooks the level decrease and the add path; this spec adds no gem handling.
 - Retiring the `HeroCatchupEnabled` off mode and the guildmaster "joins you at your current level" branch (`global/global_npc.pl:56`; ADR line 24).
 - The blind-fate randomizer's own flow (`Vision_of_Ayonae.pl:45-114`): pays no fee, uses `join_at_watermark = 1`; only its `AddClass` calls stop producing the FIRST announcement (D5). Its own announcement stays unless the owner rules otherwise.
 - The Echo of Memory AA reset at Ayonae.
