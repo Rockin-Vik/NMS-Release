@@ -39,8 +39,8 @@
     Turn Custom:NmsLootOffers on for a test window.
 
 .NOTES
-    Rule changes are read by zones at boot / on #reloadrules - run #reloadrules (or bounce
-    the zone) before retesting.
+    Rule changes are read by zones at boot / on "#reload rules global" (there is no
+    #reloadrules command) - run that, or bounce the zone, before retesting.
 #>
 
 [CmdletBinding(DefaultParameterSetName = 'Read')]
@@ -259,7 +259,7 @@ SELECT rule_value FROM rule_values
     if ("$after" -eq $target) {
         Write-Ok "Custom:NmsLootOffers = $after"
         Write-Host ''
-        Write-Host '  Run #reloadrules in game (or bounce the zone) before retesting.' -ForegroundColor Cyan
+        Write-Host '  Run "#reload rules global" in game (or bounce the zone) before retesting.' -ForegroundColor Cyan
         if ($Enable) {
             Write-Host '  Disposable test window - undo with:  .\Check-LootOfferRules.ps1 -Disable' -ForegroundColor Yellow
         }
