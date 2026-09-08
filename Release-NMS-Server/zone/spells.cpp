@@ -3102,7 +3102,8 @@ bool Mob::SpellFinished(uint16 spell_id, Mob *spell_target, CastingSlot slot, in
 				}
 				//set AA recast timer
 				if (RuleB(Custom, UseDynamicAATimers)) {
-					CastToClient()->SendAlternateAdvancementTimer(CastToClient()->GetDynamicAATimer(rank->base_ability->id), 0, 0);
+					// SPIKE: same resolution as activation, no allocation.
+					CastToClient()->SendAlternateAdvancementTimer(CastToClient()->SpikeTimerIndex(rank->base_ability->id), 0, 0);
 				} else {
 					CastToClient()->SendAlternateAdvancementTimer(rank->spell_type, 0, 0);
 				}

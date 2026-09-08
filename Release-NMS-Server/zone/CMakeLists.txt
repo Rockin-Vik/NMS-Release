@@ -434,6 +434,7 @@ set(gm_command_sources
     gm_commands/repop.cpp
     gm_commands/resetaa.cpp
     gm_commands/resetaa_timer.cpp
+    gm_commands/aaspike.cpp
     gm_commands/resetdisc_timer.cpp
     gm_commands/revoke.cpp
     gm_commands/roambox.cpp
