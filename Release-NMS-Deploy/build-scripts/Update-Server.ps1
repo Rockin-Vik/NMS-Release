@@ -20,6 +20,17 @@
     Server install root. Default C:\NMS (same as 2-Setup-NMSServer.ps1).
 .PARAMETER From
     Resume from this stage instead of starting at Clone.
+.PARAMETER PullRequest
+    Roll out a specific pull request instead of the default branch. Passed through to
+    2-Setup-NMSServer.ps1, which fetches refs/pull/<N>/head and checks it out as pr/<N>.
+    Re-run with the same number after new commits land on the PR to pick them up.
+
+    Only the Clone stage reads it, so it has no effect with -From Build or later - the
+    build then compiles whatever is already checked out.
+
+.PARAMETER GitRef
+    Roll out an arbitrary branch, tag or commit. Mutually exclusive with -PullRequest.
+
 .PARAMETER SkipExport
     Skip the Export stage when no client file changed.
 .PARAMETER NoStart
@@ -28,6 +39,7 @@
     .\Update-Server.ps1
     .\Update-Server.ps1 -From Migrate
     .\Update-Server.ps1 -SkipExport -NoStart
+    .\Update-Server.ps1 -PullRequest 17
 #>
 #Requires -RunAsAdministrator
 [CmdletBinding()]
@@ -35,6 +47,9 @@ param(
     [string] $InstallRoot = 'C:\NMS',
     [ValidateSet('Clone', 'Build', 'Runtime', 'Migrate', 'Patches', 'Health', 'Export')]
     [string] $From = 'Clone',
+    [ValidateRange(1, 999999)]
+    [int]    $PullRequest,
+    [string] $GitRef,
     [switch] $SkipExport,
     [switch] $NoStart
 )
@@ -45,6 +60,9 @@ $setup  = Join-Path $PSScriptRoot '2-Setup-NMSServer.ps1'
 $server = Join-Path $InstallRoot 'server'
 if (-not (Test-Path $setup))  { throw "2-Setup-NMSServer.ps1 not found next to this script." }
 if (-not (Test-Path $server)) { throw "$server does not exist - run 2-Setup-NMSServer.ps1 first." }
+if ($PullRequest -and $GitRef) {
+    throw '-PullRequest and -GitRef are mutually exclusive. Pass one or neither.'
+}
 
 $stages = @('Clone', 'Build', 'Runtime', 'Migrate', 'Patches', 'Health', 'Export')
 $stages = $stages[$stages.IndexOf($From)..($stages.Count - 1)]
@@ -62,7 +80,13 @@ foreach ($stage in $stages) {
     Write-Host "  $stage" -ForegroundColor Yellow
     Write-Host ("=" * 78) -ForegroundColor DarkGray
     try {
-        & $setup -InstallRoot $InstallRoot -OnlyStage $stage
+        # Splatted so an unset pin is absent rather than passed as 0 / empty string,
+        # which -PullRequest would reject on its ValidateRange and -GitRef would treat as
+        # a ref named "". Only Clone reads them; the other stages ignore the extras.
+        $extra = @{}
+        if ($PullRequest) { $extra.PullRequest = $PullRequest }
+        if ($GitRef)      { $extra.GitRef      = $GitRef }
+        & $setup -InstallRoot $InstallRoot -OnlyStage $stage @extra
     } catch {
         Write-Host ''
         Write-Host "FAILED in stage '$stage': $($_.Exception.Message)" -ForegroundColor Red
