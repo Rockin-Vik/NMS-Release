@@ -204,6 +204,21 @@ newest at the bottom.
 - I committed a rebuilt `dinput8.dll` after a build whose errors I had printed but not gated on, so the
   commit shipped the previous binary under a message claiming the fix. Gate every binary commit on the
   build's exit code and a fresh output timestamp, never on reading a log.
+- I drove a live client test through the maintainer and read his "dims alone" as a pass, then declared a
+  254 timer-number ceiling and ran four more cycles on it; he had meant "nothing else dimmed", not "the
+  button I clicked dimmed" — no assigned number had ever worked. When the maintainer is my hands and
+  eyes, define the positive signal **before** the first run (what changes, on which element, for how
+  long), state the negative alongside it, and require that observation back in his words. An ambiguous
+  confirmation is CANNOT-DETERMINE, not a pass, and every conclusion stacked on one is void.
+- The same test wasted his time because my prose named abilities by AA id; the client UI only ever shows
+  him names, so he could not tell which button I meant. In prose use the name the user sees on screen
+  (ability, zone, item, rule); ids, paths and opcodes belong inside the commands he pastes, not in the
+  sentences he reads.
+- Renaming `plugin::SpendEOM`, I told the worker to skip `Tearel.pl` and `Son_of_Tearel.pl` as
+  "link-only" from a grep for the currency *name* — while an earlier grep of mine for *callers* had
+  already listed both calling it. A file's exclusion must be justified by the grep that matches what is
+  actually changing (the symbol), never by a different grep that happened to miss it; `perl -c` cannot
+  catch it because `plugin::` resolves at runtime, so the handin fails silently in front of players.
 
 ## Project skills
 

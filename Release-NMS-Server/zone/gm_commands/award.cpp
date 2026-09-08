@@ -53,13 +53,13 @@ void command_award(Client *c, const Seperator *sep)
         return;
     }
 
-    // The award is parked in the character's "EoM-Award" bucket and consumed by
-    // plugin::UpdateEoMAward (NMS_custom_events.pl) the next time the character
+    // The award is parked in the character's "EmperorsFavor-Award" bucket and consumed
+    // by plugin::UpdateEmperorsFavorAward (NMS_custom_events.pl) the next time the character
     // zones or logs in, so this works for offline characters too. Awards issued
     // before the bucket is consumed must ACCUMULATE, not overwrite each other.
     DataBucketKey k;
     k.character_id = e.id;
-    k.key = "EoM-Award";
+    k.key = "EmperorsFavor-Award";
 
     const auto existing = DataBucket::GetData(k);
     int pending = 0;
@@ -72,13 +72,13 @@ void command_award(Client *c, const Seperator *sep)
 
     c->Message(
         Chat::White,
-        "Awarded %d EoM to %s (pending total %s). Reason: %s",
+        "Awarded %d Emperor's Favor to %s (pending total %s). Reason: %s",
         award_amount,
         character_name.c_str(),
         k.value.c_str(),
         reason.c_str()
     );
-    zone->SendDiscordMessage("admin", fmt::to_string(c->GetCleanName()) + " awarded " + sep->arg[2] + " EoM to " + character_name + " Reason: " + reason);
+    zone->SendDiscordMessage("admin", fmt::to_string(c->GetCleanName()) + " awarded " + sep->arg[2] + " Emperor's Favor to " + character_name + " Reason: " + reason);
 
 	quest_manager.CrossZoneSignal(CZUpdateType_Expedition, 0, 666, character_name.c_str());
 }

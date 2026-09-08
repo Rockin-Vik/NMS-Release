@@ -146,23 +146,27 @@ character/World bitmask so later-era AAs remain trainable; off = stock refuse),
 - Related: pet bags (`Custom:EnablePetBags`), suspended minions (`m_suspendedminions`,
   `zone/client.h:2343`, stored with pet ids offset by 100), `familiar_names` content table (v10)
 
-### 3.3 Echo of Memory (EoM)
+### 3.3 Emperor's Favor
 
-**Alt currency id 6** (`constexpr uint8 EOM_CURRENCY_ID = 6`, `world/client.h:40`). The custom
-part is that it is stored **per account, not per character**.
+**Alt currency id 6** (`constexpr uint8 EMPERORS_FAVOR_CURRENCY_ID = 6`, `world/client.h:40`). The
+custom part is that it is stored **per account, not per character**.
 
 - Table: `account_alt_currency (account_id, currency_id, amount)` — manifest v9, which also
   back-fills by SUMming `character_alt_currency` per account
 - Repository: `common/repositories/account_alt_currency_repository.h`
 - Gate: `RuleB(Custom, EnableAccountAltCurrency)`. `Client::SetAlternateCurrencyValue`
   (`zone/client.cpp:8901`) routes to `UpdateAccountAltCurrencyValue` when on.
-- Drops: `zone/attack.cpp:3054` — `Custom:EventEOMDropChance` (1 in 200), con-color gated,
-  awarded to the whole group/raid
+- Drops: `zone/attack.cpp:3054` — a flat `Custom:EmperorsFavorDropChance` roll (1 in 150),
+  independently per eligible player per corpse, awarded to every member of the group or raid.
+  **No level gate and no con-color gate of any kind** — both were deliberately removed (see
+  `Release-NMS-Deploy/specs/2026-09-08-currency-rename-emperors-favor.md`). This means a
+  low-level member of a group still rolls, and a grey-con kill still rolls: both are accepted
+  design choices, not defects — do not reintroduce either gate without asking first.
 - Spent at character select to unlock character sets and slots (`world/client.cpp:3178-3240`)
 
 ⚠️ **`#award` does not touch `account_alt_currency` directly.** The GM command
-(`zone/gm_commands/award.cpp`) adds to the character's `EoM-Award` data bucket, fires a
-Discord webhook, and sends cross-zone signal 666. `plugin::UpdateEoMAward`
+(`zone/gm_commands/award.cpp`) adds to the character's `EmperorsFavor-Award` data bucket, fires a
+Discord webhook, and sends cross-zone signal 666. `plugin::UpdateEmperorsFavorAward`
 (`NMS_custom_events.pl`) consumes the bucket on that signal and on every zone-in and credits
 currency 6 through `AddAlternateCurrencyValue`. If the balance did not change, check that the
 plugin is the real one and not the original `return 0;` stub.
@@ -213,7 +217,7 @@ A player teleport-hub system. `zone/nms_waypoints.cpp` (453 lines) + `.h`.
 ### 3.6 Character sets
 
 Accounts get named "sets" of characters. `MAX_CHARACTER_SETS = 64`, 24 base slots, more
-purchasable with EoM. Opcodes `OP_CharacterSetRequest/Create/Move/Unlock`,
+purchasable with Emperor's Favor. Opcodes `OP_CharacterSetRequest/Create/Move/Unlock`,
 `OP_SendCharacterSets`. Handled in `world/client.cpp` and `world/worlddb.cpp`.
 
 ⚠️ See §4.2 — the tables this needs have **no migration**.
@@ -476,7 +480,7 @@ The 11 `NMS_*` plugins in `Release-NMS-Plugins/`:
 | `NMS_popup_utils.pl` | Tutorial popup framework (IDs shaped `628<nnn>0`) |
 | `NMS_instance_utils.pl` | `OfferStandardInstance` — DZ creation, `ScaleInstanceNPC` |
 | `NMS_progression`/`seasonal`/`soulmark` | Seasonal chars; Soulmark/CheaterFlag warnings |
-| `NMS_custom_events.pl` | **Hook stubs for you to extend** — say, death, handin, spawn, exp gain, item equip/click. Each is commented with whether its return value gates the caller. `UpdateEoMAward` is live (consumes the `#award` bucket). |
+| `NMS_custom_events.pl` | **Hook stubs for you to extend** — say, death, handin, spawn, exp gain, item equip/click. Each is commented with whether its return value gates the caller. `UpdateEmperorsFavorAward` is live (consumes the `#award` bucket). |
 | `NMS_general.pl` | Shared helpers: announces, serialization, `transform_item` |
 
 ### ⚠️ Perl dependencies
@@ -513,7 +517,7 @@ Quick reference. Each links to the section above.
 | 1 | Branch on `HasClass()`, never `GetClass()` | 3.1 |
 | 2 | Character select smuggles the class mask through `Deity`; guilds use `mask + 1000` | 3.1 |
 | 3 | Pet window refreshes via the dirty flag, not by sending `OP_PetList` | 3.2 |
-| 4 | `#award` writes a bucket + Discord ping; `plugin::UpdateEoMAward` does the credit | 3.3 |
+| 4 | `#award` writes a bucket + Discord ping; `plugin::UpdateEmperorsFavorAward` does the credit | 3.3 |
 | 4b | Lua scripts use `eq.`, not `quest.`; Lua loads before Perl on a name collision | QUEST-API §0 |
 | 4c | `SummonItem()` rolls an upgrade tier; use `SummonFixedItem()` for an exact item | QUEST-API §0.1 |
 | 5 | Quest hand-ins must normalize item ids with `% 1000000` | 3.4 |

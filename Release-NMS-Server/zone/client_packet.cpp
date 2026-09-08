@@ -17285,7 +17285,7 @@ void Client::Handle_OP_HeroRequest(const EQApplicationPacket *app)
 		return;
 	}
 
-	// The remove path can be refused by the Perl (lockout, or not enough Echo of Memory)
+	// The remove path can be refused by the Perl (lockout, or not enough Emperor's Favor)
 	// without changing anything the C++ gate above tests, so an unthrottled client could
 	// replay the same rejected packet in a tight loop and spin a Perl dispatch, two cache
 	// scans and a reply packet every iteration on the zone thread. Armed here rather than
@@ -17305,7 +17305,7 @@ void Client::Handle_OP_HeroRequest(const EQApplicationPacket *app)
 		return;
 	}
 
-	// Fail closed here. The policy (free add, Echo of Memory fee and lockout on removal,
+	// Fail closed here. The policy (free add, Emperor's Favor fee and lockout on removal,
 	// announcements) is the same Perl the guildmasters and the Vision of Ayonae use.
 	if (request->op == HeroRequestAdd) {
 		if (CanAddExtraClass(class_id, false) != AddClassResult::Ok) {

@@ -798,7 +798,7 @@ public:
 	inline uint32 GetLevelCon(uint8 iOtherLevel) const { return GetLevelCon(GetLevel(), iOtherLevel); }
 	// Shared level-range gate for group/raid REWARD sharing. A member no more than ~half their own
 	// level (but always at least 5) below the reference level (the group's or raid's highest) shares
-	// in the reward. Used by the XP split (Group/Raid::SplitExp) and the Echo of Memory award.
+	// in the reward. Used by the XP split (Group/Raid::SplitExp) only.
 	static bool IsWithinRewardLevelRange(int member_level, int reference_level);
 	void AddToHateList(Mob* other, int64 hate = 0, int64 damage = 0, bool iYellForHelp = true,
 		bool bFrenzy = false, bool iBuffTic = false, uint16 spell_id = SPELL_UNKNOWN, bool pet_comand = false);

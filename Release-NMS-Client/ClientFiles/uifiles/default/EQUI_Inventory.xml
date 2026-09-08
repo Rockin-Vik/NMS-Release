@@ -3339,7 +3339,7 @@
 			<EndCapRight>A_GaugeEndCapRight</EndCapRight>
 		</GaugeDrawTemplate>
 	</Gauge>
-	<StaticAnimation item="IW_EOMBackground">
+	<StaticAnimation item="IW_EmperorsFavorBackground">
 		<RelativePosition>true</RelativePosition>
 		<Location>
 			<X>306</X>
@@ -3351,7 +3351,7 @@
 		</Size>
 		<Animation>A_RecessedBox</Animation>
 	</StaticAnimation>
-	<StaticAnimation item="IW_EOMIcon">
+	<StaticAnimation item="IW_EmperorsFavorIcon">
 		<RelativePosition>true</RelativePosition>
 		<Location>
 			<X>309</X>
@@ -3363,7 +3363,7 @@
 		</Size>
 		<Animation>A_EoMIcon</Animation>
 	</StaticAnimation>
-	<Label item="IW_EOMPoints">
+	<Label item="IW_EmperorsFavorPoints">
 		<EQType>338</EQType>
 		<RelativePosition>true</RelativePosition>
 		<Location>
@@ -4048,9 +4048,9 @@
 		<Pieces>IW_DoneButton</Pieces>
 		<Pieces>IW_FacePick</Pieces>
 		<Pieces>IW_Tinting</Pieces>
-		<Pieces>IW_EOMBackground</Pieces>
-		<Pieces>IW_EOMIcon</Pieces>
-		<Pieces>IW_EOMPoints</Pieces>
+		<Pieces>IW_EmperorsFavorBackground</Pieces>
+		<Pieces>IW_EmperorsFavorIcon</Pieces>
+		<Pieces>IW_EmperorsFavorPoints</Pieces>
 		<Pieces>IW_GoodPoints</Pieces>
 		<Pieces>IW_EvilPoints</Pieces>
 		<Pieces>IW_ReclaimButton</Pieces>
@@ -10076,7 +10076,7 @@
 			<CY>24</CY>
 		</Size>
 		<Style_Transparent>false</Style_Transparent>
-		<TooltipReference>Drop the selected class. Your free removal is used first; after that 10 Echo of Memory and a 7-day lockout.</TooltipReference>
+		<TooltipReference>Drop the selected class. Your free removal is used first; after that 10 Emperor's Favor and a 7-day lockout.</TooltipReference>
 		<Style_Checkbox>false</Style_Checkbox>
 		<Text>Remove Class</Text>
 		<TextColor>

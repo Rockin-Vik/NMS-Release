@@ -82,7 +82,7 @@ Registration lines are in `zone/lua_client.cpp`, `zone/perl_client.cpp`, `zone/l
 | `RemoveExtraClass(class_id)` | ✓ | ✓ | Remove a class |
 | `GetClassLevel(class_id)` | ✓ | ✓ | Level of one stored class row |
 | `GetClassExp(class_id)` | ✓ | ✓ | Experience of one stored class row |
-| `GetRewardLevel()` | ✓ | ✓ | Highest class level used for group, raid, and EoM eligibility |
+| `GetRewardLevel()` | ✓ | ✓ | Highest class level used for group, raid, and Emperor's Favor eligibility |
 | `IsCatchingUp()` | ✓ | ✓ | True while any class row is below the watermark |
 
 Perl helpers in `NMS_multiclass_utils.pl`: `plugin::MultiClassingEnabled()`, `MaxMulticlasses()`,
@@ -156,14 +156,14 @@ Not the same thing as the stock grid-waypoint functions on NPC (`GetWaypointX`, 
 | Key | Scope | Written by | Read by |
 |---|---|---|---|
 | `GestaltClasses` | character | `Client::AddExtraClass` (`client.cpp:14536`) | login, char select (`worlddb.cpp`), guild rosters |
-| `EoM-Award` | character | `#award` | `plugin::UpdateEoMAward` (consumed and deleted) |
+| `EmperorsFavor-Award` | character | `#award` | `plugin::UpdateEmperorsFavorAward` (consumed and deleted) |
 | `SeasonalCharacter` | character | `NMS_seasonal_utils.pl` | `Client::IsSeasonal()` |
 | `<account_id>-CheaterFlag` | global | `#soulmark` | `NMS_soulmark_utils.pl` |
 | `DisableFancyModels` | character | `#tim` | NPC spawn packets |
 | `waypoints` | character | waypoint toggles (JSON) | `nms_waypoints.cpp` |
 | `flag-semaphore` | character | Lua scripts | `plugin::CommonCharacterUpdate` → `AddTitleFlag` |
 
-Signals handled in `global/global_player.pl`: **666** (EoM award pending), **100** (title flag semaphore).
+Signals handled in `global/global_player.pl`: **666** (Emperor's Favor award pending), **100** (title flag semaphore).
 
 ### 0.4 Extension points
 

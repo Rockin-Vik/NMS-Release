@@ -75,7 +75,7 @@ sub EVENT_SAY {
     my $link_services_2       = "[".quest::saylink("link_services", 1, "do for you")."]";
     my $link_glamour          = "[".quest::saylink("link_glamour", 1, "Glamour")."]";
     my $link_custom_work      = "[".quest::saylink("link_custom_work", 1, "custom enchantments")."]";
-    my $link_echo_of_memory   = "[".quest::saylink("link_echo_of_memory", 1, "Echo of Memory")."]";
+    my $link_emperors_favor   = "[".quest::saylink("link_emperors_favor", 1, "Emperor's Favor")."]";
     my $link_random_glamour   = "[".quest::saylink("link_random_glamour", 1, "random glamour")."]";
 
     if($text=~/hail/i) {
@@ -100,27 +100,27 @@ sub EVENT_SAY {
     }
 
     elsif ($text eq "link_custom_work") {
-        $response = "I can produce a Glamour of a remarkable and unique nature, based upon whatever item my muse conjures. 
-                    There is no predicting what illusion may be produced! I will only embark upon this artistic work in exchange 
-                    for two $link_echo_of_memory, however. Would you like me to produce a $link_random_glamour for you?
+        $response = "I can produce a Glamour of a remarkable and unique nature, based upon whatever item my muse conjures.
+                    There is no predicting what illusion may be produced! I will only embark upon this artistic work in exchange
+                    for two $link_emperors_favor, however. Would you like me to produce a $link_random_glamour for you?
                     
                     Alternatively, if you have four Glamours you no longer want, you can hand them to me all at once, and I'll create 
                     a new random Glamour for you. It's quite an efficient method of recycling!";
     }
 
-    elsif ($text eq "link_echo_of_memory") {
+    elsif ($text eq "link_emperors_favor") {
         $response = "These are rare fragments of a previous age. Rumor is, only by great service to the realm can you obtain them.";
     }
 
     elsif ($text eq "link_random_glamour") {
-        my $eom_available = $client->GetAlternateCurrencyValue(6);
+        my $emperors_favor_available = $client->GetAlternateCurrencyValue(6);
 
-        if ($eom_available < 2) {
-            $response = "I'm sorry, $clientName. You don't have enough Echo of Memory, please return when you have enough to pay me.";
+        if ($emperors_favor_available < 2) {
+            $response = "I'm sorry, $clientName. You don't have enough Emperor's Favor, please return when you have enough to pay me.";
         } else {
             my $random_result = get_random_glamour_of_any_type();
-            
-            if ($random_result && plugin::SpendEOM($client, 2)) {
+
+            if ($random_result && plugin::SpendEmperorsFavor($client, 2)) {
                 $client->SummonItem($random_result);
             }
         }
