@@ -618,6 +618,7 @@ public:
 	int64 CalcManaRegenCap() final;
 
 	uint32 GetClassesBits() const;
+	bool HasMultipleClasses() const; // more than one bit set in GetClassesBits()
 	AddClassResult CanAddExtraClass(int class_id, bool join_at_watermark = false) const;
 	static const char* AddClassResultMessage(AddClassResult result);
 	const char* CanAddExtraClassMessage(int class_id, bool join_at_watermark = false) const;
@@ -1065,6 +1066,9 @@ public:
 	bool CanHaveSkill(EQ::skills::SkillType skill_id) const;
 	void SetSkill(EQ::skills::SkillType skill_num, uint16 value);
 	void AddSkill(EQ::skills::SkillType skillid, uint16 value);
+	// One OP_SkillUpdate per skill: the raw value for a skill a held class can have, the greyed
+	// sentinel for the rest. Sent after a class add or remove so the window follows without a re-zone.
+	void SendSkillValues();
 	void CheckSpecializeIncrease(uint16 spell_id);
 	void CheckSongSkillIncrease(uint16 spell_id);
 	bool CheckIncreaseSkill(EQ::skills::SkillType skillid, Mob *against_who, int chancemodi = 0);
@@ -1102,6 +1106,10 @@ public:
 	void UnmemSpell(int slot, bool update_client = true);
 	void UnmemSpellBySpellID(int32 spell_id);
 	void UnmemSpellAll(bool update_client = true);
+	// Hero rule 4: spells follow the current level. True when some held class can cast the spell
+	// at that level; used by the gem cast gate and by UnmemorizeGemsAboveLevel.
+	bool CanCastSpellAtLevel(uint16 spell_id, uint8 level) const;
+	void UnmemorizeGemsAboveLevel(uint8 level);
 	int FindEmptyMemSlot();
 	uint16 FindMemmedSpellBySlot(int slot);
 	int FindMemmedSpellBySpellID(uint16 spell_id);
@@ -1263,7 +1271,9 @@ public:
 	void ResetAA();
 	void ResetLeadershipAA();
 	void RefundAA();
-	void RefundUnusuableAA();
+	// Hero persistence: drop the loaded AA set and reload it for the current class bits (a shelved
+	// class's ranks stay in the database, out of memory), then recompute the spent total.
+	void ReloadAlternateAdvancementForClasses();
 	void SendClearLeadershipAA();
 	void SendClearPlayerAA();
 	inline uint32 GetAAXP() const { return m_pp.expAA; }
@@ -2413,9 +2423,12 @@ private:
 	std::vector<PetInfo> m_petinfomulti;
 
 	std::map<EQ::skills::SkillType, bool> m_autoskill;
-	mutable std::array<uint16, EQ::skills::HIGHEST_SKILL + 1> m_catchup_skill_caps{};
-	mutable uint8 m_catchup_skill_caps_level = 0;
-	mutable bool m_catchup_skill_caps_valid = false;
+	// Which skills any held class can have (CanHaveSkill), cached per class bits because GetSkill
+	// sits on the per-swing path and CanHaveSkill is a sixteen-class SkillCaps lookup. Starts
+	// invalid; GetSkill rebuilds it whenever the flag is false; every writer of m_pp.classes
+	// clears the flag (AddExtraClass, RemoveExtraClass).
+	mutable std::array<bool, EQ::skills::HIGHEST_SKILL + 1> m_can_have_skill{};
+	mutable bool m_can_have_skill_valid = false;
 
 	InspectMessage_Struct m_inspect_message;
 	bool temp_pvp;

@@ -2994,7 +2994,9 @@ void Client::SetSkill(EQ::skills::SkillType skillid, uint16 value) {
 	auto outapp = new EQApplicationPacket(OP_SkillUpdate, sizeof(SkillUpdate_Struct));
 	SkillUpdate_Struct* skill = (SkillUpdate_Struct*)outapp->pBuffer;
 	skill->skillId=skillid;
-	skill->value = (!CanHaveSkill(skillid) && value == 0) ? 0xFFFFFFFF : value;
+	// A skill no held class can have is shown greyed whatever its value: a shelved class's value is
+	// kept in place (hero rule 5) and must not read as usable.
+	skill->value = !CanHaveSkill(skillid) ? 0xFFFFFFFF : value;
 
 	if (value > 0) {
 		auto maxskill = GetMaxSkillAfterSpecializationRules(static_cast<EQ::skills::SkillType>(skillid), MaxSkill(static_cast<EQ::skills::SkillType>(skillid)));
@@ -3036,11 +3038,29 @@ void Client::IncreaseLanguageSkill(uint8 language_id, uint8 increase)
 void Client::AddSkill(EQ::skills::SkillType skillid, uint16 value) {
 	if (skillid > EQ::skills::HIGHEST_SKILL)
 		return;
-	value = GetRawSkill(skillid) + value;
+	const uint16 raw = GetRawSkill(skillid);
+	value = raw + value;
 	uint16 max = GetMaxSkillAfterSpecializationRules(skillid, MaxSkill(skillid));
-	if (value > max)
-		value = max;
+	if (value > max) {
+		// Never lower a value already above the cap (a hero's 70-class skill at hero level 1).
+		value = std::max(max, raw);
+	}
 	SetSkill(skillid, value);
+}
+
+void Client::SendSkillValues()
+{
+	auto outapp = new EQApplicationPacket(OP_SkillUpdate, sizeof(SkillUpdate_Struct));
+	auto *skill = (SkillUpdate_Struct *) outapp->pBuffer;
+
+	for (int skill_id = EQ::skills::Skill1HBlunt; skill_id <= EQ::skills::HIGHEST_SKILL; ++skill_id) {
+		const auto skill_type = static_cast<EQ::skills::SkillType>(skill_id);
+		skill->skillId = skill_id;
+		skill->value   = CanHaveSkill(skill_type) ? m_pp.skills[skill_id] : 0xFFFFFFFF;
+		QueuePacket(outapp);
+	}
+
+	safe_delete(outapp);
 }
 
 void Client::SendSound(){//Makes a sound.
@@ -4363,6 +4383,15 @@ uint16 Client::GetMaxSkillAfterSpecializationRules(EQ::skills::SkillType skillid
 					{
 						Result = 50;
 					}
+				}
+			}
+			else if (RuleB(Custom, MulticlassingEnabled))
+			{
+				// A hero that held two caster classes legitimately has two specializations above
+				// 50. Nothing earned is lowered (hero rule 2); the raise caps still apply, so a
+				// second specialization cannot be pushed past 50 without Secondary Forte.
+				if (skillid != PrimarySpecialization) {
+					Result = (MaxSpecializations == 2 && skillid == SecondaryForte) ? 100 : 50;
 				}
 			}
 			else
@@ -15046,10 +15075,17 @@ bool Client::AddExtraClass(int class_id, bool join_at_watermark)
 	if (inserted_row && m_class_exp[class_id_u8] < m_pp.exp) {
 		m_pp.exp = m_class_exp[class_id_u8];
 	}
-	m_catchup_skill_caps_valid = false;
+	m_can_have_skill_valid = false;
 	SetEXP(ExpSource::Quest, m_pp.exp, GetAAXP());
+	// The re-added class's ranks come back from the database (hero rule 5) before bonuses are
+	// computed, and the client gets the rebuilt table, points, stats and running cooldowns.
+	ReloadAlternateAdvancementForClasses();
 	CalcBonuses();
+	SendClearPlayerAA();
 	SendAlternateAdvancementTable();
+	SendAlternateAdvancementPoints();
+	SendAlternateAdvancementStats();
+	SendAlternateAdvancementTimers();
 
 	if (IsInAGuild()) {
 		guild_mgr.SendToWorldMemberLevelUpdate(GuildID(), GetLevel(), std::string(GetCleanName()));
@@ -15057,6 +15093,9 @@ bool Client::AddExtraClass(int class_id, bool join_at_watermark)
 	}
 
 	ReconcileLearnedSpells(true, true);
+	// Reconcile restores hidden gems without a level test; rule 4 gates them at the hero level.
+	UnmemorizeGemsAboveLevel(GetLevel());
+	SendSkillValues();
 	SendBulkStatsUpdate();
 	Save();
 	return true;
@@ -15094,21 +15133,17 @@ bool Client::RemoveExtraClass(int class_id) {
 
     // Update classes bitmask
     m_pp.classes = new_classes;
-	m_catchup_skill_caps_valid = false;
+	m_can_have_skill_valid = false;
 
-	// Update bucket and recalculate bonuses
+	// Update bucket and recalculate bonuses. The dropped class's skills keep their values in the
+	// profile (hero rules 2 and 5): GetSkill reads 0 for them while no held class can have them and
+	// they come back on re-add. Its AA ranks leave memory here and stay in the database.
     SetBucket("GestaltClasses", std::to_string(m_pp.classes));
+	ReloadAlternateAdvancementForClasses();
     CalcBonuses();
 
-    // Update skills
-    for (int skill_id = EQ::skills::Skill1HBlunt; skill_id < EQ::skills::SkillCount; skill_id++) {
-        auto skill = static_cast<EQ::skills::SkillType>(skill_id);
-        if (!CanHaveSkill(skill) && GetSkill(skill)) {
-            SetSkill(skill, 0);
-        }
-    }
-
 	ReconcileLearnedSpells(true, true);
+	UnmemorizeGemsAboveLevel(GetLevel());
 
 	for (int slot = EQ::invslot::EQUIPMENT_BEGIN; slot <= EQ::invslot::EQUIPMENT_END; slot++) {
 		auto item = m_inv.GetItem(slot);
@@ -15134,14 +15169,12 @@ bool Client::RemoveExtraClass(int class_id) {
         DoGuildTributeUpdate();
     }
 
-    zone->LoadAlternateAdvancement();
-
-	RefundUnusuableAA();
-
     SendClearPlayerAA();
     SendAlternateAdvancementTable();
     SendAlternateAdvancementPoints();
     SendAlternateAdvancementStats();
+    SendAlternateAdvancementTimers();
+    SendSkillValues();
 
     // Save changes
 	// The pool is a cache of the lowest held row. Once the class is gone the pool follows the
@@ -15171,31 +15204,73 @@ bool Client::RemoveExtraClass(int class_id) {
 }
 
 
+bool Client::HasMultipleClasses() const
+{
+	const uint32 bits = GetClassesBits();
+	return bits && (bits & (bits - 1));
+}
+
 uint16 Client::GetSkill(EQ::skills::SkillType skill_id) const
 {
-	if (skill_id <= EQ::skills::HIGHEST_SKILL) {
-		const uint16 skill_value = (itembonuses.skillmod[skill_id] > 0 ? (itembonuses.skillmodmax[skill_id] > 0 ? std::min(
-			m_pp.skills[skill_id] + itembonuses.skillmodmax[skill_id],
-			m_pp.skills[skill_id] * (100 + itembonuses.skillmod[skill_id]) / 100
-		) : m_pp.skills[skill_id] * (100 + itembonuses.skillmod[skill_id]) / 100) : m_pp.skills[skill_id]);
-
-		if (!IsCatchingUp()) {
-			return skill_value;
-		}
-
-		const uint8 level = GetLevel();
-		if (!m_catchup_skill_caps_valid || m_catchup_skill_caps_level != level) {
-			for (int skill = EQ::skills::Skill1HBlunt; skill <= EQ::skills::HIGHEST_SKILL; ++skill) {
-				const auto cached_skill = static_cast<EQ::skills::SkillType>(skill);
-				m_catchup_skill_caps[skill] = MaxSkill(cached_skill, GetClass(), level);
-			}
-			m_catchup_skill_caps_level = level;
-			m_catchup_skill_caps_valid = true;
-		}
-
-		return std::min(skill_value, m_catchup_skill_caps[skill_id]);
+	if (skill_id > EQ::skills::HIGHEST_SKILL) {
+		return 0;
 	}
-	return 0;
+
+	if (RuleB(Custom, MulticlassingEnabled)) {
+		// Hero rules 2 and 5: a skill a held class earned works at any hero level (no cap clamp
+		// on read), and a shelved class's value stays in the profile but is not usable. Readers
+		// such as the weapon-skill pick, offense, Hide and Sneak take GetSkill without HasSkill,
+		// so the "not usable" half has to live here.
+		if (!m_can_have_skill_valid) {
+			for (int skill = EQ::skills::Skill1HBlunt; skill <= EQ::skills::HIGHEST_SKILL; ++skill) {
+				m_can_have_skill[skill] = CanHaveSkill(static_cast<EQ::skills::SkillType>(skill));
+			}
+			m_can_have_skill_valid = true;
+		}
+
+		if (!m_can_have_skill[skill_id]) {
+			return 0;
+		}
+	}
+
+	return (itembonuses.skillmod[skill_id] > 0 ? (itembonuses.skillmodmax[skill_id] > 0 ? std::min(
+		m_pp.skills[skill_id] + itembonuses.skillmodmax[skill_id],
+		m_pp.skills[skill_id] * (100 + itembonuses.skillmod[skill_id]) / 100
+	) : m_pp.skills[skill_id] * (100 + itembonuses.skillmod[skill_id]) / 100) : m_pp.skills[skill_id]);
+}
+
+bool Client::CanCastSpellAtLevel(uint16 spell_id, uint8 level) const
+{
+	if (!IsValidSpell(spell_id)) {
+		return false;
+	}
+
+	for (int class_id = Class::Warrior; class_id <= Class::Berserker; ++class_id) {
+		if (!HasClass(class_id)) {
+			continue;
+		}
+
+		const uint8 spell_level = GetSpellLevel(spell_id, class_id);
+		if (spell_level < UINT8_MAX && spell_level <= level) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void Client::UnmemorizeGemsAboveLevel(uint8 level)
+{
+	if (!RuleB(Custom, MulticlassingEnabled)) {
+		return;
+	}
+
+	for (int gem = 0; gem < EQ::spells::SPELL_GEM_COUNT; ++gem) {
+		const uint16 spell_id = m_pp.mem_spells[gem];
+		if (IsValidSpell(spell_id) && !CanCastSpellAtLevel(spell_id, level)) {
+			UnmemSpell(gem, true);
+		}
+	}
 }
 
 void Client::RemoveItemBySerialNumber(uint32 serial_number, uint32 quantity)

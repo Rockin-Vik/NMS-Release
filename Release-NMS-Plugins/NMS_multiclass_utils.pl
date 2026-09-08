@@ -43,10 +43,9 @@ sub CommonCharacterUpdate {
         for my $i (grep { !($_ ~~ @skip_ids) } 0..77) {
             if ($i == 53) { # Tracking (skill id 53)
                 my $base_cap = $client->MaxSkill($i);
-                if ($base_cap == 0) {
-                    # No tracking-capable class in the bitmask -> clear the skill.
-                    $client->SetSkill($i, 0) if $client->GetSkill($i) > 0;
-                } elsif ($client->GetSkill($i) < $base_cap) {
+                # A dropped tracker's value is kept in place (hero rule 5) and reads as 0 until a
+                # tracking class is held again; it is never cleared here.
+                if ($base_cap > 0 && $client->GetSkill($i) < $base_cap) {
                     # Multiclass auto-grant: bring a tracker up to at least the base cap.
                     $client->SetSkill($i, $base_cap);
                 }
@@ -386,7 +385,7 @@ sub RemoveClass {
         my $class_name = quest::getclassname($class_id);
 
         $client->Message(15, "You are NO LONGER a $class_name, and have lost access to all Spells, Disciplines, Skills, and Abilities of that class.");
-        $client->BuffFadeAll();
+        # Buffs are not wiped on a class change (hero rule 6: no penalty on switching).
         return 1;
     } else {
         $client->Message(13, "Remove Class Operation Failed.");
