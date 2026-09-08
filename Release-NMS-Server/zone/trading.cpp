@@ -792,7 +792,17 @@ bool Client::CanGiveItemInTrade(const EQ::ItemInstance *inst)
 		return false;
 	}
 
-	return inst->IsDroppable(true) || CanTradeFVNoDropItem();
+	// CanTradeFVNoDropItem() is true for EVERY player when FVNoDropFlag is Enabled (1) -
+	// it is GM-gated only under AdminOnly (2). Without the explicit AdminOnly test this
+	// whole function collapses to !IsCharacterBound, which hands out the GM exemption to
+	// everyone and makes items flagged fvnodrop != 0 - the column whose entire job is
+	// "still no-drop on Firiona Vie" - giveable. Same shape as the drop path at
+	// inventory.cpp:879, which already gets this right.
+	if (inst->IsDroppable(true)) {
+		return true;
+	}
+
+	return RuleI(World, FVNoDropFlag) == FVNoDropFlagRule::AdminOnly && CanTradeFVNoDropItem();
 }
 
 bool Client::CheckTradeNonDroppable()

@@ -2501,12 +2501,25 @@ bool Client::SwapItem(MoveItem_Struct* move_in) {
 				equipped_inst->SetAttuned(true);
 			}
 			if (equipped_inst->IsAugmented()) {
+				bool augment_attuned = false;
 				for (int i = EQ::invaug::SOCKET_BEGIN; i <= EQ::invaug::SOCKET_END; i++) {
 					if (equipped_inst->GetAugment(i)) {
 						if (equipped_inst->GetAugment(i)->GetItem()->Attuneable) {
 							equipped_inst->GetAugment(i)->SetAttuned(true);
+							augment_attuned = true;
 						}
 					}
+				}
+
+				// Persist the binding on the host. Augments are stored as bare item ids
+				// (inventory.augment_one..six) and only the parent row carries instnodrop,
+				// so an augment's own attuned flag is lost on the next load. Without this,
+				// equipping a droppable host that carries a no-drop augment would bind it
+				// only until the next zone, and the augment could then be traded inside it.
+				// IsCharacterBound already treats such a host as bound in memory; this just
+				// makes that survive a reload.
+				if (augment_attuned && !equipped_inst->IsAttuned()) {
+					equipped_inst->SetAttuned(true);
 				}
 			}
 			SetMaterial(dst_slot_id, equipped_inst->GetItem()->ID);

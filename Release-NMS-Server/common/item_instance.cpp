@@ -698,9 +698,15 @@ void EQ::ItemInstance::PutAugment(SharedDatabase *db, uint8 slot, uint32 item_id
 
 	ItemInstance* aug = db->CreateItem(item_id);
 	if (aug) {
-		if (aug->GetItem()->Attuneable) {
-			aug->SetAttuned(true);
-		}
+		// Deliberately does NOT attune here. This runs on item CREATION and on every
+		// inventory load, so attuning an attuneable augment here bound the host item the
+		// moment it was looted - before it was ever worn - which contradicts the FV rule
+		// that loot is tradable until worn. Binding happens on equip instead
+		// (Client::SwapItem), which also attunes the host so the state persists: augments
+		// are stored as bare ids in inventory.augment_one..six and have no instnodrop
+		// column of their own, so an augment's attuned flag does not survive a reload.
+		// Socketing an augment by hand still attunes it (Handle_OP_AugmentItem), which is
+		// stock behaviour and unchanged.
 		PutAugment(slot, *aug);
 		safe_delete(aug);
 	}
