@@ -130,9 +130,9 @@ Consequences stated plainly:
 | Spellbook: unscribed on drop, re-scribed from the learned table on re-add | `client.cpp` 15111 → `ReconcileLearnedSpells` 13381-13475 | accepted; this is rule 5's shelving for spells and already exists |
 | Memorizing gated at the hero level | `client_process.cpp` 1482 (`if (GetLevel() >= req_level)`) | accepted (rule 4) |
 | **Spells already in gems stay castable at level 1** | `Handle_OP_CastSpell` (`client_packet.cpp` 4698-4713) checks only that the gem holds the spell; `Mob::CastSpell` none; `Client::CanCastSpell` (`client.cpp` 15579) has one caller, the GM `#castspellnms` | **changed (D11)**: rule 4 says spells follow the current level |
-| Disciplines above the hero level refused | `effects.cpp` 1180-1191 `UseDiscipline` (`level_to_use <= GetLevel()` over held classes) | accepted (rule 4, decision-record default: disciplines are spells for this purpose); listed so the owner sees that a 70 Monk's discs are off at level 1 while its Flying Kick is on |
-| AA-cast spells fire at the hero's caster level with no level test | `aa.cpp` 1706 → `DoCastingChecksOnCaster` (`spells.cpp` 693-808), none | accepted (rule 2, decision-record default) |
-| Items with a required level above the hero level: zero weapon damage, worn stats skipped, cannot be re-equipped, Monk special-attack scale | `attack.cpp` 1252; `bonuses.cpp` 283-287; `common/inventory_profile.cpp` 363-366; `special_attacks.cpp` 985 | accepted (rule 8, decision-record default: the hero fights with gear it can wear at its level). The alternative, exempting heroes from the item level test, is a four-site change the owner can ask for |
+| Disciplines above the hero level refused | `effects.cpp` 1180-1191 `UseDiscipline` (`level_to_use <= GetLevel()` over held classes) | accepted (rule 4, decided 2026-09-08: disciplines are spells for this purpose); a 70 Monk's discs are off at level 1 while its Flying Kick is on |
+| AA-cast spells fire at the hero's caster level with no level test | `aa.cpp` 1706 → `DoCastingChecksOnCaster` (`spells.cpp` 693-808), none | accepted (rule 2, decided 2026-09-08) |
+| Items with a required level above the hero level: zero weapon damage, worn stats skipped, cannot be re-equipped, Monk special-attack scale | `attack.cpp` 1252; `bonuses.cpp` 283-287; `common/inventory_profile.cpp` 363-366; `special_attacks.cpp` 985 | accepted (rule 8, decided 2026-09-08: the hero fights with gear it can wear at its level) |
 | Buffs from 70 stay; `BuffFadeAll` on class drop | `Mob::BuffFadeAll` `spells.cpp` 5258; called from `NMS_multiclass_utils.pl` 389 | drop the `BuffFadeAll` (rule 6: no penalty on switching; buffs are not "earned" but wiping them is a cost). **Owner decision** to keep it. The gates spec's one `RemoveClass` follows this decision and does not restore the call |
 | HP clamped (or healed under `Character:HealOnLevel`), mana and endurance set to the new maximum | `exp.cpp` 1535-1553; `client_mods.cpp` 1620-1628 | accepted (rule 8) |
 | Combat formulas that read the hero level, not the skill | `attack.cpp` 1169 (Monk/Beastlord hand-to-hand at 30+), 1288 (30+), 1719 (Warrior main-hand bonus at 28+), 4268 (triple attack at 60+), 4322 (35+), 5709-5711 (12+) | accepted (rule 8): a level-1 hero swings with maxed skills but without the level-gated formulas; listed so the owner sees the whole list |
@@ -142,7 +142,7 @@ Consequences stated plainly:
 | Death costs no exp at level 1; losses land on the trailing row only | `attack.cpp` 2096; `class_exp_routing.cpp` 40 | accepted |
 | GM `#level` / `#set level` rewrite every class row including shelved ones | `exp.cpp` 1513-1514, 1875-1890 | accepted, GM tool; D9 covers the player door; §4 step 9 records the rows |
 | Con colours, kill exp, AA exp cap | `exp.cpp` 203, 989 | accepted (rule 8) |
-| Reward level (Echo of Memory award, group and raid exp range) reads the **highest** held row while catching up | `exp.cpp` 1822-1826 `GetRewardLevel` | accepted as the decision record's rule 8 exception (owner decision there) |
+| Reward level (Echo of Memory award, group and raid exp range) reads the **highest** held row while catching up | `exp.cpp` 1822-1826 `GetRewardLevel` | accepted as rule 8's one exception (decided 2026-09-08) |
 | Zone minimum level | `zoning.cpp` 1443; `client.cpp` 14930-14937 | gates spec |
 
 ### D11 — Gems follow the level (rule 4)
@@ -230,7 +230,7 @@ Local, before any of that: `build zone` (and `world`, for the constant) green on
 
 - Switching gates: `ZoneTooHigh`, `CanEnterZone`, the paid and free removal paths, announcements, and every player-facing string at the three doors including `plugin::RemoveClass`'s "lost access" line and the Hero tab info text (the gates spec owns all copy).
 - AA reuse timer ids and `ClearDynamicAATimers` (the timer spec; lands first, and moves the mapping wipe into `ResetAA`, which D8 here also edits: the two changes are adjacent lines in one function and the second PR rebases on the first).
-- Items with a required level, disciplines and the reward level: accepted in D10 under the decision record's defaults; the owner decisions live in the record.
+- Items with a required level, disciplines and the reward level: accepted in D10 as decided 2026-09-08; the decisions live in the record.
 - The placeholder level-80 ranks (ADR-0001 catalog pass).
 - Fixing `Client::MaxSkills` (`client.cpp` 14124-14152), a no-op today.
 - Per-class exp rows: already shelved and restored by `LoadClassExp` (`exp.cpp` 1994).

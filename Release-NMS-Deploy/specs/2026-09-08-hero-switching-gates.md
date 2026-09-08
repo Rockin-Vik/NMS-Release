@@ -1,6 +1,6 @@
 # Switching gates: free, instant, out of combat only, no announcements
 
-Status: draft v3 for review, 2026-09-08. Third item under the hero class-switching decision (local ADR-0002, rules 6 and 7, and the owner's 2026-09-08 decision that first-of-a-kind announcements stop firing). Not built. Lands after the AA reuse timer spec and the skills + AAs persistence spec, so that nobody can switch freely into a class drop that still refunds and zeroes. v1 was verified by three independent readers against the tree; v2 went through a twelve-agent adversarial review (GO-WITH-FIXES); every confirmed finding is folded in.
+Status: draft v3 for review, 2026-09-08; the two owner decisions it carried (D4 hero meaning, D7 blind-fate line) were decided the same day and are written in as decisions. Third item under the hero class-switching decision (local ADR-0002, rules 6 and 7, and the owner's 2026-09-08 decision that first-of-a-kind announcements stop firing). Not built. Lands after the AA reuse timer spec and the skills + AAs persistence spec, so that nobody can switch freely into a class drop that still refunds and zeroes. v1 was verified by three independent readers against the tree; v2 went through a twelve-agent adversarial review (GO-WITH-FIXES); every confirmed finding is folded in.
 
 ## 1. Problem
 
@@ -12,7 +12,7 @@ Switching a class today runs through four gates that rule 6 says should not exis
 | Removal lockout | `NMS_multiclass_utils.pl:399` `RemoveClassLockoutDays`; expedition lockout `"Class Removal Lockout"` (`:417`, `:427`) | 7 days | none |
 | First removal free | per-character bucket `free_remove_class_used` (`:405`, `:407`; `Vision_of_Ayonae.pl:268`) | one per character | none |
 | Zone too high to add | `client.cpp:14930-14937` `AddClassResult::ZoneTooHigh` | refuses an add when **all three** hold: `Custom:HeroCatchupEnabled` is on (compiled default `false`, `ruletypes.h:1199`; the live value is the one that matters), the add is not `join_at_watermark`, and the zone's `min_level` exceeds `Custom:NewClassStartLevel`. With catch-up off the block never fires today, so nothing about it can be observed on a stock boot | none |
-| Zone minimum level on entry | `zoning.cpp:1443` `CanEnterZone` | kick to bind on zone-in (`client_packet.cpp:1091`) or `ZoneNoExperience` on a zone line (`zoning.cpp:348`) when `GetLevel() < min_level` | bypassed for a hero holding more than one class |
+| Zone minimum level on entry | `zoning.cpp:1443` `CanEnterZone` | kick to bind on zone-in (`client_packet.cpp:1091`) or `ZoneNoExperience` on a zone line (`zoning.cpp:348`) when `GetLevel() < min_level` | bypassed for a hero: a character that holds, or has ever held, more than one class (decided 2026-09-08, D4) |
 | In combat | `client.cpp:14926` `AddClassResult::InCombat` | aggro, feign, duel refuse an **add** only | the only gate; applies to add **and** remove |
 
 The policy is spread over three doors. The Hero tab (`Handle_OP_HeroRequest`, `client_packet.cpp:17267`) fail-closes on rule, class range, held and last-class, then dispatches to `plugin::HeroRequest` (`NMS_multiclass_utils.pl:434`), which tries `RemoveClassFree` then `RemoveClassPaid` (`:446-447`). The Vision of Ayonae has its own copy of the same choice with four yellow strings (`Vision_of_Ayonae.pl:268-286`) and two handlers (`:291-296`). The guildmasters only add (`global/global_npc.pl:66-75`) and already charge nothing.
@@ -26,7 +26,7 @@ One gap in the other direction: rule 6 makes out of combat *the* check on switch
 
 ## 2. Decision
 
-Removal and addition are free and immediate. The only refusal that reads the character's **situation** is **in combat** (aggro count, feign death, duel), and it applies to **both** add and remove at every door. Every refusal that remains, so the word "only" is not misread: rule off (`MulticlassingDisabled`, `client.cpp:14894`; `Custom:ServerAuthStats` off at the tab, `client_packet.cpp:17283`), `Character:UseOldClassExpPenalties` on (`OldClassPenaltyRuleOn`, `:14899`), class id out of range, already held / not held, at `Custom:MaxMulticlasses`, race not allowed, last class (`:15078`), in combat, and the row insert failing. All of those are structural or rule-driven; none is a cost, a lockout, a zone or a timer. A hero holding more than one class enters and stays in any zone regardless of its minimum level. No world announcement fires on a class change. No new rule, no opcode change, no schema change.
+Removal and addition are free and immediate. The only refusal that reads the character's **situation** is **in combat** (aggro count, feign death, duel), and it applies to **both** add and remove at every door. Every refusal that remains, so the word "only" is not misread: rule off (`MulticlassingDisabled`, `client.cpp:14894`; `Custom:ServerAuthStats` off at the tab, `client_packet.cpp:17283`), `Character:UseOldClassExpPenalties` on (`OldClassPenaltyRuleOn`, `:14899`), class id out of range, already held / not held, at `Custom:MaxMulticlasses`, race not allowed, last class (`:15078`), in combat, and the row insert failing. All of those are structural or rule-driven; none is a cost, a lockout, a zone or a timer. A hero, meaning a character that holds or has ever held more than one class, enters and stays in any zone regardless of its minimum level. No world announcement fires on a class change. No new rule, no opcode change, no schema change.
 
 ### D1. One `RemoveClass` in the plugin
 
@@ -70,7 +70,7 @@ After this, `GetZoneMinimumLevel` has no C++ caller outside the script exports (
 
 Guildmaster effect: `global/global_npc.pl:61` and `:72` echo `CanAddClassMessage`, so today a guildmaster in a `min_level > 1` zone says "You cannot begin that class in this zone." That string stops being returned. No script change.
 
-### D4. Zone minimum level bypassed for a hero with more than one class
+### D4. Zone minimum level bypassed for a hero (held or shelved classes)
 
 The single enforcement point is `Client::CanEnterZone` (`zoning.cpp:1425-1456`). Its callers:
 
@@ -80,9 +80,11 @@ The single enforcement point is `Client::CanEnterZone` (`zoning.cpp:1425-1456`).
 | `zoning.cpp:348` `Handle_OP_ZoneChange` (zone lines, solicited zones, `#zone` for non-GMs via `MovePC`) | `SendZoneError(ZoneNoExperience)` | none; fixed by the bypass |
 | `perl_client.cpp:3132`, `:3137`; `lua_client.cpp:3165`, `:3170` | returns the bool | none; no quest or plugin calls them |
 
-`Handle_OP_GMZoneRequest` (`client_packet.cpp:7492-7552`) compares against a hard-coded 0 (`:7509`, `:7543`) and never refuses on level. `world/` has no zone `min_level` test. So there is one edit: at `zoning.cpp:1443`, `if (!GetGM() && !HasMultipleClasses() && GetLevel() < z->min_level)`. `HasMultipleClasses()` is a new inline const helper on `Client` next to `GetClassesBits()` (`client.h:620`), true when more than one bit is set, reusing the bit-count loop at `client.cpp:14913-14916` (and the one in the packet handler, `client_packet.cpp:17321-17324`, which D2's helper replaces; the packet handler then calls `CanRemoveExtraClass`, which calls `HasMultipleClasses`, so the loop is written once). The persistence spec also needs this helper (its D5, D9 and D11); whichever of the two PRs lands first defines it with this exact meaning and the other reuses it. A single-class character keeps the stock rule.
+`Handle_OP_GMZoneRequest` (`client_packet.cpp:7492-7552`) compares against a hard-coded 0 (`:7509`, `:7543`) and never refuses on level. `world/` has no zone `min_level` test. So there is one edit: at `zoning.cpp:1443`, `if (!GetGM() && !IsHero() && GetLevel() < z->min_level)`.
 
-**Owner decision, what "hero" means for the bypass.** Keyed on *currently holds more than one class*, a hero that stands in a `min_level` 50 zone at level 1 with a 70 class held, then drops the 70 there, becomes a single-class level-1 character with shelved rows and is sent to bind on its next zone-in (`client_packet.cpp:1091` → `GoToBind()`). Under the persistence spec that character still *has* the shelved class. Default: keep the bypass on the current hold (the code can read it without a query, and a single-class character is a single-class character); the alternative is "has ever held more than one class", which needs the shelved rows read at zone-in. Step 11 below exercises the case either way.
+**Decided 2026-09-08: "hero" means held or shelved.** A character that holds, or has ever held, more than one class keeps the bypass; a character that has only ever been one class keeps the stock rule. The reading is free of any new query: `LoadClassExp` fills `m_class_exp` from `character_class_exp` at zone entry (`client_packet.cpp:1587`, inside `Handle_Connect_OP_ZoneEntry`), which runs before `CompleteConnect`'s `CanEnterZone` at `:1091` and before any zone line, and those rows keep a dropped class (`RemoveExtraClass` never deletes them; `SetAllClassExp` even says "retained rows for classes that are no longer in the bitmask move too", `exp.cpp:1885`). So `Client::IsHero()` is a new inline const helper: `m_class_exp.size() > 1`. With multiclassing off the map is empty and the helper is false. The rejected alternative, keying on the current class bits, would send a hero to bind after it dropped to one class inside a high zone; step 11 tests the chosen behaviour.
+
+Two helpers, two meanings, on purpose: `IsHero()` (history, for the zone rule) and `HasMultipleClasses()` (current bits, for the last-class refusal in D2). `HasMultipleClasses()` is an inline const helper on `Client` next to `GetClassesBits()` (`client.h:620`), true when more than one bit is set, reusing the bit-count loop at `client.cpp:14913-14916` (and the one in the packet handler, `client_packet.cpp:17321-17324`, which D2's helper replaces; the packet handler then calls `CanRemoveExtraClass`, which calls `HasMultipleClasses`, so the loop is written once). The persistence spec also needs `HasMultipleClasses` (its D5, D9 and D11) and defines it, since it lands first; this spec reuses it and adds `IsHero`.
 
 **Owner decision, rule 7 wording.** Rule 7's headline is "No zone level requirement applies to a hero"; its second clause says "the stock zone minimum level is bypassed". This spec bypasses the **minimum** only and leaves the `max_level` test at `zoning.cpp:1453` as stock. A hero's level is its lowest class, so it can never exceed a zone maximum in a way a single class could not. If the owner reads rule 7 as both bounds, the change is the same one-condition edit on line 1453.
 
@@ -99,7 +101,7 @@ Kept: the per-player yellow "You have permanently gained access to the $class_na
 - "$name ($full_class_name) has logged in for the first time." (`global/global_player.pl:112-121`, keyed on the `First-Login` bucket).
 - "$name has cast themselves upon the whims of blind fate, choosing random classes ($full_class_name)." (`Vision_of_Ayonae.pl:108`).
 
-**Owner decision** on one blind-fate line this spec makes stale: the warning at `Vision_of_Ayonae.pl:38` ends "This decision cannot be reversed." Blind fate removes the original class (`:87`) and assigns random ones; once removal and addition are free the original class is one guildmaster hail away, so the sentence is no longer true. Default: rewrite to "Your current classes are dropped and random ones assigned; they can be changed again afterwards." The owner may prefer to keep the dramatic line.
+**Decided 2026-09-08**, one blind-fate line this spec makes stale: the warning at `Vision_of_Ayonae.pl:38` ends "This decision cannot be reversed." Blind fate removes the original class (`:87`) and assigns random ones; once removal and addition are free the original class is one guildmaster hail away, so the sentence is no longer true. It is rewritten in D7 to "Your current classes are dropped and random ones assigned; they can be changed again afterwards."
 
 ### D6. Rows already in the database
 
@@ -122,6 +124,7 @@ Default: **leave them**. A player under a live lockout is not refused because no
 | Lines | Before | After |
 | --- | --- | --- |
 | 11, 13 | the two cost/lockout reads | deleted |
+| 38 | `... you will be assigned N random classes. This decision cannot be reversed.` | `... you will be assigned N random classes. Your current classes are dropped and random ones assigned; they can be changed again afterwards.` (the `plugin::MaxMulticlasses()` interpolation stays) |
 | 22-25 hail | bucket read and `You have a free class removal available. You will be given the option to use it by proceeding with the menu.` | deleted (the free AA reset notice at 27-30 stays) |
 | 268-270 | bucket read, `if`, `You have a free class removal available. Would you like to [use it]? This will bypass any lockouts or costs.` | deleted |
 | 271-276 | `You cannot remove a class at this time, you still are under cooldown from a previous class removal.` and its `return 0` | deleted |
@@ -174,7 +177,7 @@ Preconditions that decide whether a pass means anything:
 
 1. Three-class hero at 70 in a zone with `min_level > 1`. Add a fourth class at the Hero tab. **Expect:** add succeeds, hero level 1, no "You cannot begin that class in this zone.", no world announcement in any channel or the world log, no new `class-<bits>` row.
 2. Same hero, still there: camp, log back in, cross a zone line into another `min_level > 1` zone. **Expect:** no kick to bind (the `does not meet minimum level requirement` log line absent), no zone error, hero in the new zone at level 1.
-3. Control: a single-class level-1 character on the same account tries the same zone line. **Expect:** stock `ZoneNoExperience` refusal, proving the bypass is keyed on class count.
+3. Control: a level-1 character on the same account that has **never** held a second class (one row in `character_class_exp`) tries the same zone line. **Expect:** stock `ZoneNoExperience` refusal, proving the bypass is keyed on class history, not on level.
 4. Hero tab Remove on a held class, out of combat, with 0 Echo of Memory, a `Class Removal Lockout` row planted for this character, **and the `free_remove_class_used` bucket set to 1 first** (without that, today's code takes the free path and the step passes on the old policy too). **Expect:** removal succeeds at once; no fee, lockout or Echo of Memory text; the info box reads the D7 line before the press and the tooltip reads the D7 text.
    4a. Straight after: `SELECT` the dropped class's rows in `character_alternate_abilities` (its class-only ranks) and the raw values of a skill only it can hold in the profile. **Expect:** all still present. This is what makes the "kept" copy true; if either is gone the persistence spec has not landed and this spec must not ship.
 5. Remove another held class straight away (after 1 s). **Expect:** succeeds.
@@ -183,17 +186,17 @@ Preconditions that decide whether a pass means anything:
 8. Last class. Single-class character: the tab's Remove button says `You cannot remove your last class.` from the add-on (`hero_tab.cpp:307-308`); the server is never asked. Two-class character: remove one, then say Ayonae's `remove_<id>` for the other. **Expect:** the server's red `You cannot remove your last class.`.
 9. Guildmaster in a `min_level > 1` zone: hail with a class not held. **Expect:** the "A new class begins at level 1..." offer, never "You cannot begin that class in this zone.".
 10. Reason codes from a scratch quest printing `$client->CanAddExtraClass($id)`: already held → 4 (`AlreadyHeld`); at cap → 5 (`AtCap`); with aggro → 7 (`InCombat`); in a `min_level > 1` zone with a free slot and no aggro → 0 (never 8). Same integers as before the change; the `static_assert` in D3 is what proves 8 and 9 did not move.
-11. Two-class hero at level 1 (one class 70) standing in a `min_level > 1` zone: remove the 70 class there, then cross a zone line. **Expect (default D4):** the now single-class level-1 character is refused with the stock `ZoneNoExperience` and, on camping and logging in, sent to bind. That is the documented consequence of keying on the current hold; if the owner chooses "has ever held", expect the opposite and the bypass reads the shelved rows.
+11. Two-class hero at level 1 (one class 70) standing in a `min_level > 1` zone: remove the 70 class there, then cross a zone line, then camp and log back in. **Expect (D4 as decided):** no refusal and no kick to bind either time; the character holds one class but its shelved row keeps it a hero. Then `SELECT COUNT(*) FROM character_class_exp WHERE character_id = ?` = 2, which is what `IsHero()` read.
 
 Local, before any of that: `build zone` green; a rebuilt `dinput8.dll` (Release, Win32, the configuration the client README names) with the `RenderInfo` change, verified by grepping the binary for the new held-line string and for the absence of "7-day lockout"; its hash recorded in the PR body and that same file installed on the client used for steps 4-6 (the tooltip lives in `EQUI_Inventory.xml`, a text file the binary grep says nothing about, so it is checked with `git diff` and by reading it in game); the adversarial handoff on the diff; `git grep` for `RemoveClassFree`, `RemoveClassPaid`, `RemoveClassCost`, `RemoveClassLockoutDays`, `CheckUniqueClass`, `free_remove_class_used`, `Class Removal Lockout`, `class-$class_bits`, `ZoneTooHigh` (outside the enum, the message case and the retirement comment) across `Release-NMS-Quests`, `Release-NMS-Plugins`, `Release-NMS-Server/zone`, `Release-NMS-Client`, with every hit and its fate in the PR body; `python Release-NMS-Deploy/custom-rules/generate.py --check` (no rule change, must pass unchanged).
 
 ## 5. Files
 
 - `Release-NMS-Plugins/NMS_multiclass_utils.pl`: `AddClass` (drop `:367-371`), `RemoveClass` (message `:388`), delete `RemoveClassCost`, `RemoveClassLockoutDays`, `RemoveClassFree`, `RemoveClassPaid`, `CheckUniqueClass`; `HeroRequest` op 2 and its header comment.
-- `Release-NMS-Quests/bazaar/Vision_of_Ayonae.pl`: lines 11, 13, 22-25, 266-296 per D7.
-- `Release-NMS-Server/zone/client.cpp`: `CanAddExtraClass` (delete `:14930-14937`, retirement comment, `[[maybe_unused]]`), new `CanRemoveExtraClass` / `RemoveClassResultMessage`, `RemoveExtraClass` (call the helper first), `HasMultipleClasses` definition.
-- `Release-NMS-Server/zone/client.h`: `RemoveClassResult` enum, the two declarations, `HasMultipleClasses()` near `:620`, retirement note on `ZoneTooHigh` at `:268-279`.
-- `Release-NMS-Server/zone/zoning.cpp` `CanEnterZone` `:1443`: the `!HasMultipleClasses()` condition.
+- `Release-NMS-Quests/bazaar/Vision_of_Ayonae.pl`: lines 11, 13, 22-25, 38, 266-296 per D7.
+- `Release-NMS-Server/zone/client.cpp`: `CanAddExtraClass` (delete `:14930-14937`, retirement comment, `[[maybe_unused]]`), new `CanRemoveExtraClass` / `RemoveClassResultMessage`, `RemoveExtraClass` (call the helper first); `HasMultipleClasses` is the persistence spec's.
+- `Release-NMS-Server/zone/client.h`: `RemoveClassResult` enum, the two declarations, `IsHero()` (inline, `m_class_exp.size() > 1`) next to `LoadClassExp` at `:635`, retirement note on `ZoneTooHigh` at `:268-279`.
+- `Release-NMS-Server/zone/zoning.cpp` `CanEnterZone` `:1443`: the `!IsHero()` condition.
 - `Release-NMS-Server/zone/client_packet.cpp` `Handle_OP_HeroRequest`: remove branch uses `CanRemoveExtraClass`; comments at `:17288-17293` and `:17308-17309`.
 - `Release-NMS-Server/common/eq_packet_structs.h:1621-1623`: comment only.
 - `Release-NMS-Client/eqgame_dll/hero_tab.cpp` `RenderInfo` `:128-130`. **DLL rebuild required**; no opcode or struct change.
@@ -209,6 +212,6 @@ Local, before any of that: `build zone` green; a rebuilt `dinput8.dll` (Release,
 - The `BuffFadeAll()` after removal (`NMS_multiclass_utils.pl:389`): the persistence spec decides (its default deletes it; D1 above follows whatever it decided).
 - Memorized gems on the level drop that a free add now makes routine: the persistence spec's D11 hooks the level decrease and the add path; this spec adds no gem handling.
 - Retiring the `HeroCatchupEnabled` off mode and the guildmaster "joins you at your current level" branch (`global/global_npc.pl:56`; ADR line 24).
-- The blind-fate randomizer's own flow (`Vision_of_Ayonae.pl:45-114`): pays no fee, uses `join_at_watermark = 1`; only its `AddClass` calls stop producing the FIRST announcement (D5). Its own announcement stays unless the owner rules otherwise.
+- The blind-fate randomizer's own flow (`Vision_of_Ayonae.pl:45-114`): pays no fee, uses `join_at_watermark = 1`; only its `AddClass` calls stop producing the FIRST announcement (D5) and its warning line is reworded (D7). Its own announcement stays unless the owner rules otherwise.
 - The Echo of Memory AA reset at Ayonae.
 - The `Please wait a moment` throttle window (1 s).
