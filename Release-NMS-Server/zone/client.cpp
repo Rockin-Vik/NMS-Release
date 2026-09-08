@@ -15117,8 +15117,9 @@ bool Client::RemoveExtraClass(int class_id) {
 		}
 	}
 
-    // Clear dynamic AA timers
-    ClearDynamicAATimers();
+    // Dynamic AA timer rows and running cooldowns are kept: a cooldown started as the dropped
+    // class keeps running, and the other classes' cooldowns are no longer wiped. A dropped
+    // ability's index frees itself once its cooldown ends (AcquireDynamicAATimer).
 
     // Remove pets that are no longer summonable by remaining classes
     auto pets = GetAllPets();

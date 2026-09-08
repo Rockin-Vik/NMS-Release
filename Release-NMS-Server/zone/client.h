@@ -1189,17 +1189,29 @@ public:
 
 	inline PTimerList &GetPTimers() { return(p_timers); }
 
-	//Dynamic AA timer stuff
-	void GetDynamicAATimers();
-	int GetDynamicAATimer(int aa_id);
-	int SetDynamicAATimer(int aa_id);
-	void ClearDynamicAATimers();
+	// Dynamic AA reuse timers (Custom:UseDynamicAATimers). Every timed ability a character OWNS
+	// gets its own client shared-timer index, 1..98 per character, handed out at the table send,
+	// so two classes' unrelated abilities never lock each other out. The RoF2 client keeps a
+	// 100-entry table indexed 0..99 and silently discards anything above (spike, 2026-09-08):
+	// 0 means "no id" (unowned ranks, and overflow past 98); 99 is Situational Awareness on the
+	// wire. Spec: Release-NMS-Deploy/specs/2026-09-08-aa-reuse-timer-ids.md.
+	static const int kDynamicAATimerMax = 98;
+	void GetDynamicAATimers();                        // load the mapping rows into the cache
+	int  GetDynamicAATimer(int aa_id);                // lookup only; 0 when the ability has no id
+	int  AcquireDynamicAATimer(int aa_id);            // stored id, else the lowest free id (released ones are recycled); 0 on exhaustion
+	int  ResolveAATimerIndex(AA::Rank *rank);         // the index every timer composer uses: dynamic with the rule on, stock spell_type otherwise
+	bool IsDynamicAATimerHeld(int aa_id, int timer_id); // owned by a held class, or its cooldown still running
+	void RepairDynamicAATimers();                     // zone entry, after p_timers.Load: drop rows above 98; rule off: drop every row
+	void ClearDynamicAATimers();                      // every mapping row and every AA cooldown (the reset paths)
+	void ResetAlternateAdvancementTimerByIndex(int index);
 
 	void GetAllToggleAAStatus();
 	void SetToggleAAStatus(int ability_id, bool status);
 	bool GetToggleAAStatus(int ability_id) const;
 
-	std::unordered_map<int, int> m_aa_timers_cache; // Cache to store AA timers as key-value pairs (aa_id -> timerID)
+	std::unordered_map<int, int> m_aa_timers_cache; // aa_id -> timer index, the character's mapping rows
+	bool m_aa_timers_loaded = false;                // the cache reflects the table (an empty table is a valid state)
+	bool m_aa_timer_pool_exhausted_logged = false;  // one log line per zone-in when every index is held
 
 	//New AA Methods
 	void SendAlternateAdvancementRank(int aa_id, int level);

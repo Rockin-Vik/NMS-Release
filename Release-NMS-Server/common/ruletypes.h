@@ -1198,7 +1198,7 @@ RULE_BOOL(Custom, 	MulticlassingEnabled, 					true, "Enable this to enable all m
 RULE_INT(Custom, 	MaxMulticlasses, 						4, "Cap on multiclasses; inert unless MulticlassingEnabled and requires Character:UseOldClassExpPenalties false.")
 RULE_BOOL(Custom, 	HeroCatchupEnabled, 					false, "Off (default): a new class joins at the character's current level and all class rows shadow the single pool. On: new classes start at NewClassStartLevel and the effective level is the lowest class until it catches up. Inert unless MulticlassingEnabled.")
 RULE_INT(Custom, 	NewClassStartLevel, 					1, "New class start level; ignored when catch-up is off and inert unless MulticlassingEnabled.")
-RULE_BOOL(Custom, 	UseDynamicAATimers, 					true, "Enable using dynamic AA timers. Required to deconflict multiclass AA timers")
+RULE_BOOL(Custom, 	UseDynamicAATimers, 					true, "Give every timed AA a character owns its own client shared-timer index (1..98 per character, allocated at the table send) instead of aa_ranks.spell_type, so two classes' abilities never lock each other out. Unowned ranks are sent as index 0. Re-zone after switching; rows above 98 from older builds are repaired at zone entry.")
 RULE_BOOL(Custom,	AAIgnoreExpansionGate,					true, "When true, skip aa_ranks.expansion vs character/World expansion bitmasks and Expansion:UseCurrentExpansionAAOnly. Off = stock EQEmu expansion refuse. Does not change zone time-locks.")
 
 // NMS Options

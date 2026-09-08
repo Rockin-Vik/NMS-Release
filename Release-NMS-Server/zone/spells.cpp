@@ -3101,10 +3101,9 @@ bool Mob::SpellFinished(uint16 spell_id, Mob *spell_target, CastingSlot slot, in
 					ExpendAlternateAdvancementCharge(rank->base_ability->id);
 				}
 				//set AA recast timer
-				if (RuleB(Custom, UseDynamicAATimers)) {
-					CastToClient()->SendAlternateAdvancementTimer(CastToClient()->GetDynamicAATimer(rank->base_ability->id), 0, 0);
-				} else {
-					CastToClient()->SendAlternateAdvancementTimer(rank->spell_type, 0, 0);
+				// The same index activation keyed the cooldown on (dynamic or stock); never a second allocation.
+				if (rank) {
+					CastToClient()->SendAlternateAdvancementTimer(CastToClient()->ResolveAATimerIndex(rank), 0, 0);
 				}
 			}
 		}

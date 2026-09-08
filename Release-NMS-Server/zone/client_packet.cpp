@@ -1791,6 +1791,10 @@ void Client::Handle_Connect_OP_ZoneEntry(const EQApplicationPacket *app)
 		LogError("Unable to load ability timers from the database for [{}] ([{}])!", GetCleanName(), CharacterID());
 	}
 
+	// Before any timers packet goes out: drop dynamic AA timer rows the client cannot use
+	// (indexes above 98 from the old allocator), or every row when the rule is off.
+	RepairDynamicAATimers();
+
 	/* Load Spell Slot Refresh from Currently Memoried Spells */
 	for (unsigned int i = 0; i < EQ::spells::SPELL_GEM_COUNT; ++i)
 		if (IsValidSpell(m_pp.mem_spells[i]))

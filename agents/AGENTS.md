@@ -204,6 +204,10 @@ newest at the bottom.
 - I committed a rebuilt `dinput8.dll` after a build whose errors I had printed but not gated on, so the
   commit shipped the previous binary under a message claiming the fix. Gate every binary commit on the
   build's exit code and a fresh output timestamp, never on reading a log.
+- I opened a PR for a database script that had never touched a database and read only ruleset 1,
+  while the server layers a named ruleset over "default". Before a PR is opened: run the change
+  against a disposable local stand-in (portable MariaDB, a scratch DB) when the real target is out
+  of reach, and hand it to an adversarial reviewer; "parses clean" is not a test.
 
 ## Project skills
 
