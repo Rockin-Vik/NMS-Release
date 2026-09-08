@@ -1064,6 +1064,7 @@ public:
 	uint32 GetRawSkill(EQ::skills::SkillType skill_id) const { if (skill_id <= EQ::skills::HIGHEST_SKILL) { return(m_pp.skills[skill_id]); } return 0; }
 	bool HasSkill(EQ::skills::SkillType skill_id) const;
 	bool CanHaveSkill(EQ::skills::SkillType skill_id) const;
+	bool RaceGrantsSkill(EQ::skills::SkillType skill_id) const; // innate racial skills outside skill_caps
 	void SetSkill(EQ::skills::SkillType skill_num, uint16 value);
 	void AddSkill(EQ::skills::SkillType skillid, uint16 value);
 	// One OP_SkillUpdate per skill: the raw value for a skill a held class can have, the greyed

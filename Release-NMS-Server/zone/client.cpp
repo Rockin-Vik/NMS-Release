@@ -2994,9 +2994,10 @@ void Client::SetSkill(EQ::skills::SkillType skillid, uint16 value) {
 	auto outapp = new EQApplicationPacket(OP_SkillUpdate, sizeof(SkillUpdate_Struct));
 	SkillUpdate_Struct* skill = (SkillUpdate_Struct*)outapp->pBuffer;
 	skill->skillId=skillid;
-	// A skill no held class can have is shown greyed whatever its value: a shelved class's value is
-	// kept in place (hero rule 5) and must not read as usable.
-	skill->value = !CanHaveSkill(skillid) ? 0xFFFFFFFF : value;
+	// Under multiclassing a skill no held class can have is shown greyed whatever its value: a
+	// shelved class's value is kept in place (hero rule 5) and must not read as usable. Stock
+	// keeps the zero-only test.
+	skill->value = (!CanHaveSkill(skillid) && (value == 0 || RuleB(Custom, MulticlassingEnabled))) ? 0xFFFFFFFF : value;
 
 	if (value > 0) {
 		auto maxskill = GetMaxSkillAfterSpecializationRules(static_cast<EQ::skills::SkillType>(skillid), MaxSkill(static_cast<EQ::skills::SkillType>(skillid)));
@@ -3042,8 +3043,12 @@ void Client::AddSkill(EQ::skills::SkillType skillid, uint16 value) {
 	value = raw + value;
 	uint16 max = GetMaxSkillAfterSpecializationRules(skillid, MaxSkill(skillid));
 	if (value > max) {
-		// Never lower a value already above the cap (a hero's 70-class skill at hero level 1).
-		value = std::max(max, raw);
+		// Never lower a value already above the cap (a hero's 70-class skill at hero level 1),
+		// and do not announce a skill-up that changed nothing.
+		if (raw >= max) {
+			return;
+		}
+		value = max;
 	}
 	SetSkill(skillid, value);
 }
@@ -4250,8 +4255,38 @@ bool Client::HasSkill(EQ::skills::SkillType skill_id) const
 	return GetSkill(skill_id) > 0 && CanHaveSkill(skill_id);
 }
 
+bool Client::RaceGrantsSkill(EQ::skills::SkillType skill_id) const
+{
+	// The innate skills character creation writes (world/client.cpp) and the cap function above
+	// adds for the race. They live outside skill_caps, so a class-cap test alone calls them
+	// unowned: a Dark Elf Wizard's Hide must never read as a shelved skill.
+	switch (GetBaseRace()) {
+		case DARK_ELF:
+			return skill_id == EQ::skills::SkillHide;
+		case FROGLOK:
+			return skill_id == EQ::skills::SkillSwimming;
+		case GNOME:
+			return skill_id == EQ::skills::SkillTinkering;
+		case HALFLING:
+			return skill_id == EQ::skills::SkillHide || skill_id == EQ::skills::SkillSneak;
+		case IKSAR:
+			return skill_id == EQ::skills::SkillForage || skill_id == EQ::skills::SkillSwimming;
+		case WOOD_ELF:
+			// Creation grants Forage and Hide; the cap function raises Forage and Sneak. Both sets count.
+			return skill_id == EQ::skills::SkillForage || skill_id == EQ::skills::SkillHide || skill_id == EQ::skills::SkillSneak;
+		case VAHSHIR:
+			return skill_id == EQ::skills::SkillSafeFall || skill_id == EQ::skills::SkillSneak;
+		default:
+			return false;
+	}
+}
+
 bool Client::CanHaveSkill(EQ::skills::SkillType skill_id) const
 {
+	if (RaceGrantsSkill(skill_id)) {
+		return true;
+	}
+
 	if (
 		ClientVersion() < EQ::versions::ClientVersion::RoF2 &&
 		class_ == Class::Berserker &&
@@ -15261,7 +15296,8 @@ bool Client::CanCastSpellAtLevel(uint16 spell_id, uint8 level) const
 
 void Client::UnmemorizeGemsAboveLevel(uint8 level)
 {
-	if (!RuleB(Custom, MulticlassingEnabled)) {
+	// Heroes only: a single-class character keeps its gems through a level loss as stock does.
+	if (!RuleB(Custom, MulticlassingEnabled) || !HasMultipleClasses()) {
 		return;
 	}
 
