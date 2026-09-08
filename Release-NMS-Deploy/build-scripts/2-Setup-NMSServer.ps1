@@ -47,23 +47,6 @@
     If neither applies it stops and asks for -RepoUrl. That keeps any particular fork's
     URL out of the script.
 
-.PARAMETER PullRequest
-    Build a specific pull request instead of the default branch. Fetches
-    refs/pull/<N>/head from origin and checks it out as a local branch pr/<N>.
-
-    The ref is re-fetched on every run, so running the same -PullRequest again after new
-    commits are pushed to that PR picks them up. If the ref cannot be fetched the stage
-    STOPS. It never falls back to the default branch: the failure mode there is a green
-    build of the wrong source, which is silent until someone plays it.
-
-    Omit it to go back to the default branch. A run with neither -PullRequest nor -GitRef
-    moves a pinned checkout back, so a box cannot stay on a PR by accident.
-
-.PARAMETER GitRef
-    Build an arbitrary branch, tag or commit instead of the default branch. Mutually
-    exclusive with -PullRequest. Use -PullRequest for pull requests; use this for a branch
-    with no PR open yet, or to pin a known-good tag or SHA.
-
 .PARAMETER PublicAddress
     The address players connect to. Auto-detected if omitted. Set this explicitly if the
     box is behind NAT or you have a DNS name you want in the config.
@@ -95,19 +78,6 @@
 .EXAMPLE
     .\2-Setup-NMSServer.ps1 -Stage Build
     Resume from the build, keeping the existing clone and database.
-
-.EXAMPLE
-    .\2-Setup-NMSServer.ps1 -PullRequest 17
-    Build pull request 17 instead of the default branch. Run it again after new commits
-    land on that PR to pick them up.
-
-.EXAMPLE
-    .\2-Setup-NMSServer.ps1 -OnlyStage Clone -PullRequest 17
-    Move the checkout onto PR 17 and print the SHA, without building anything.
-
-.EXAMPLE
-    .\2-Setup-NMSServer.ps1 -GitRef ship-combined-dll
-    Build a branch that has no PR open yet. Also takes a tag or a commit SHA.
 
 .EXAMPLE
     .\2-Setup-NMSServer.ps1 -OnlyStage Health
@@ -143,14 +113,6 @@ param(
     # from the checkout these scripts were copied out of, so a fork works with no edit.
     # Pass -RepoUrl explicitly when running the scripts standalone.
     [string] $RepoUrl,
-
-    # Pin the build to a PR or an arbitrary ref. Unset means the repo default branch.
-    # Applied in Invoke-StageClone; both are recorded in the run summary so the operator
-    # can see which source was actually built.
-    [ValidateRange(1, 999999)]
-    [int]    $PullRequest,
-    [string] $GitRef,
-
     [string] $PublicAddress,
     [string] $ServerLongName  = 'NMS Server',
     [string] $ServerShortName = 'nms',
@@ -172,12 +134,6 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-
-# Checked here rather than in Invoke-StageClone: a run that pins two different sources
-# is a typo, and finding out after the database import has already gone by is no use.
-if ($PullRequest -and $GitRef) {
-    throw '-PullRequest and -GitRef are mutually exclusive. Pass one or neither.'
-}
 
 # PowerShell 7.4+ defaults $PSNativeCommandUseErrorActionPreference to $true, which turns
 # ANY non-zero exit from a native command into a terminating error - before our own
@@ -355,24 +311,6 @@ function Invoke-Native {
     } finally {
         $ErrorActionPreference = $prev
     }
-}
-
-function Get-NativeLine {
-    <#
-        First line of stdout from the last Invoke-Native -Capture, with stderr dropped.
-
-        Invoke-Native merges stderr into the capture with 2>&1, and PowerShell 5.1 wraps
-        each of those lines in an ErrorRecord. git writes advice and warnings there even on
-        a successful command, so "Select-Object -First 1" can hand back a warning instead of
-        the value - the repo has already been bitten by this in the mysql --batch helpers.
-
-        Used by the ref/SHA reads that decide what the summary reports as the source that
-        was built. The other $script:NativeOutput readers in this file still use the plain
-        pattern; converting them is a separate sweep, not part of the PR-pinning change.
-    #>
-    $script:NativeOutput |
-        Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } |
-        Select-Object -First 1
 }
 
 function Write-TextFile {
@@ -738,110 +676,6 @@ inside a clone needs no argument.
 '@
 }
 
-function Get-DefaultBranch {
-    <#
-        The default branch of origin, for returning a pinned checkout to normal. Read from
-        origin/HEAD when the clone has it; a --depth 1 clone usually does. Falls back to
-        main, which is what this repo uses - a wrong guess here surfaces as a checkout
-        failure, not as a silent build of the wrong branch.
-    #>
-    if ((Invoke-Native -Capture { git symbolic-ref --quiet --short refs/remotes/origin/HEAD }) -eq 0) {
-        $h = Get-NativeLine
-        if ($h) { return ($h -replace '^origin/', '') }
-    }
-    return 'main'
-}
-
-function Set-SourceRef {
-    <#
-        Move <InstallRoot>\src onto whatever the caller asked for and return a label for
-        the summary. Three cases:
-
-          -PullRequest N   fetch refs/pull/N/head, check out as local branch pr/N
-          -GitRef X        fetch branch/tag X (or a SHA where the host allows it)
-          neither          return to the default branch, undoing any previous pin
-
-        Every path either lands on the requested source or throws. It must never fall
-        through to "whatever was already checked out": a build of the wrong source is
-        green and silent, and only shows up in-game.
-
-        Fetches are --depth 1 to match the shallow clone. A ref that needs more history
-        fails loudly with the unshallow command to run.
-    #>
-    param([int] $Pr, [string] $Ref)
-
-    Push-Location $script:SrcRoot
-    try {
-        if ($Pr) {
-            # Fetched into refs/nms/... rather than straight to refs/heads/pr/N: git refuses
-            # to fetch into the branch that is currently checked out, which is exactly the
-            # case when re-running the same -PullRequest to pick up new commits.
-            $remote = "+refs/pull/$Pr/head:refs/nms/pr/$Pr"
-            Write-Step "Fetching pull request $Pr ..."
-            $code = Invoke-Native -Show { git fetch --force --depth 1 origin $remote }
-            if ($code -ne 0) {
-                throw @"
-Could not fetch pull request $Pr from origin (git exit $code).
-
-Check that the PR number is right and that it is open against this repository:
-  git -C "$($script:SrcRoot)" ls-remote origin "refs/pull/$Pr/head"
-
-Nothing was checked out. The build has NOT fallen back to the default branch.
-"@
-            }
-            # -B resets the branch even while it is checked out, so a re-run moves pr/N
-            # forward instead of failing on "branch already exists".
-            $code = Invoke-Native -Show { git checkout --force -B "pr/$Pr" "refs/nms/pr/$Pr" }
-            if ($code -ne 0) { throw "Could not check out pull request $Pr (git exit $code)." }
-            return "PR #$Pr"
-        }
-
-        if ($Ref) {
-            Write-Step "Fetching ref $Ref ..."
-            $spec = "+${Ref}:refs/nms/ref"
-            $code = Invoke-Native -Show { git fetch --force --depth 1 origin $spec }
-            if ($code -eq 0) {
-                $target = "refs/nms/ref"
-            } else {
-                # Not a branch or tag. Try it as a bare commit, which works only if the host
-                # allows fetching arbitrary SHAs (uploadpack.allowReachableSHA1InWant).
-                Write-Step 'Not a branch or tag; trying it as a commit ...'
-                $code = Invoke-Native -Show { git fetch --force --depth 1 origin $Ref }
-                if ($code -ne 0) {
-                    throw @"
-Could not fetch "$Ref" from origin (git exit $code).
-
-It is not a branch or tag on origin, and origin would not serve it as a commit. If it is
-a commit that predates this shallow clone, deepen the checkout first:
-  git -C "$($script:SrcRoot)" fetch --unshallow
-
-Nothing was checked out. The build has NOT fallen back to the default branch.
-"@
-                }
-                $target = 'FETCH_HEAD'
-            }
-            $code = Invoke-Native -Show { git checkout --force --detach $target }
-            if ($code -ne 0) { throw "Could not check out ""$Ref"" (git exit $code)." }
-            return "ref $Ref"
-        }
-
-        # No pin. If a previous run left this on a PR or a detached commit, go back to the
-        # default branch - otherwise the next plain update silently keeps building the PR.
-        $branch = ""
-        if ((Invoke-Native -Capture { git rev-parse --abbrev-ref HEAD }) -eq 0) {
-            $branch = Get-NativeLine
-        }
-        $default = Get-DefaultBranch
-        if ($branch -ne $default) {
-            Write-Warn "Checkout is on '$branch'; returning to '$default'."
-            $null = Invoke-Native { git fetch --force --depth 1 origin "+refs/heads/${default}:refs/nms/default" }
-            $code = Invoke-Native -Show { git checkout --force -B $default refs/nms/default }
-            if ($code -ne 0) { throw "Could not return to '$default' (git exit $code)." }
-        }
-        return "branch $default"
-    } finally { Pop-Location }
-}
-
 function Invoke-StageClone {
     Write-Head 'Stage 1/13 - Clone'
 
@@ -850,7 +684,6 @@ function Invoke-StageClone {
     }
 
     $RepoUrl = Resolve-RepoUrl
-    $pinned  = [bool]($PullRequest -or $GitRef)
 
     if (Test-Path (Join-Path $script:SrcRoot '.git')) {
         Write-Step 'Repo already present; fetching updates...'
@@ -858,29 +691,24 @@ function Invoke-StageClone {
         try {
             $null = Invoke-Native { git fetch --all --quiet }
 
-            # Only the unpinned path pulls. With a pin, Set-SourceRef below fetches and
-            # checks out the requested ref itself, and a --ff-only pull against a PR branch
-            # or a detached commit would fail or, worse, quietly re-merge the default branch.
-            if (-not $pinned) {
-                # No upstream configured is a normal state, not an error - it just means we
-                # cannot tell how far behind we are, so skip the pull.
-                $behind = $null
-                if ((Invoke-Native -Capture { git rev-list --count 'HEAD..@{u}' }) -eq 0) {
-                    $behind = $script:NativeOutput | Select-Object -First 1
-                }
+            # No upstream configured is a normal state, not an error - it just means we
+            # cannot tell how far behind we are, so skip the pull.
+            $behind = $null
+            if ((Invoke-Native -Capture { git rev-list --count 'HEAD..@{u}' }) -eq 0) {
+                $behind = $script:NativeOutput | Select-Object -First 1
+            }
 
-                if ($behind -and [int]$behind -gt 0) {
-                    Write-Step "$behind commit(s) behind; pulling..."
-                    $pullCode = Invoke-Native -Show { git pull --ff-only --quiet }
-                    if ($pullCode -eq 0) { Write-Ok 'Updated.' }
-                    else {
-                        # Common on --depth 1 clones. Not fatal, but do NOT claim success -
-                        # the build would then compile stale source under a green summary.
-                        Write-Warn "git pull failed (exit $pullCode); continuing on the existing checkout."
-                    }
-                } else {
-                    Write-Ok 'Already up to date.'
+            if ($behind -and [int]$behind -gt 0) {
+                Write-Step "$behind commit(s) behind; pulling..."
+                $pullCode = Invoke-Native -Show { git pull --ff-only --quiet }
+                if ($pullCode -eq 0) { Write-Ok 'Updated.' }
+                else {
+                    # Common on --depth 1 clones. Not fatal, but do NOT claim success -
+                    # the build would then compile stale source under a green summary.
+                    Write-Warn "git pull failed (exit $pullCode); continuing on the existing checkout."
                 }
+            } else {
+                Write-Ok 'Already up to date.'
             }
         } finally { Pop-Location }
     } else {
@@ -897,10 +725,6 @@ function Invoke-StageClone {
         Write-Ok 'Cloned.'
     }
 
-    # Always runs, clone or no clone: this is what puts the checkout on the requested
-    # source, and with no pin it is what takes it back off a previous one.
-    $sourceLabel = Set-SourceRef -Pr $PullRequest -Ref $GitRef
-
     foreach ($p in $script:RepoServer, $script:RepoQuests, $script:RepoPlugins, $script:RepoClient) {
         if (-not (Test-Path $p)) { throw "Expected folder missing after clone: $p" }
     }
@@ -908,19 +732,9 @@ function Invoke-StageClone {
 
     $sha = 'unknown'
     if ((Invoke-Native -Capture { git -C $script:SrcRoot rev-parse --short HEAD }) -eq 0) {
-        $sha = Get-NativeLine
+        $sha = $script:NativeOutput | Select-Object -First 1
     }
-    $subject = ''
-    if ((Invoke-Native -Capture { git -C $script:SrcRoot log -1 --format=%s }) -eq 0) {
-        $subject = Get-NativeLine
-    }
-
-    # Printed loudly and repeated in the summary. Building the wrong source is the one
-    # failure this whole stage exists to prevent, and it is invisible afterwards.
-    Write-Ok "Building $sourceLabel at $sha"
-    if ($subject) { Write-Step "Head commit: $subject" }
-
-    Add-Summary 'Clone' 'Done' "$sourceLabel at $sha"
+    Add-Summary 'Clone' 'Done' "at $sha"
 }
 
 # ---------------------------------------------------------------------------
