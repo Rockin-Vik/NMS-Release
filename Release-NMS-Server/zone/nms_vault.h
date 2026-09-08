@@ -1,6 +1,7 @@
 #ifndef NMS_VAULT_H
 #define NMS_VAULT_H
 
+#include "../common/nms_vault_item.h"
 #include "../common/types.h"
 #include <string>
 #include <vector>
@@ -62,6 +63,8 @@ void NmsVaultHandleBank(Client *c);
 void NmsVaultHandleMerchant(Client *c);
 
 void NmsVaultOnZoneIn(Client *c);
+void NmsVaultGrantArmory(Client *c);
+bool NmsVaultTryOpenFromItem(Client *c, uint32 item_id);
 void NmsVaultOnMerchantEnd(Client *c);
 void NmsVaultOnClientDestroy(Client *c);
 void NmsVaultRefreshCache(Client *c);

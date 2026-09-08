@@ -171,11 +171,11 @@ Static (no respawn) and farming (long-respawn disabled) instance versions, plus 
 
 ## Dimensional Vault / loot offers
 
-Optional /nmsloot offer pipe and Dimensional Vault. On NPC death each in-zone group/raid member gets an independent loot roll. Both default off. Stock corpse loot and no vault when the rule is off or the tables are missing.
+Dimensional Vault and the Armarium inventory clicky (DimensionalVault default on) plus the optional /nmsloot offer pipe (NmsLootOffers default off). On NPC death each in-zone group/raid member gets an independent loot roll. Stock corpse loot when NmsLootOffers is off; no vault or Armarium grant when DimensionalVault is off or the tables are missing.
 
 | Rule | Type | Default | Related | Notes |
 | --- | --- | --- | --- | --- |
-| `DimensionalVault` | BOOL | `false` | `NmsLootOfferExpireSeconds` `NmsLootOffers` | Enable Dimensional Vault (#vault_*) storage, Proc Locker, clicky autoload, and vault bank/merchant. Off = no vault commands or combat hooks. |
+| `DimensionalVault` | BOOL | `true` | `NmsLootOfferExpireSeconds` `NmsLootOffers` | Enable Dimensional Vault (#vault_*) storage, Proc Locker, clicky autoload, vault bank/merchant, and the Armarium inventory clicky. Off = no vault commands, grant, or combat hooks. |
 | `NmsLootOffers` | BOOL | `false` | `DimensionalVault` `NmsLootOfferExpireSeconds` | On NPC death, independently re-roll loot for the killer and every group or raid member in this zone and send those items to /nmsloot. Keep/Sell/Tribute/Destroy/Pass grant that personal roll from anywhere in the zone. Opening a corpse only resends. Off = native corpse loot only. |
 | `NmsLootOfferExpireSeconds` | INT | `300` | `DimensionalVault` `NmsLootOffers` | Seconds before an unclaimed /nmsloot offer expires. Used only when NmsLootOffers is on. |
 

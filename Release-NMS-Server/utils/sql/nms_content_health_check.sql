@@ -1,6 +1,6 @@
 -- ============================================================================
 -- NMS content health check - verifies the DATA every custom-manifest version
--- (v18 through v42) is supposed to deliver, without trusting db_version.
+-- (v18 through v44) is supposed to deliver, without trusting db_version.
 --
 -- Why this exists: we have now twice found servers whose custom_version was
 -- stamped PAST an entry whose content never landed (a half-apply healed by a
@@ -14,10 +14,15 @@
 --     < nms_content_health_check.sql
 -- Or from any mysql/mariadb client: source nms_content_health_check.sql
 --
+-- Split player/content schemas: this script uses one DATABASE(). Point it at the
+-- player schema for db_version, rule_values, and character_nms_* tables; point it
+-- at the content schema for items / npc / zone / aa checks. A single run against
+-- one schema cannot prove both halves.
+--
 -- READ-ONLY: SELECT/SHOW only. Safe on any server, any number of times.
 -- ============================================================================
 
-SELECT 'db_version (expect 42 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
+SELECT 'db_version (expect 44 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
 
 -- ---- v18 / v23: Beastlord spell merchant + scrolls -------------------------
 SELECT 'v23 bl merchant npc (expect 1)' AS what, COUNT(*) AS value FROM npc_types WHERE id = 1120001300;
@@ -141,3 +146,75 @@ SELECT 'v42 learned carry-over tables (expect 3)' AS what, COUNT(*) AS value
   WHERE table_schema = DATABASE()
     AND table_name IN ('character_learned_spells', 'character_learned_discs',
                        'character_learned_mem');
+
+-- ---- v43: Armarium inventory clicky ----------------------------------------
+-- Identity is items.id 9011013. Runtime matching is id >= 9011013 AND
+-- id % 1000000 = 11013 so stock 11013 (Boots of Quickness) is not Armarium.
+-- norent must be nonzero (1): NoRent == 0 is deleted after a long camp.
+SELECT 'v43 armarium item (expect 1)' AS what, COUNT(*) AS value
+  FROM items WHERE id = 9011013 AND Name = 'Armarium';
+SELECT 'v43 armarium norent (expect 1)' AS what, norent AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium nodrop (expect 0)' AS what, nodrop AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium notransfer (expect 1)' AS what, notransfer AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium fvnodrop (expect 1)' AS what, fvnodrop AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium itemclass (expect 0)' AS what, itemclass AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium itemtype (expect 33)' AS what, itemtype AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium bagslots (expect 0)' AS what, bagslots AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium clicktype (expect 1)' AS what, clicktype AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium clickeffect (expect 1)' AS what, clickeffect AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium clickname (expect Open Armarium)' AS what, clickname AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium casttime (expect 0)' AS what, casttime AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium maxcharges (expect -1)' AS what, maxcharges AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium loregroup (expect -1)' AS what, loregroup AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium attuneable (expect 0)' AS what, attuneable AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium slots (expect 0)' AS what, slots AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium book (expect 0)' AS what, book AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium bagtype (expect 0)' AS what, bagtype AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 clone source 9011010 (expect 1)' AS what, COUNT(*) AS value
+  FROM items WHERE id = 9011010;
+
+-- ---- v44: Firiona Vie + attune loop ----------------------------------------
+-- Player schema (rule_values). Expect 1 (all players) or 2 (GM only) on the
+-- active ruleset: RuleSet variable, else rule_sets 'default', else id 1.
+SELECT 'v44 World:FVNoDropFlag active (expect 1 or 2)' AS what, rv.rule_value AS value
+  FROM rule_values rv
+ WHERE rv.rule_name = 'World:FVNoDropFlag'
+   AND rv.ruleset_id = COALESCE(
+     (SELECT rs.ruleset_id FROM rule_sets rs
+       INNER JOIN variables v ON v.varname = 'RuleSet' AND v.value = rs.`name`
+       LIMIT 1),
+     (SELECT rs.ruleset_id FROM rule_sets rs WHERE rs.`name` = 'default' LIMIT 1),
+     1
+   )
+ LIMIT 1;
+
+-- ---- v45: Armarium / vault rule on ----------------------------------------
+-- Player schema (rule_values). Expect true or 1 on the active ruleset.
+SELECT 'v45 Custom:DimensionalVault active (expect true or 1)' AS what, rv.rule_value AS value
+  FROM rule_values rv
+ WHERE rv.rule_name = 'Custom:DimensionalVault'
+   AND rv.ruleset_id = COALESCE(
+     (SELECT rs.ruleset_id FROM rule_sets rs
+       INNER JOIN variables v ON v.varname = 'RuleSet' AND v.value = rs.`name`
+       LIMIT 1),
+     (SELECT rs.ruleset_id FROM rule_sets rs WHERE rs.`name` = 'default' LIMIT 1),
+     1
+   )
+ LIMIT 1;

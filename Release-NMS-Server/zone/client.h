@@ -1323,6 +1323,7 @@ public:
 	int32 GetItemIDAt(int16 slot_id);
 	int32 GetAugmentIDAt(int16 slot_id, uint8 augslot);
 	bool PutItemInInventory(int16 slot_id, const EQ::ItemInstance& inst, bool client_update = false);
+	void RollbackFailedItemPut(int16 slot_id, bool client_update = true);
 	bool PutItemInInventoryWithStacking(EQ::ItemInstance* inst);
 	bool FindNumberOfFreeInventorySlotsWithSizeCheck(std::vector<BuyerLineTradeItems_Struct> items);
 	bool PushItemOnCursor(const EQ::ItemInstance& inst, bool client_update = false);
@@ -1411,6 +1412,7 @@ public:
 
 	bool CheckTradeLoreConflict(Client* other);
 	bool CheckTradeNonDroppable();
+	bool CanGiveItemInTrade(const EQ::ItemInstance *inst);
 	void LinkDead();
 	bool CheckDoubleAttack();
 	bool CheckTripleAttack();
@@ -1454,7 +1456,9 @@ public:
 	float CalcNewPriceMod(Mob* other = 0, bool reverse = false);
 	float CalcPriceMod(Mob* other = 0, bool reverse = false);
 	void ResetTrade();
-	void DropInst(const EQ::ItemInstance* inst);
+	bool ReturnTradeItemToInventory(int16 trade_slot, const EQ::ItemInstance *inst);
+	bool PushTradeReturnOrRetain(int16 trade_slot, const EQ::ItemInstance *inst);
+	bool DropInst(const EQ::ItemInstance* inst);
 	bool TrainDiscipline(uint32 itemid);
 	bool MemorizeSpellFromItem(uint32 item_id);
 	void TrainDiscBySpellID(int32 spell_id);

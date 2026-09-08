@@ -233,6 +233,25 @@ purchasable with EoM. Opcodes `OP_CharacterSetRequest/Create/Move/Unlock`,
   `FadeNPCDebuffsOutofCombat`
 - **Seasonal characters** — `Custom:EnableSeasonalCharacters` + `SeasonalCharacter` bucket
 
+### 3.8 Firiona Vie + attune loop
+
+NMS loot is tradable until worn. `World:FVNoDropFlag` compiled default is **1** (dump
+row is 0 until custom **v44**). Unattuned no-drop can be traded, dropped, and shared-banked.
+Wearable no-drop (and no-drop augs) that are not already attuneable are promoted at
+`shared_memory` load so equip sets attuned. Attuned instances stay bound: `IsDroppable`
+returns false (contents and augs are inspected before the FV parent
+early-return), and drop / trade / shared-bank no longer bypass that with
+`CanTradeFVNoDropItem()`. Trade finish still consults that helper for **AdminOnly**
+GMs giving unattuned no-drop; character-bound items stay rejected. Urthron's
+Ultimate Unattuner (`9208` / `52024`) clears attuned instance state even when
+item-table `nodrop` is 0; it refuses when the cursor is at the RoF2 persist
+limit and does not consume the source until the returned item is saved. A failed
+cursor or inventory put rolls back the destination clone so the kept source is
+not duplicated. Armarium
+stays bound (`fvnodrop = 1` plus identity in `IsDroppable`; vault refuse is
+recursive). Re-run `shared_memory` after changing the FV rule.
+`Items:DisableAttuneable` or FV `0` keeps stock item flags.
+
 ---
 
 ## 4. The migration system — read this before touching the DB
@@ -244,7 +263,7 @@ NMS runs a **second migration manifest in parallel with stock EQEmu's**:
 | Manifest | File | Version column | Current |
 | --- | --- | --- | --- |
 | Stock | `database_update_manifest.cpp` | `db_version.version` | 9325 |
-| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **41** |
+| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **44** |
 | Bots | `database_update_manifest_bots.cpp` | `db_version.bots_database_version` | |
 
 Both are `#include`d directly into `common/database/database_update.cpp` (lines 9–11) and run
@@ -265,7 +284,7 @@ ALTER TABLE db_version ADD COLUMN custom_version INT UNSIGNED NOT NULL DEFAULT 0
 
 ### 4.2 What is actually in the custom manifest
 
-42 entries declared (v1–v42), **39 live**. Numbering is a plain sequence independent of the 9325
+45 entries declared (v1–v45), **42 live**. Numbering is a plain sequence independent of the 9325
 stock number. Entries carry `content_schema_update` to target the content DB rather than the
 player DB.
 
@@ -289,6 +308,9 @@ player DB.
 | v40 | `passed_from` (client offer `name2` passer name) | Live |
 | v41 | `character_nms_vault` per-instance item state: attunement, `custom_data`, ornamentation, `guid` | Live |
 | v42 | `character_learned_spells` / `character_learned_discs` / `character_learned_mem` (B1 hide/restore) | Live |
+| v43 | Armarium item `9011013` (inventory clicky that opens vault storage; `Custom:DimensionalVault`). Identity is `id >= 9011013` and `id % 1000000 = 11013` so stock `11013` is not the key. `norent = 1`, `fvnodrop = 1`, `attuneable = 0`. Missing clone source `9011010` (and missing dest) is an SQL error, not a silent stamp. | Live |
+| v44 | `World:FVNoDropFlag = 1` on the active player `rule_values` row (dump `0` only; does not stomp `2`). Firiona Vie + attune loop. Wearable no-drop is promoted at `shared_memory` load, not by rewriting the dump. | Live |
+| v45 | `Custom:DimensionalVault = true` on the active player `rule_values` row (does not stomp an existing true). Armarium grant and vault commands are on. | Live |
 
 ### 4.3 ⚠️ The version number is a claim, not a fact
 

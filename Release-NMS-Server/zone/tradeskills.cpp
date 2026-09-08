@@ -391,29 +391,47 @@ void Object::HandleCombine(Client* user, const NewCombine_Struct* in_combine, Ob
 
 	if (container->GetItem() && container->GetItem()->BagType == EQ::item::BagTypeUnattuner) {
 		EQ::ItemInstance* inst = container->GetItem(0);
-		if (inst && inst->IsAttuned() && inst->GetItem()->NoDrop) { // Future Me: inst->GetItem()->NoDrop is opposite of what you expect
+		// NoDrop == 0 is no-drop in this schema. Promoted FV gear stays 0;
+		// attunement is instance state. Do not require a truthy NoDrop.
+		if (inst && inst->IsAttuned()) {
 			EQ::SayLinkEngine linker;
 			linker.SetLinkType(EQ::saylink::SayLinkItemInst);
 			linker.SetItemInst(inst);
-			int cost = user->GetItemStatValue(inst->GetItem()) * 1000 * RuleI(Custom, UnattuneCostMultiplier);
-			if (!RuleB(Custom, UseCustomUnattuneCombine) || user->TakeMoneyFromPP(cost, true)) {
-				inst->SetAttuned(false);
-
-				if (RuleB(Custom, UseCustomUnattuneCombine)) {
-					user->Message(Chat::Yellow, fmt::format("You spend {}pp to unattune your [{}].", Strings::Commify(cost/1000),linker.GenerateLink()).c_str());
-					user->EjectItemFromSlot(EQ::InventoryProfile::CalcSlotId(in_combine->container_slot, 0));
-				} else {
-					user->PushItemOnCursor(*inst, true);
-					container->Clear();
-					user->DeleteItemInInventory(in_combine->container_slot, 0, true);
-				}
-
+			if (user->GetInv().CursorSize() >= EQ::invbag::CURSOR_BAG_COUNT) {
+				user->Message(Chat::Yellow, "Your cursor is full. Clear it before unattuning.");
 				auto outapp = new EQApplicationPacket(OP_TradeSkillCombine, 0);
 				user->QueuePacket(outapp);
 				safe_delete(outapp);
 				return;
-			} else {
+			}
+
+			int cost = user->GetItemStatValue(inst->GetItem()) * 1000 * RuleI(Custom, UnattuneCostMultiplier);
+			const bool paid = RuleB(Custom, UseCustomUnattuneCombine);
+			if (paid && !user->TakeMoneyFromPP(cost, true)) {
 				user->Message(Chat::Yellow, fmt::format("You do not have enough money to unattune your [{}]", linker.GenerateLink()).c_str());
+			} else {
+				inst->SetAttuned(false);
+				if (!user->PushItemOnCursor(*inst, true)) {
+					user->RollbackFailedItemPut(EQ::invslot::slotCursor, true);
+					inst->SetAttuned(true);
+					if (paid) {
+						user->AddMoneyToPP(static_cast<uint64>(cost), true);
+					}
+					user->Message(Chat::Yellow, "The unattune could not be saved. Your item is unchanged.");
+				} else {
+					if (paid) {
+						user->Message(Chat::Yellow, fmt::format("You spend {}pp to unattune your [{}].", Strings::Commify(cost/1000),linker.GenerateLink()).c_str());
+						user->DeleteItemInInventory(EQ::InventoryProfile::CalcSlotId(in_combine->container_slot, 0), 0, true);
+					} else {
+						container->Clear();
+						user->DeleteItemInInventory(in_combine->container_slot, 0, true);
+					}
+
+					auto outapp = new EQApplicationPacket(OP_TradeSkillCombine, 0);
+					user->QueuePacket(outapp);
+					safe_delete(outapp);
+					return;
+				}
 			}
 		}
 	}

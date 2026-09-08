@@ -861,7 +861,30 @@ void Client::DropItem(int16 slot_id, bool recurse)
 		return;
 	}
 
-	if (GetInv().CheckNoDrop(slot_id, recurse) && !CanTradeFVNoDropItem()) {
+	// IsDroppable already applies Firiona Vie (unattuned no-drop is droppable)
+	// and recurses into bags/augs before the FV parent early-return. Attuned
+	// gear and Armarium stay !IsDroppable. Do not OR CanTradeFVNoDropItem()
+	// into the allow path (that put bound items on the ground). Under any
+	// FV != 0, refuse and keep. AdminOnly GMs may still move unattuned
+	// no-drop; that exemption must not apply to character-bound items.
+	if (GetInv().CheckNoDrop(slot_id, recurse)) {
+		const auto *blocked = m_inv.GetItem(slot_id);
+		const bool character_bound = blocked && blocked->IsCharacterBound(recurse);
+		const int fv = RuleI(World, FVNoDropFlag);
+		if (character_bound && fv != FVNoDropFlagRule::Disabled) {
+			Message(Chat::Red, "You may not drop a bound item.");
+			SendCursorBuffer();
+			return;
+		}
+		if (CanTradeFVNoDropItem() && fv == FVNoDropFlagRule::AdminOnly && !character_bound) {
+			// AdminOnly GM: unattuned no-drop may be dropped.
+		}
+		else if (fv != FVNoDropFlagRule::Disabled) {
+			Message(Chat::Red, "You may not drop a bound item.");
+			SendCursorBuffer();
+			return;
+		}
+		else {
 		auto invalid_drop = m_inv.GetItem(slot_id);
 		if (!invalid_drop) {
 			LogInventory("Error in InventoryProfile::CheckNoDrop() - returned 'true' for empty slot");
@@ -894,6 +917,7 @@ void Client::DropItem(int16 slot_id, bool recurse)
 		RecordPlayerEventLog(PlayerEvent::POSSIBLE_HACK, PlayerEvent::PossibleHackEvent{.message = message});
 		GetInv().DeleteItem(slot_id);
 		return;
+		}
 	}
 
 	// Take control of item in client inventory
@@ -1011,31 +1035,32 @@ void Client::DropItem(int16 slot_id, bool recurse)
 	safe_delete(inst);
 }
 
-// Drop inst
-void Client::DropInst(const EQ::ItemInstance* inst)
+// Drop inst. Returns true only when a ground object was created.
+bool Client::DropInst(const EQ::ItemInstance* inst)
 {
 	if (!inst) {
 		// Item doesn't exist in inventory!
 		Message(Chat::Red, "Error: Item not found");
-		return;
+		return false;
 	}
 
 	if (RuleI(Custom, EnableSeasonalCharacters) == Strings::ToInt(GetBucket("SeasonalCharacter"), 0)) {
 		Message(Chat::Red, "Seasonal Characters may not drop items.");
 		SendCursorBuffer();
-		return;
+		return false;
 	}
 
-	if (inst->GetItem()->NoDrop == 0)
+	if (!inst->IsDroppable(true))
 	{
-		Message(Chat::Red, "This item is NODROP. Deleting.");
-		return;
+		Message(Chat::Red, "You may not drop a bound item.");
+		return false;
 	}
 
 	// Package as zone object
 	auto object = new Object(this, inst);
 	entity_list.AddObject(object, true);
 	object->StartDecay();
+	return true;
 }
 
 // Returns a slot's item ID (returns INVALID_ID if not found)
@@ -1230,6 +1255,47 @@ bool Client::PushItemOnCursor(const EQ::ItemInstance& inst, bool client_update)
 
 	auto s = m_inv.cursor_cbegin(), e = m_inv.cursor_cend();
 	return database.SaveCursor(CharacterID(), s, e);
+}
+
+void Client::RollbackFailedItemPut(int16 slot_id, bool client_update)
+{
+	// PushCursor appends; PutItem writes the slot before Save* returns.
+	// Callers that keep the source on persist failure must drop that clone.
+	if (slot_id == EQ::invslot::slotCursor) {
+		EQ::ItemInstance *clone = m_inv.PopCursorBack();
+		safe_delete(clone);
+		auto s = m_inv.cursor_cbegin(), e = m_inv.cursor_cend();
+		database.SaveCursor(CharacterID(), s, e);
+		if (!client_update) {
+			return;
+		}
+		if (m_inv.CursorEmpty()) {
+			auto outapp = new EQApplicationPacket(OP_DeleteItem, sizeof(DeleteItem_Struct));
+			auto *delitem = (DeleteItem_Struct *) outapp->pBuffer;
+			delitem->from_slot = EQ::invslot::slotCursor;
+			delitem->to_slot = 0xFFFFFFFF;
+			delitem->number_in_stack = 0xFFFFFFFF;
+			QueuePacket(outapp);
+			safe_delete(outapp);
+		} else {
+			SendCursorBuffer();
+		}
+		return;
+	}
+
+	EQ::ItemInstance *clone = m_inv.PopItem(slot_id);
+	safe_delete(clone);
+	database.SaveInventory(CharacterID(), nullptr, slot_id);
+	if (client_update && IsValidSlot(slot_id)) {
+		auto outapp = new EQApplicationPacket(OP_DeleteItem, sizeof(DeleteItem_Struct));
+		auto *delitem = (DeleteItem_Struct *) outapp->pBuffer;
+		delitem->from_slot = slot_id;
+		delitem->to_slot = 0xFFFFFFFF;
+		delitem->number_in_stack = 0xFFFFFFFF;
+		QueuePacket(outapp);
+		safe_delete(outapp);
+	}
+	CalcBonuses();
 }
 
 // Puts an item into the person's inventory
@@ -2198,9 +2264,27 @@ bool Client::SwapItem(MoveItem_Struct* move_in) {
 			EQ::ValueWithin(dst_slot_id, EQ::invslot::SHARED_BANK_BEGIN, EQ::invslot::SHARED_BANK_END) ||
 			EQ::ValueWithin(dst_slot_id, EQ::invbag::SHARED_BANK_BAGS_BEGIN, EQ::invbag::SHARED_BANK_BAGS_END)
 		) &&
-		GetInv().CheckNoDrop(src_slot_id) &&
-		!CanTradeFVNoDropItem()
+		GetInv().CheckNoDrop(src_slot_id)
 	) {
+		// Under FV the client may try to move attuned gear or Armarium into
+		// trade / shared bank. Refuse. Do not WorldKick — that path is for
+		// FV-off no-drop hacks. AdminOnly GMs may move unattuned no-drop;
+		// that exemption must not apply to character-bound items.
+		const auto *blocked = m_inv.GetItem(src_slot_id);
+		const bool character_bound = blocked && blocked->IsCharacterBound(true);
+		const int fv = RuleI(World, FVNoDropFlag);
+		if (character_bound && fv != FVNoDropFlagRule::Disabled) {
+			Message(Chat::Red, "You may not trade or shared-bank a bound item.");
+			return false;
+		}
+		if (CanTradeFVNoDropItem() && fv == FVNoDropFlagRule::AdminOnly && !character_bound) {
+			// AdminOnly GM: unattuned no-drop may enter trade / shared bank.
+		}
+		else if (fv != FVNoDropFlagRule::Disabled) {
+			Message(Chat::Red, "You may not trade or shared-bank a bound item.");
+			return false;
+		}
+		else {
 		auto ndh_inst = m_inv[src_slot_id];
 		std::string ndh_item_data;
 		if (ndh_inst == nullptr) {
@@ -2224,6 +2308,7 @@ bool Client::SwapItem(MoveItem_Struct* move_in) {
 		DeleteItemInInventory(src_slot_id);
 		WorldKick();
 		return false;
+		}
 	}
 
 	// Step 3: Check for interaction with World Container (tradeskills)

@@ -135,7 +135,7 @@
     },
     {
       "title": "Dimensional Vault / loot offers",
-      "blurb": "Optional /nmsloot offer pipe and Dimensional Vault. On NPC death each in-zone group/raid member gets an independent loot roll. Both default off. Stock corpse loot and no vault when the rule is off or the tables are missing.",
+      "blurb": "Dimensional Vault and the Armarium inventory clicky (DimensionalVault default on) plus the optional /nmsloot offer pipe (NmsLootOffers default off). On NPC death each in-zone group/raid member gets an independent loot roll. Stock corpse loot when NmsLootOffers is off; no vault or Armarium grant when DimensionalVault is off or the tables are missing.",
       "rules": [
         "DimensionalVault",
         "NmsLootOffers",
