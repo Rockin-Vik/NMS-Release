@@ -1407,6 +1407,8 @@ int Client::ResolveAATimerIndex(AA::Rank *rank, bool allocate) {
 	if (id > 0) {
 		SendClearPlayerAA();
 		SendAlternateAdvancementTable();
+		// As above: the clear wipes the client's cooldown display, so replay it.
+		SendAlternateAdvancementTimers();
 	}
 
 	return id;
@@ -1649,6 +1651,12 @@ void Client::FinishAlternateAdvancementPurchase(AA::Rank *rank, bool ignore_cost
 		if (send_message_and_save) {
 			SendClearPlayerAA();
 			SendAlternateAdvancementTable();
+			// SendClearPlayerAA also makes the client forget every running cooldown, and
+			// nothing here touched p_timers, so replay them onto the rebuilt window. Without
+			// this, buying any timed AA un-dims every other ability already on cooldown: the
+			// server keeps enforcing them, so the next click just says "you can use this
+			// again in...". Same reason RemoveExtraClass replays them (client.cpp:15148).
+			SendAlternateAdvancementTimers();
 		}
 	}
 
@@ -2842,6 +2850,8 @@ void Client::AutoGrantAAPoints() {
 	SendClearLeadershipAA();
 	SendClearPlayerAA();
 	SendAlternateAdvancementTable();
+	// The clear wipes the client's cooldown display but not p_timers; replay it.
+	SendAlternateAdvancementTimers();
 	SendAlternateAdvancementPoints();
 	SendAlternateAdvancementStats();
 }
@@ -2880,6 +2890,8 @@ void Client::GrantAllAAPoints(uint8 unlock_level, bool skip_grant_only)
 	SendClearLeadershipAA();
 	SendClearPlayerAA();
 	SendAlternateAdvancementTable();
+	// The clear wipes the client's cooldown display but not p_timers; replay it.
+	SendAlternateAdvancementTimers();
 	SendAlternateAdvancementPoints();
 	SendAlternateAdvancementStats();
 }

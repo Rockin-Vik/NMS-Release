@@ -96,6 +96,38 @@ Server (`Release-NMS-Server`):
 
 No client add-on change, no migration, no new rule.
 
+## 4.1 Amendments (2026-09-08, from the post-merge review)
+
+**A1 — Every `SendClearPlayerAA()` must be followed by `SendAlternateAdvancementTimers()`.**
+D9 states the premise and `RemoveExtraClass` (`client.cpp:15148`) obeys it, but the two
+clear-and-table pairs this spec *added* did not: D3's purchase hook (`aa.cpp:1652`) and D7's
+self-heal (`aa.cpp:1408`). The clear makes the client forget every running cooldown while the
+server keeps enforcing them, so buying any timed AA un-dimmed every other ability already on
+cooldown and the next click merely said "you can use this again in...". §3 step 3 could not
+catch it: it asserts the *new* button dims, never that pre-existing cooldowns survive.
+
+All six clear sites are now accounted for:
+
+| Site | Replays timers | Why |
+| --- | --- | --- |
+| `aa.cpp:550` `ResetAA` | **no** — correct | `ClearDynamicAATimers()` wipes the cooldowns, so there is nothing to replay |
+| `aa.cpp:1408` D7 self-heal | yes (added) | |
+| `aa.cpp:1652` D3 purchase | yes (added) | |
+| `aa.cpp:2851` auto-grant batch | yes (added) | pre-existing, same defect |
+| `aa.cpp:2891` `GrantAllAAPoints` | yes (added) | pre-existing, same defect |
+| `client.cpp:15142` `RemoveExtraClass` | yes (already) | the pattern the others now follow |
+| `entity.cpp:5697` `#reload aa_data` | yes (added) | pre-existing; un-dimmed every cooldown for everyone in the zone |
+
+**A2 — `SpellFinished` must not allocate.** §4's row promised "id passed in; no packet without
+an index", but `spells.cpp:3110` called `ResolveAATimerIndex(rank)` with `allocate` defaulting
+to true — contradicting the comment directly above it ("never a second allocation"). A miss
+there could have allocated an index, written a DB row and rebuilt the entire AA window from
+inside spell resolution. Now passes `allocate = false`; on a miss the resolver returns
+`kNoAATimerIndex` and the existing `>= 0` guard suppresses the packet, which is what §4
+specified. Reachability was low either way — activation populates the cache first.
+
+Read-verified only; not compiled, and none of §3 was re-run.
+
 ## 5. Not in this spec
 
 - Keeping AA ranks through a class drop (the persistence spec, draft PR 20; lands after this).

@@ -5698,6 +5698,9 @@ void EntityList::SendAlternateAdvancementStats() {
 		c.second->SendAlternateAdvancementTable();
 		c.second->SendAlternateAdvancementStats();
 		c.second->SendAlternateAdvancementPoints();
+		// The clear wipes the client's cooldown display but not p_timers; replay it, or
+		// #reload aa_data un-dims every running AA cooldown for everyone in the zone.
+		c.second->SendAlternateAdvancementTimers();
 	}
 }
 
