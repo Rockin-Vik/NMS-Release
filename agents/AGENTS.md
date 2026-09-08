@@ -176,6 +176,10 @@ newest at the bottom.
   push then failed on `node: not found` — he never asked for hooks, only for the clutter to go, and
   Node is not on his machine. No hooks, no setup scripts, no runtime dependencies for tooling: the
   repo must commit and push with plain git. Ask before adding anything that runs automatically.
+- I opened a PR for a database script that had never touched a database and read only ruleset 1,
+  while the server layers a named ruleset over "default". Before a PR is opened: run the change
+  against a disposable local stand-in (portable MariaDB, a scratch DB) when the real target is out
+  of reach, and hand it to an adversarial reviewer; "parses clean" is not a test.
 - Every PowerShell DB helper split `mysql --batch` rows on tabs and indexed the fields blindly; the
   client's stderr (merged by `2>&1`, e.g. the passwordless-login SSL warning) came through as a row
   and threw "Index was outside the bounds of the array" under `Set-StrictMode`. Filter merged stderr

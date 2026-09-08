@@ -12,8 +12,12 @@
         Custom:NewClassStartLevel
         Custom:AAIgnoreExpansionGate
 
-    plus the custom_version from db_version. A rule that is MISSING from rule_values is
-    running on its compiled default (see custom-rules/README.md for the defaults).
+    plus the custom_version from db_version.
+
+    Rules are layered: the server loads the "default" ruleset first, then the ruleset named
+    by variables.RuleSet on top (RuleManager::LoadRules). A rule with no row in either is on
+    its compiled default (see custom-rules/README.md). The script resolves both ruleset ids
+    the same way, prints the row from each, and reports which one is in effect.
 
     Why this exists: the compiled default for Custom:HeroCatchupEnabled has been false since
     the multiclass follow-ups landed, but a live rule_values row set to true re-enables the
@@ -22,15 +26,15 @@
     If a level-70 character shows "Level 1" after adding a class, this row is the cause.
 
     Read-only by default. -DisableCatchup writes Custom:HeroCatchupEnabled = false in the
-    given ruleset, inserting the row if it is absent so the value is pinned rather than
-    left to the compiled default.
+    ACTIVE ruleset (the one that wins), inserting the row if it is absent so the value is
+    pinned rather than left to a default-ruleset row or the compiled default.
 
 .PARAMETER DisableCatchup
-    Pin Custom:HeroCatchupEnabled = false (inserting the row if needed).
+    Pin Custom:HeroCatchupEnabled = false in the active ruleset (inserting the row if needed).
 
 .PARAMETER RulesetId
-    Ruleset the row belongs to. Default 1 (the default ruleset). Check the world's
-    ruleset in eqemu_config.json if the server does not use ruleset 1.
+    Override: treat this ruleset id as the active one instead of resolving it from
+    variables.RuleSet. Leave unset normally.
 
 .PARAMETER CredentialFile
     Where to read the database password from. Default C:\NMS\credentials.txt
@@ -55,7 +59,7 @@ param(
     [Parameter(ParameterSetName = 'DisableCatchup', Mandatory)]
     [switch] $DisableCatchup,
 
-    [int]    $RulesetId      = 1,
+    [int]    $RulesetId      = 0,
     [string] $CredentialFile = 'C:\NMS\credentials.txt',
     [string] $DbName         = 'peq',
     [string] $DbHost         = '127.0.0.1',
@@ -146,14 +150,59 @@ $RuleNames = @(
     'Custom:AAIgnoreExpansionGate'
 )
 
-function Show-Rules {
+function Get-FirstCell {
+    # First non-blank result line, first column only.
+    param([string] $Query)
+    $row = Invoke-Sql -Query $Query | Where-Object { "$_" -match '\S' } | Select-Object -First 1
+    if ($null -eq $row) { return $null }
+    $line = "$row"
+    $i = $line.IndexOf("`t")
+    if ($i -ge 0) { return $line.Substring(0, $i) }
+    return $line
+}
+
+function Resolve-Rulesets {
+    # Mirrors RuleManager::LoadRules: the ruleset named by variables.RuleSet is active
+    # (falling back to "default" when the variable is absent), and "default" is loaded
+    # underneath it. Returns the ids of both. -RulesetId overrides the active id only.
+    $activeName = Get-FirstCell "SELECT value FROM variables WHERE varname = 'RuleSet' LIMIT 1;"
+    if (-not $activeName) { $activeName = 'default' }
+    $escaped = $activeName.Replace("'", "''")
+
+    $defaultId = Get-FirstCell "SELECT ruleset_id FROM rule_sets WHERE name = 'default' LIMIT 1;"
+    if (-not ($defaultId -match '^\d+$')) {
+        throw "rule_sets has no 'default' ruleset - the server could not load rules either."
+    }
+
+    if ($RulesetId -gt 0) {
+        $activeId = "$RulesetId"
+        $activeName = Get-FirstCell "SELECT name FROM rule_sets WHERE ruleset_id = $RulesetId LIMIT 1;"
+        if (-not $activeName) { $activeName = "<no rule_sets row for id $RulesetId>" }
+    } else {
+        $activeId = Get-FirstCell "SELECT ruleset_id FROM rule_sets WHERE name = '$escaped' LIMIT 1;"
+        if (-not ($activeId -match '^\d+$')) {
+            Write-Warn "variables.RuleSet names '$activeName' but rule_sets has no such row; the server falls back to compiled defaults. Reading 'default' instead."
+            $activeId = $defaultId
+            $activeName = 'default'
+        }
+    }
+
+    return @{
+        DefaultId  = [int] $defaultId
+        ActiveId   = [int] $activeId
+        ActiveName = $activeName
+    }
+}
+
+function Read-RulesetRows {
     # Scoped to one ruleset: rule_values is keyed by (ruleset_id, rule_name), so an
-    # unscoped read returns one row PER ruleset and the last one silently wins below.
+    # unscoped read returns one row PER ruleset and the last one silently wins.
+    param([int] $Id)
     $inList = ($RuleNames | ForEach-Object { "'$_'" }) -join ",`n                     "
     $rows = Invoke-Sql -Query @"
 SELECT rule_name, rule_value
   FROM rule_values
- WHERE ruleset_id = $RulesetId
+ WHERE ruleset_id = $Id
    AND rule_name IN ($inList);
 "@ | Where-Object { $_ -match '\S' }
 
@@ -170,22 +219,47 @@ SELECT rule_name, rule_value
         }
         $live[$line.Substring(0, $i)] = $line.Substring($i + 1)
     }
+    return $live
+}
+
+function Show-Rules {
+    param([hashtable] $Sets)
+
+    $active  = Read-RulesetRows -Id $Sets.ActiveId
+    $default = if ($Sets.ActiveId -eq $Sets.DefaultId) { $active } else { Read-RulesetRows -Id $Sets.DefaultId }
 
     Write-Host ''
     Write-Host '  Multiclass rules (rule_values)' -ForegroundColor Cyan
     Write-Host '  ------------------------------' -ForegroundColor Cyan
+    Write-Host ('  active ruleset  : {0} (id {1})' -f $Sets.ActiveName, $Sets.ActiveId) -ForegroundColor DarkGray
+    if ($Sets.ActiveId -ne $Sets.DefaultId) {
+        Write-Host ('  default ruleset : default (id {0}) - loaded underneath the active one' -f $Sets.DefaultId) -ForegroundColor DarkGray
+    }
+    Write-Host ''
+
+    # Effective value per rule, with where it came from.
+    $effective = @{}
     foreach ($n in $RuleNames) {
-        if ($live.ContainsKey($n)) {
-            $v = $live[$n]
+        if ($active.ContainsKey($n)) {
+            $v = $active[$n]; $src = 'active'
+        } elseif ($default.ContainsKey($n)) {
+            $v = $default[$n]; $src = 'default ruleset'
+        } else {
+            $v = $null; $src = 'compiled default'
+        }
+        if ($null -ne $v) {
+            $effective[$n] = $v
             $colour = if ($v -match '^(true|1)$') { 'Green' }
                       elseif ($v -match '^(false|0)$') { 'Yellow' }
                       else { 'Gray' }
-            Write-Host ('  {0,-36} {1}' -f $n, $v) -ForegroundColor $colour
+            Write-Host ('  {0,-32} {1,-8} ({2})' -f $n, $v, $src) -ForegroundColor $colour
         } else {
-            Write-Host ('  {0,-36} {1}' -f $n, '<not set - compiled default>') -ForegroundColor DarkGray
+            Write-Host ('  {0,-32} {1}' -f $n, '<not set - compiled default>') -ForegroundColor DarkGray
+        }
+        if ($src -eq 'active' -and $default.ContainsKey($n) -and $default[$n] -ne $v) {
+            Write-Host ('  {0,-32} default ruleset row is {1}, shadowed' -f '', $default[$n]) -ForegroundColor DarkGray
         }
     }
-    Write-Host ('  (ruleset_id {0})' -f $RulesetId) -ForegroundColor DarkGray
 
     $ver = Invoke-Sql -Query 'SELECT custom_version FROM db_version LIMIT 1;' |
         Where-Object { $_ -match '^\s*\d+\s*$' } | Select-Object -First 1
@@ -193,7 +267,7 @@ SELECT rule_name, rule_value
     Write-Host ('  custom_version: {0}' -f $(if ($ver) { $ver } else { '<none>' })) -ForegroundColor Cyan
     Write-Host ''
 
-    return $live
+    return $effective
 }
 
 # ---------------------------------------------------------------------------
@@ -208,7 +282,9 @@ try {
     $stored = Get-StoredValue 'Database name'
     if ($stored) { $DbName = $stored }
 
-    $live = Show-Rules
+    $sets = Resolve-Rulesets
+    $live = Show-Rules -Sets $sets
+    $WriteId = $sets.ActiveId
 
     if (-not $DisableCatchup) {
         if ($live.ContainsKey($CatchupRule) -and $live[$CatchupRule] -match '^(true|1)$') {
@@ -223,33 +299,34 @@ try {
     }
 
     # ---- Write mode: pin the catch-up rule off ----------------------------
-    # Every write below is scoped to $RulesetId. rule_values is keyed by
-    # (ruleset_id, rule_name); an unscoped UPDATE flips the rule in EVERY ruleset.
-    # FROM DUAL is the portable MySQL/MariaDB idiom for a constant-row INSERT..SELECT.
+    # Every write below is scoped to the ACTIVE ruleset, because that row is the one
+    # the server reads last and therefore the one that wins over a default-ruleset row.
+    # rule_values is keyed by (ruleset_id, rule_name); an unscoped UPDATE flips the rule
+    # in EVERY ruleset. FROM DUAL is the portable MySQL/MariaDB constant-row INSERT..SELECT.
     Invoke-Sql -Query @"
 INSERT INTO rule_values (ruleset_id, rule_name, rule_value, notes)
-SELECT $RulesetId, '$CatchupRule', 'false', 'new classes join at the current level (pinned)'
+SELECT $WriteId, '$CatchupRule', 'false', 'new classes join at the current level (pinned)'
   FROM DUAL
  WHERE NOT EXISTS (SELECT 1 FROM rule_values
-                    WHERE ruleset_id = $RulesetId
+                    WHERE ruleset_id = $WriteId
                       AND rule_name  = '$CatchupRule');
 "@ | Out-Null
 
     Invoke-Sql -Query @"
 UPDATE rule_values
    SET rule_value = 'false'
- WHERE ruleset_id = $RulesetId
+ WHERE ruleset_id = $WriteId
    AND rule_name  = '$CatchupRule';
 "@ | Out-Null
 
     $after = Invoke-Sql -Query @"
 SELECT rule_value FROM rule_values
- WHERE ruleset_id = $RulesetId
+ WHERE ruleset_id = $WriteId
    AND rule_name  = '$CatchupRule';
 "@ | Where-Object { $_ -match '\S' } | Select-Object -First 1
 
     if ("$after" -eq 'false') {
-        Write-Ok "$CatchupRule = $after"
+        Write-Ok "$CatchupRule = $after (ruleset $($sets.ActiveName), id $WriteId)"
         Write-Host ''
         Write-Host '  Run #reloadrules in game (or bounce the zones) so running zones pick it up.' -ForegroundColor Cyan
         Write-Host '  Characters already reset to level 1 recover on their next login.' -ForegroundColor Cyan
