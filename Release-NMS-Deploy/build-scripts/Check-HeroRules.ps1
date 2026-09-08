@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Reads (and optionally pins off) the multiclass "hero" Custom rules.
+    Read-only report of the multiclass "hero" Custom rules as the server actually layers them.
 
 .DESCRIPTION
     Connects to the server database with the credentials written by the setup script and
@@ -12,64 +12,48 @@
         Custom:NewClassStartLevel
         Custom:AAIgnoreExpansionGate
 
-    plus the custom_version from db_version.
+    plus the custom_version from db_version. Nothing is written.
 
     Rules are layered the way RuleManager::LoadRules and zone/main.cpp do it:
       * variables.RuleSet names the active ruleset; when the variable is absent, "default".
       * "default" is loaded first, the active ruleset on top; a rule with no row in either is
         on its compiled default (see custom-rules/README.md).
       * If variables.RuleSet names a ruleset with no rule_sets row, LoadRules fails before it
-        applies anything and every zone runs on compiled defaults. The script reports that and
-        refuses to write until the variable is fixed.
+        applies anything and every zone runs on compiled defaults. The script reports that.
       * A zone whose zone.ruleset is non-zero and differs from the active id loads THAT ruleset
-        over the active one at boot (Zone::Init) and on #reload rules. The script lists those
-        rulesets and, in write mode, pins the rule in each of them too.
+        over the active one at boot (Zone::Init) and on "#reload rules". The script lists those
+        rulesets, their zones, and what each one sees for the catch-up rule.
 
     A bool rule is "on" the way the server reads it (Strings::ToBool: any value containing
-    true / y / on / enable, or a non-zero number), not only the literal "true".
+    true / y / on / enable, or a non-zero number; case-sensitive), not only the literal "true".
 
-    Why this exists: the compiled default for Custom:HeroCatchupEnabled has been false since
-    the multiclass follow-ups landed, but a rule_values row that reads as true re-enables the
-    old behaviour - every class added at a guildmaster or on the Hero tab joins at
-    Custom:NewClassStartLevel (1) and drags the character's effective level down with it.
-    If a level-70 character shows "Level 1" after adding a class, that row is the usual cause.
-
-    Read-only by default. -DisableCatchup writes Custom:HeroCatchupEnabled = false into the
-    active ruleset and into every ruleset some zone overlays, inserting rows as needed.
-
-.PARAMETER DisableCatchup
-    Pin Custom:HeroCatchupEnabled = false in the active ruleset and every zone-overlay ruleset.
+    The design (ADR-0002, 2026-09-08): a new class joins at level 1 and the hero's level is the
+    lowest held class, so Custom:HeroCatchupEnabled is expected ON with NewClassStartLevel 1.
+    The compiled default is OFF, which means the live database must carry a row that reads
+    as on; this script tells you whether it does, in which layer, and what every zone sees.
 
 .PARAMETER RulesetId
-    Override: write only this ruleset id (it must exist in rule_sets). Leave unset normally.
+    Inspect this ruleset id as if it were the active one, instead of resolving it from
+    variables.RuleSet. Leave unset normally.
 
 .PARAMETER CredentialFile
     Where to read the database password from. Default C:\NMS\credentials.txt
 
 .EXAMPLE
     .\Check-HeroRules.ps1
-    Show the five rules, where each value comes from, and the custom_version. Changes nothing.
-
-.EXAMPLE
-    .\Check-HeroRules.ps1 -DisableCatchup
-    Pin the catch-up rule off so new classes join at the character's current level.
+    Show the five rules, where each value comes from, the zone-level rulesets, and the verdict.
 
 .NOTES
-    After a write, run "#reload rules global" in game (there is no #reloadrules command) or
-    bounce every zone. A zone with its own zone.ruleset must be bounced.
+    If you change a rule row by hand, run "#reload rules global" in game (there is no
+    #reloadrules command) or bounce every zone; a zone with its own zone.ruleset must be bounced.
 
-    Characters already reset to level 1 recover on their next zone-in: with catch-up off,
-    LoadClassExp restores the level from the highest held class row. BUT a character that is
-    standing in a zone at level 1 when the rule flips must camp or zone BEFORE gaining any
-    experience: the first SetEXP with catch-up off copies the level-1 pool into every class
-    row, and after that there is nothing left to restore.
+    Never turn the catch-up rule OFF while a hero stands in a zone at level 1: the first
+    experience gain with catch-up off copies the level-1 pool into every class row and the
+    recorded 70s are gone. Have them camp first.
 #>
 
-[CmdletBinding(DefaultParameterSetName = 'Read')]
+[CmdletBinding()]
 param(
-    [Parameter(ParameterSetName = 'DisableCatchup', Mandatory)]
-    [switch] $DisableCatchup,
-
     [int]    $RulesetId      = 0,
     [string] $CredentialFile = 'C:\NMS\credentials.txt',
     [string] $DbName         = 'peq',
@@ -84,7 +68,6 @@ $PSNativeCommandUseErrorActionPreference = $false
 function Write-Ok   { param([string] $T) Write-Host "  [ OK ] $T" -ForegroundColor Green }
 function Write-Warn { param([string] $T) Write-Host "  [WARN] $T" -ForegroundColor Yellow }
 function Write-Bad  { param([string] $T) Write-Host "  [FAIL] $T" -ForegroundColor Red }
-function Write-Note { param([string] $T) Write-Host "  $T" -ForegroundColor Cyan }
 
 function Resolve-MysqlClient {
     foreach ($n in 'mysql', 'mariadb') {
@@ -205,12 +188,13 @@ function Test-RuleOn {
 }
 
 $CatchupRule = 'Custom:HeroCatchupEnabled'
+$StartRule   = 'Custom:NewClassStartLevel'
 
 $RuleNames = @(
     'Custom:MulticlassingEnabled',
     'Custom:MaxMulticlasses',
     $CatchupRule,
-    'Custom:NewClassStartLevel',
+    $StartRule,
     'Custom:AAIgnoreExpansionGate'
 )
 
@@ -226,31 +210,39 @@ function Resolve-Rulesets {
     #                           LoadRules fails before applying anything (rulesys.cpp) and
     #                           zone/main.cpp does NOT fall back to loading "default"
     #   DefaultId, ActiveId, ActiveName
-    #   Overlays   list of @{Id; Name; Zones} for every distinct non-zero zone.ruleset that
-    #              differs from the active id (Zone::Init loads that set over the active one)
+    #   Overlays   list of @{Id; Name; Zones; Count} for every distinct non-zero zone.ruleset
+    #              that differs from the active id (Zone::Init loads that set over the active one)
     $defaultId = Get-Id "SELECT ruleset_id FROM rule_sets WHERE name = 'default' LIMIT 1;"
     if ($null -eq $defaultId) {
         throw "rule_sets has no 'default' ruleset - the server could not load rules either."
     }
 
-    $wanted = Get-Text "SELECT value FROM variables WHERE varname = 'RuleSet' LIMIT 1;"
-    if ($null -eq $wanted) { $wanted = 'default' }
-
     $mode = 'layered'
-    $activeId = Get-Id "SELECT ruleset_id FROM rule_sets WHERE name = $(ConvertTo-SqlLiteral $wanted) LIMIT 1;"
-    # Round-trip the id back to a name and require a match: this is what defeats a value that
-    # survives quoting but selects the wrong row (injection, whitespace). Case-insensitive, because
-    # the server's own lookup is a SQL compare under the table collation (utf8mb4_general_ci on a
-    # deployed server), so "NMS" loads the "nms" ruleset there too.
-    if ($null -ne $activeId) {
-        $back = Get-RulesetName -Id $activeId
-        if ($null -eq $back -or -not [string]::Equals($back, $wanted, [System.StringComparison]::OrdinalIgnoreCase)) {
-            $activeId = $null
+    if ($RulesetId -gt 0) {
+        $activeId = $RulesetId
+        $wanted = Get-RulesetName -Id $RulesetId
+        if ($null -eq $wanted) {
+            throw "-RulesetId $RulesetId has no rule_sets row; nothing loads from it."
         }
-    }
-    if ($null -eq $activeId) {
-        $mode = 'compiled'
-        $activeId = $defaultId
+    } else {
+        $wanted = Get-Text "SELECT value FROM variables WHERE varname = 'RuleSet' LIMIT 1;"
+        if ($null -eq $wanted) { $wanted = 'default' }
+
+        $activeId = Get-Id "SELECT ruleset_id FROM rule_sets WHERE name = $(ConvertTo-SqlLiteral $wanted) LIMIT 1;"
+        # Round-trip the id back to a name and require a match: this is what defeats a value that
+        # survives quoting but selects the wrong row (injection, whitespace). Case-insensitive,
+        # because the server's own lookup is a SQL compare under the table collation
+        # (utf8mb4_general_ci on a deployed server), so "NMS" loads the "nms" ruleset there too.
+        if ($null -ne $activeId) {
+            $back = Get-RulesetName -Id $activeId
+            if ($null -eq $back -or -not [string]::Equals($back, $wanted, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $activeId = $null
+            }
+        }
+        if ($null -eq $activeId) {
+            $mode = 'compiled'
+            $activeId = $defaultId
+        }
     }
 
     $overlays = @()
@@ -265,7 +257,7 @@ function Resolve-Rulesets {
     return @{
         Mode       = $mode
         DefaultId  = $defaultId
-        ActiveId   = $activeId
+        ActiveId   = [int] $activeId
         ActiveName = $wanted
         Overlays   = $overlays
     }
@@ -370,11 +362,10 @@ function Show-Rules {
                 # those zones simply run the active ruleset. Not an overlay, just a stale column.
                 Write-Host ('  id {0,-3} {1,-16} {2} zone(s): {3}' -f $o.Id, '<no rule_sets row>', $o.Count, $o.Zones) -ForegroundColor DarkGray
                 Write-Host '       Zone::Init skips a ruleset with no rule_sets row; these zones use the active ruleset.' -ForegroundColor DarkGray
-                $o.CatchupOn = $false
+                $o.CatchupOn = $null
                 continue
             }
             $rows = Read-RulesetRows -Id $o.Id
-            $nm = $o.Name
             if ($rows.ContainsKey($CatchupRule)) {
                 $ov = $rows[$CatchupRule]; $osrc = 'own row'
             } elseif ($default.ContainsKey($CatchupRule)) {
@@ -384,7 +375,7 @@ function Show-Rules {
             }
             $ovShown = if ($null -ne $ov) { Format-Value $ov } else { '<not set>' }
             $colour  = if (Test-RuleOn $ov) { 'Green' } else { 'Gray' }
-            Write-Host ('  id {0,-3} {1,-16} {2} zone(s): {3}' -f $o.Id, $nm, $o.Count, $o.Zones) -ForegroundColor DarkGray
+            Write-Host ('  id {0,-3} {1,-16} {2} zone(s): {3}' -f $o.Id, $o.Name, $o.Count, $o.Zones) -ForegroundColor DarkGray
             Write-Host ('       {0,-32} {1,-8} ({2})' -f $CatchupRule, $ovShown, $osrc) -ForegroundColor $colour
             $o.CatchupOn = Test-RuleOn $ov
         }
@@ -396,38 +387,6 @@ function Show-Rules {
     Write-Host ''
 
     return $effective
-}
-
-function Write-AfterWriteAdvice {
-    param([bool] $HasOverlays)
-    Write-Host ''
-    Write-Note 'Next, in game as a GM:  #reload rules global      (there is no #reloadrules command)'
-    if ($HasOverlays) {
-        Write-Note 'Zones listed above with their own zone.ruleset must be bounced; #reload re-applies their own set.'
-    }
-    Write-Note 'Any character standing in a zone at level 1 must camp or zone BEFORE gaining experience.'
-    Write-Host '  (The first exp gain with catch-up off copies the level-1 pool into every class row; after' -ForegroundColor Gray
-    Write-Host '   that nothing is left to restore. A camp or zone-in first restores the earned level.)' -ForegroundColor Gray
-    Write-Host ''
-}
-
-function Set-CatchupOff {
-    # One statement per ruleset: insert or overwrite, then read back and require exactly one
-    # cell that is exactly 'false'.
-    param([int] $Id, [string] $Label)
-    Invoke-Sql -Query @"
-INSERT INTO rule_values (ruleset_id, rule_name, rule_value, notes)
-VALUES ($Id, '$CatchupRule', 'false', 'new classes join at the current level (pinned)')
-ON DUPLICATE KEY UPDATE rule_value = 'false';
-"@ | Out-Null
-
-    $after = Get-Text "SELECT rule_value FROM rule_values WHERE ruleset_id = $Id AND rule_name = '$CatchupRule';"
-    if ($after -eq 'false') {
-        Write-Ok "$CatchupRule = false  ($Label, id $Id)"
-        return $true
-    }
-    Write-Bad "Write to ruleset $Id ran but the rule reads '$after', expected 'false'."
-    return $false
 }
 
 # ---------------------------------------------------------------------------
@@ -445,70 +404,34 @@ try {
     $sets = Resolve-Rulesets
     $live = Show-Rules -Sets $sets
 
-    $overlayOn = @($sets.Overlays | Where-Object { $_.ContainsKey('CatchupOn') -and $_.CatchupOn })
-
-    if (-not $DisableCatchup) {
-        if ($sets.Mode -eq 'compiled') {
-            Write-Warn "Fix variables.RuleSet first (a rule_sets row named '$($sets.ActiveName)', or point the variable at one), then re-run."
-            Write-Host '  With compiled defaults the catch-up rule is off, so a level-1 join means an older zone binary.' -ForegroundColor Gray
-            Write-Host ''
-            exit 0
-        }
-        $effectiveOn = $live.ContainsKey($CatchupRule) -and (Test-RuleOn $live[$CatchupRule])
-        if ($effectiveOn) {
-            Write-Warn "$CatchupRule reads as ON ('$($live[$CatchupRule])') - new classes join at Custom:NewClassStartLevel and reset the character's level."
-            Write-Host '  Pin it off:  .\Check-HeroRules.ps1 -DisableCatchup' -ForegroundColor Cyan
-            Write-Host ''
-        } elseif ($overlayOn.Count -gt 0) {
-            Write-Warn "$CatchupRule is off in the active ruleset but ON in a zone-level ruleset (see above); those zones reset the level."
-            Write-Host '  Pin it off everywhere:  .\Check-HeroRules.ps1 -DisableCatchup' -ForegroundColor Cyan
-            Write-Host ''
-        } else {
-            Write-Ok "$CatchupRule is off in every ruleset this script can see."
-            Write-Host '  If a level-70 character still joins a class at level 1, the remaining causes are:' -ForegroundColor Gray
-            Write-Host '    - the running zone binary predates the multiclass follow-ups (compiled default true): rebuild/deploy' -ForegroundColor Gray
-            Write-Host '    - the row was changed but zones never reloaded: #reload rules global, or bounce the zones' -ForegroundColor Gray
-            Write-Host '    - the character stands in a zone with its own zone.ruleset (listed above if any)' -ForegroundColor Gray
-            Write-Host ''
-        }
+    # ---- Verdict against the design: catch-up ON, start level 1 ------------
+    if ($sets.Mode -eq 'compiled') {
+        Write-Warn "No ruleset is loaded, so $CatchupRule is on its compiled default (OFF): new classes join at the hero's current level, against the design."
+        Write-Host "  Fix variables.RuleSet first (a rule_sets row named '$($sets.ActiveName)', or point the variable at one), then re-run." -ForegroundColor Gray
+        Write-Host ''
         exit 0
     }
 
-    # ---- Write mode: pin the catch-up rule off ----------------------------
-    if ($sets.Mode -eq 'compiled') {
-        Write-Bad "Refusing to write: variables.RuleSet names '$($sets.ActiveName)', which has no rule_sets row, so no ruleset is loaded at all. Fix the variable first."
-        exit 1
-    }
+    $catchupOn = $live.ContainsKey($CatchupRule) -and (Test-RuleOn $live[$CatchupRule])
+    $startLevel = if ($live.ContainsKey($StartRule) -and $live[$StartRule] -match '^\s*\d+\s*$') { [int] $live[$StartRule].Trim() } else { 1 }
+    $overlaysOff = @($sets.Overlays | Where-Object { $_.ContainsKey('CatchupOn') -and $null -ne $_.CatchupOn -and -not $_.CatchupOn })
 
-    # Every write is scoped to a ruleset id that exists in rule_sets: the active one and each
-    # zone-overlay set (or the single -RulesetId override). rule_values is keyed by
-    # (ruleset_id, rule_name); an unscoped UPDATE would flip the rule in EVERY ruleset.
-    $targets = @()
-    if ($RulesetId -gt 0) {
-        $nm = Get-RulesetName -Id $RulesetId
-        if ($null -eq $nm) {
-            Write-Bad "Refusing to write: -RulesetId $RulesetId has no rule_sets row; a row there would belong to no ruleset."
-            exit 1
-        }
-        $targets += @{ Id = $RulesetId; Label = "override ruleset $nm" }
+    if ($catchupOn) {
+        Write-Ok "$CatchupRule reads as ON: a new class joins at level $startLevel and the hero's level is its lowest class (the design)."
     } else {
-        $targets += @{ Id = $sets.ActiveId; Label = "active ruleset $($sets.ActiveName)" }
-        foreach ($o in $sets.Overlays) {
-            if ($null -eq $o.Name) {
-                Write-Warn "zone.ruleset $($o.Id) ($($o.Zones)) has no rule_sets row; Zone::Init skips it, so it is not written."
-                continue
-            }
-            $targets += @{ Id = $o.Id; Label = "zone-level ruleset $($o.Name)" }
-        }
+        $shown = if ($live.ContainsKey($CatchupRule)) { "'$($live[$CatchupRule])'" } else { 'not set (compiled default false)' }
+        Write-Warn "$CatchupRule is $shown - new classes join at the hero's CURRENT level, against the design."
+        Write-Host '  To turn it on, by hand, in the active ruleset (then "#reload rules global"):' -ForegroundColor Gray
+        Write-Host ("    INSERT INTO rule_values (ruleset_id, rule_name, rule_value, notes) VALUES ({0}, '{1}', 'true', 'hero: new class joins at level 1')" -f $sets.ActiveId, $CatchupRule) -ForegroundColor Cyan
+        Write-Host "    ON DUPLICATE KEY UPDATE rule_value = 'true';" -ForegroundColor Cyan
     }
-
-    $allOk = $true
-    foreach ($t in $targets) {
-        if (-not (Set-CatchupOff -Id $t.Id -Label $t.Label)) { $allOk = $false }
+    if ($startLevel -ne 1) {
+        Write-Warn "$StartRule is $startLevel; the design is 1."
     }
-    if (-not $allOk) { exit 1 }
-
-    Write-AfterWriteAdvice -HasOverlays ($sets.Overlays.Count -gt 0)
+    if ($overlaysOff.Count -gt 0) {
+        Write-Warn 'A zone-level ruleset above reads the catch-up rule as OFF; heroes adding a class in those zones join at the current level.'
+    }
+    Write-Host ''
     exit 0
 }
 catch {
