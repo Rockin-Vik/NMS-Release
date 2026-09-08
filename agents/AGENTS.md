@@ -226,6 +226,10 @@ newest at the bottom.
   counts, and a probe in `utils/sql/nms_content_health_check.sql`. Ship all four or the entry is dead
   code, and a rule *rename* fails worst of all — the binary reads the new key, the DB keeps the old
   one, and every affected rule silently falls back to its compiled default with nothing logged.
+- I opened a PR for a database script that had never touched a database and read only ruleset 1,
+  while the server layers a named ruleset over "default". Before a PR is opened: run the change
+  against a disposable local stand-in (portable MariaDB, a scratch DB) when the real target is out
+  of reach, and hand it to an adversarial reviewer; "parses clean" is not a test.
 
 ## Project skills
 

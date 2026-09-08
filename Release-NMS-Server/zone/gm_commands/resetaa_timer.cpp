@@ -40,6 +40,6 @@ void command_resetaa_timer(Client *c, const Seperator *sep)
 			).c_str()
 		);
 
-		t->ResetAlternateAdvancementTimer(timer_id);
+		t->ResetAlternateAdvancementTimerByIndex(timer_id);
 	}
 }
