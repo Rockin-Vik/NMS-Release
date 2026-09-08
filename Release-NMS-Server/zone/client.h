@@ -1195,6 +1195,17 @@ public:
 	int SetDynamicAATimer(int aa_id);
 	void ClearDynamicAATimers();
 
+	// SPIKE (throwaway branch aa-timer-spike, never merged): manual control of dynamic AA timer
+	// ids so the client's shared-timer behaviour can be probed. See #aaspike and the spec
+	// Release-NMS-Deploy/specs/2026-09-08-aa-reuse-timer-ids.md section 3.
+	static int s_spike_sentinel;      // index sent for an ability with no row; -1 = send it untimed (spell_refresh 0)
+	static int s_spike_force_aa_id;   // one-shot override used by "#aaspike resend <aa_id> <index>"
+	static int s_spike_force_index;
+	int  SpikeTimerIndex(int aa_id);  // stored id, else the sentinel (0 when the sentinel is "none")
+	void SpikeSetTimer(int aa_id, int timer_id);
+	void SpikeClearTimer(int aa_id);
+	void SpikeClearAllTimers();
+
 	void GetAllToggleAAStatus();
 	void SetToggleAAStatus(int ability_id, bool status);
 	bool GetToggleAAStatus(int ability_id) const;

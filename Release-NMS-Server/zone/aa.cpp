@@ -1060,10 +1060,22 @@ void Client::SendAlternateAdvancementRank(int aa_id, int level) {
 
 	if (RuleB(Custom, UseDynamicAATimers)) {
 		if (aai->classes == 0xFFFFFFF && rank->base_ability->first->recast_time > 0 && !rank->base_ability->grant_only) {
-			aai->spell_type = GetDynamicAATimer(rank->base_ability->id);
-			if (aai->spell_type == 0) {
-				aai->spell_type = SetDynamicAATimer(rank->base_ability->id);
+			// SPIKE: lookup only, never allocate. A miss is sent as the sentinel under test.
+			int id = GetDynamicAATimer(rank->base_ability->id);
+			if (s_spike_force_aa_id == rank->base_ability->id && s_spike_force_index >= 0) {
+				id = s_spike_force_index;
 			}
+			if (id > 0) {
+				aai->spell_type = id;
+			} else if (s_spike_sentinel < 0) {
+				aai->spell_type = 0;
+				aai->spell_refresh = 0;
+			} else {
+				aai->spell_type = s_spike_sentinel;
+			}
+			LogInfo("[aaspike] send aa [{}] {} rank [{}] owned [{}] spell_type [{}] spell_refresh [{}]",
+				rank->base_ability->id, rank->base_ability->name, rank->id, GetAA(rank->id) ? "yes" : "no",
+				aai->spell_type, aai->spell_refresh);
 		}
 	}
 
@@ -1276,8 +1288,57 @@ int Client::GetDynamicAATimer(int aa_id) {
     if (a != m_aa_timers_cache.end())
         return a->second;
 
-    LogDebugDetail("Not in DB, assigning new timer.");
-    return SetDynamicAATimer(aa_id);
+    // SPIKE: lookup only. Rows are written by #aaspike set, never by a miss.
+    return 0;
+}
+
+// SPIKE (throwaway branch aa-timer-spike)
+int Client::s_spike_sentinel    = 0;
+int Client::s_spike_force_aa_id = 0;
+int Client::s_spike_force_index = -1;
+
+int Client::SpikeTimerIndex(int aa_id) {
+    int id = GetDynamicAATimer(aa_id);
+    if (id > 0) {
+        return id;
+    }
+    return s_spike_sentinel < 0 ? 0 : s_spike_sentinel;
+}
+
+void Client::SpikeSetTimer(int aa_id, int timer_id) {
+    // REPLACE drops any row that collides on either unique key: this ability's old row, or another
+    // ability that held this timer id. The cache is brought into line the same way.
+    auto e = CharacterDynamicAaTimersRepository::NewEntity();
+    e.character_id = CharacterID();
+    e.aa_id        = aa_id;
+    e.timer_id     = timer_id;
+    CharacterDynamicAaTimersRepository::ReplaceOne(database, e);
+
+    for (auto it = m_aa_timers_cache.begin(); it != m_aa_timers_cache.end();) {
+        if (it->second == timer_id && it->first != aa_id) {
+            it = m_aa_timers_cache.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    m_aa_timers_cache[aa_id] = timer_id;
+    LogInfo("[aaspike] set aa [{}] -> timer [{}] for character [{}]", aa_id, timer_id, CharacterID());
+}
+
+void Client::SpikeClearTimer(int aa_id) {
+    CharacterDynamicAaTimersRepository::DeleteWhere(
+        database,
+        fmt::format("character_id = {} AND aa_id = {}", CharacterID(), aa_id)
+    );
+    m_aa_timers_cache.erase(aa_id);
+    LogInfo("[aaspike] cleared aa [{}] for character [{}]", aa_id, CharacterID());
+}
+
+void Client::SpikeClearAllTimers() {
+    // Mapping rows only; running cooldowns are left alone (unlike ClearDynamicAATimers).
+    CharacterDynamicAaTimersRepository::DeleteByCharacterId(database, CharacterID());
+    m_aa_timers_cache.clear();
+    LogInfo("[aaspike] cleared every mapping row for character [{}]", CharacterID());
 }
 
 int Client::SetDynamicAATimer(int aa_id) {
@@ -1608,7 +1669,9 @@ void Client::ActivateAlternateAdvancementAbility(int rank_id, int target_id) {
 	int spell_type = rank->spell_type;
 
 	if (RuleB(Custom, UseDynamicAATimers)) {
-		spell_type = GetDynamicAATimer(rank->base_ability->id);
+		// SPIKE: stored id or the sentinel; no allocation.
+		spell_type = SpikeTimerIndex(rank->base_ability->id);
+		LogInfo("[aaspike] activate aa [{}] rank [{}] uses timer index [{}]", rank->base_ability->id, rank->id, spell_type);
 	}
 
 	bool use_toggle_passive_hotkey = UseTogglePassiveHotkey(*rank);

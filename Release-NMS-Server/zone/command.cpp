@@ -210,6 +210,7 @@ int command_init(void)
 		command_add("removeitem", "[Item ID] [Amount] - Removes the specified Item ID by Amount from you or your player target's inventory (Amount defaults to 1 if not used)", AccountStatus::GMAdmin, command_removeitem) ||
 		command_add("repop", "[Force] - Repop the zone with optional force repop", AccountStatus::GMAdmin, command_repop) ||
 		command_add("resetaa", "[aa|leadership] - Resets a player's AAs or Leadership AAs and refunds spent AAs (not Leadership AAs) to unspent, may disconnect player.", AccountStatus::GMMgmt, command_resetaa) ||
+		command_add("aaspike", "[show|timers|table|set|clear|sentinel|resend] - SPIKE: manual dynamic AA timer ids for the client spike (throwaway branch).", AccountStatus::GMMgmt, command_aaspike) ||
 		command_add("resetaa_timer", "[All|Timer ID] - Command to reset AA cooldown timers for you or your player target.", AccountStatus::GMMgmt, command_resetaa_timer) ||
 		command_add("resetdisc_timer", "[All|Timer ID] - Command to reset discipline timers.", AccountStatus::GMMgmt, command_resetdisc_timer) ||
 		command_add("revoke", "[Character Name] [0|1] - Revokes or unrevokes a player's ability to talk in OOC by name (0 = Unrevoke, 1 = Revoke)", AccountStatus::GMMgmt, command_revoke) ||
