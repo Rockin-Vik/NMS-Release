@@ -201,9 +201,11 @@ a shelved Monk printed one skill-up line per Monk skill, values flipping from 0 
 number, no zone. A3 — with the rule set false in the zone at run time, a reset on a hero with a
 shelved Bard refunded 5236 points, every non-grant row including the shelved Bard's 504, all rows
 deleted. A1 — a level-1 Ranger with Tracking 100 added a Warrior and dropped the Ranger in the
-same session (the client keeps the track button live until a relog, and an open track window
-re-requests on its own), then tracked with no tracking class held: the list filled and the stored
-100 survived the request. Before A4 the same request was refused by the gate, so A1 could not be
+same session with the track window already open on auto-update (the button the client leaves on
+screen after a drop is inert; only an open window keeps re-requesting, until a relog), so a
+track request went out with no tracking class held: the list filled and the stored 100 survived
+it. The `CanHaveSkill` seed gate is read-verified and compiled, not run: the client sends no
+request for a zeroed skill, so the raw-0 case cannot be reached from a stock client either way. Before A4 the same request was refused by the gate, so A1 could not be
 reached from any client.
 
 **Reported, not changed:** D5 gates `#set level`'s clamp on `HasMultipleClasses()` (held bits),
