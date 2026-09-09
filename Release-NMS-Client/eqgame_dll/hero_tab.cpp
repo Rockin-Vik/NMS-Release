@@ -126,7 +126,7 @@ namespace {
 			text += "</c>: ";
 			if (Held(mask, selected)) {
 				text += "held. Remove drops it and you lose access to its spells, disciplines, skills and abilities. "
-					"Your first removal is free and is used first; after that each removal costs 10 Echo of Memory "
+					"Your first removal is free and is used first; after that each removal costs 10 Emperor's Favor "
 					"and starts a 7-day lockout.<br>";
 			} else {
 				text += "not held. Add is free.<br>";

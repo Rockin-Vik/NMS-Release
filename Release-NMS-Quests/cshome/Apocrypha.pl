@@ -1,5 +1,5 @@
 # Basic Design
-# EoM (Server-Wide) buffs work by three methods;
+# Emperor's Favor (Server-Wide) buffs work by three methods;
 # 1) Send a worldwide client signal, global_player catches it and applies the requested buffs
 # 2) Set a bucket value with a 4 hour expiration.
 # 3) Zone and Login methods in global_player apply the requested buffs with the requested durations
@@ -67,7 +67,7 @@ sub EVENT_SAY {
     }
 
     elsif ($text=~/exotic payment/i) {
-        $response = "In exchange for five [Echo of Memory], I can enchant the entire world! Each should co-exist with over versions of this type of effect, and will last four hours. If the world is already enchanted in this way, purchasing additional enhancement will extend the duration of the current enchantment. Would you like to enhance the [Experience Gain], [Hit Points and Armor Class], [Combat Statistics], [Movement Speed], [Mana Regeneration], [Attack Speed], or [Health Regeneration]? Alternatively, for twenty-five Echoes, I can cast [all of these enchantments]!";
+        $response = "In exchange for five [Emperor's Favor], I can enchant the entire world! Each should co-exist with over versions of this type of effect, and will last four hours. If the world is already enchanted in this way, purchasing additional enhancement will extend the duration of the current enchantment. Would you like to enhance the [Experience Gain], [Hit Points and Armor Class], [Combat Statistics], [Movement Speed], [Mana Regeneration], [Attack Speed], or [Health Regeneration]? Alternatively, for twenty-five tokens of the Emperor's favor, I can cast [all of these enchantments]!";
     }
 
     elsif ($text=~/experience gain/i) {        
@@ -75,7 +75,7 @@ sub EVENT_SAY {
         if (ApplyWorldWideBuff($buff_id)) {
             $response = "Excellent! Your fellow adventurers will appreciate this!";
         } else {
-            $response = "You do not have enough [Echo of Memory] to afford that.";
+            $response = "You do not have enough [Emperor's Favor] to afford that.";
         }
     }
     elsif ($text=~/hit points and armor class/i) {
@@ -84,7 +84,7 @@ sub EVENT_SAY {
             $response = "Excellent! Your fellow adventurers will appreciate this!";
             $ww_buff = 1;
         } else {
-            $response = "You do not have enough [Echo of Memory] to afford that.";
+            $response = "You do not have enough [Emperor's Favor] to afford that.";
         }
     }
     elsif ($text=~/combat statistics/i) {
@@ -93,7 +93,7 @@ sub EVENT_SAY {
             $response = "Excellent! Your fellow adventurers will appreciate this!";
             $ww_buff = 1;
         } else {
-            $response = "You do not have enough [Echo of Memory] to afford that.";
+            $response = "You do not have enough [Emperor's Favor] to afford that.";
         }
     }
     elsif ($text=~/movement speed/i) {
@@ -102,7 +102,7 @@ sub EVENT_SAY {
             $response = "Excellent! Your fellow adventurers will appreciate this!";
             $ww_buff = 1;
         } else {
-            $response = "You do not have enough [Echo of Memory] to afford that.";
+            $response = "You do not have enough [Emperor's Favor] to afford that.";
         }
     }
     elsif ($text=~/mana regeneration/i) {
@@ -111,7 +111,7 @@ sub EVENT_SAY {
             $response = "Excellent! Your fellow adventurers will appreciate this!";
             $ww_buff = 1;
         } else {
-            $response = "You do not have enough [Echo of Memory] to afford that.";
+            $response = "You do not have enough [Emperor's Favor] to afford that.";
         }
     }
     elsif ($text=~/attack speed/i) {
@@ -120,7 +120,7 @@ sub EVENT_SAY {
             $response = "Excellent! Your fellow adventurers will appreciate this!";
             $ww_buff = 1;
         } else {
-            $response = "You do not have enough [Echo of Memory] to afford that.";
+            $response = "You do not have enough [Emperor's Favor] to afford that.";
         }
     }
     elsif ($text=~/health regeneration/i) {
@@ -129,20 +129,20 @@ sub EVENT_SAY {
             $response = "Excellent! Your fellow adventurers will appreciate this!";
             $ww_buff = 1;
         } else {
-            $response = "You do not have enough [Echo of Memory] to afford that.";
+            $response = "You do not have enough [Emperor's Favor] to afford that.";
         }
     }
     elsif ($text=~/all of these enchantments/i) {
-        my $eom_avail = $client->GetAlternateCurrencyValue(6);
-        if ($eom_avail >= 25) {
+        my $emperors_favor_avail = $client->GetAlternateCurrencyValue(6);
+        if ($emperors_favor_avail >= 25) {
             $response = "Excellent! Your fellow adventurers will appreciate this!";
-            $client->SetAlternateCurrencyValue(6, $eom_avail - 25);
+            $client->SetAlternateCurrencyValue(6, $emperors_favor_avail - 25);
             for my $value (43002 .. 43008) {
                 ApplyWorldWideBuff($value, 1);                
             }
             $ww_buff = 1;
         } else {
-            $response = "You do not have enough [Echo of Memory] to afford that.";
+            $response = "You do not have enough [Emperor's Favor] to afford that.";
         }
     }
 

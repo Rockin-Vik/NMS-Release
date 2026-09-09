@@ -9,7 +9,7 @@ sub CommonCharacterUpdate {
         }
         plugin::EnableTitles($client);
         plugin::UpdateCharMaxLevel($client);
-        plugin::UpdateEoMAward($client);
+        plugin::UpdateEmperorsFavorAward($client);
         plugin::RegisterSeasonalLogin($client);
 
         plugin::DoEventRewards($client);
@@ -394,7 +394,7 @@ sub RemoveClass {
 }
 
 # --- Class removal policy: one place for the Vision of Ayonae and the Hero tab ----------------
-sub RemoveClassCost        { return 10; } # Echo of Memory
+sub RemoveClassCost        { return 10; } # Emperor's Favor
 sub RemoveClassLockoutDays { return 7; }
 
 # The first removal is free (bucket free_remove_class_used). Returns 1 when a class was removed.
@@ -407,7 +407,7 @@ sub RemoveClassFree {
     return 1;
 }
 
-# Paid removal: Echo of Memory fee plus a lockout before the next one. Returns 1 when removed.
+# Paid removal: Emperor's Favor fee plus a lockout before the next one. Returns 1 when removed.
 sub RemoveClassPaid {
     my ($client, $class_id) = @_;
     return 0 unless $client && HasClass($client, $class_id);
@@ -417,12 +417,12 @@ sub RemoveClassPaid {
         plugin::YellowText("You cannot remove a class at this time, you still are under cooldown from a previous class removal.", $client);
         return 0;
     }
-    if (plugin::GetEOM($client) < $cost) {
-        plugin::YellowText("It costs $cost Echo of Memory in order to remove a class. You can obtain Echo of Memory through contributions to the server or purchase from other players in the Bazaar.", $client);
+    if (plugin::GetEmperorsFavor($client) < $cost) {
+        plugin::YellowText("It costs $cost Emperor's Favor in order to remove a class. You can obtain Emperor's Favor through contributions to the server or purchase from other players in the Bazaar.", $client);
         return 0;
     }
     return 0 unless RemoveClass($class_id, $client);
-    plugin::SpendEOM($client, $cost);
+    plugin::SpendEmperorsFavor($client, $cost);
     $client->AddExpeditionLockout("Class Removal Lockout", "", $days * 24 * 60 * 60);
     return 1;
 }

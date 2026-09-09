@@ -214,7 +214,7 @@ struct CharacterSetList_Struct {
 	uint32 character_count;
 	uint32 max_character_sets;
 	uint32 max_character_slots;
-	uint32 eom_available;
+	uint32 emperors_favor_available;
 	uint32 character_slot_cost;
 	uint32 character_set_cost;
 	uint32 available_slot_unlocks;

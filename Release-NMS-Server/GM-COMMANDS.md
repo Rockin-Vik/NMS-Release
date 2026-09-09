@@ -171,12 +171,13 @@ Side effect: enabling a skill you have at 0 sets it to 1 first (`gm_commands/aut
 
 ### `#award [Character Name] [Amount] [Reason...]`
 Default status: **GMAdmin (100)**  
-**NMS.** Grant Echo of Memory to a character (online or offline). All three arguments are
+**NMS.** Grant Emperor's Favor to a character (online or offline). All three arguments are
 required; the reason is free text.
 
-How it works (`gm_commands/award.cpp`): the amount is **added** to the character's `EoM-Award`
-data bucket, a message is posted to the Discord webhook `admin`, and cross-zone signal **666**
-is sent to the character. `plugin::UpdateEoMAward` (`NMS_custom_events.pl`) consumes the
+How it works (`gm_commands/award.cpp`): the amount is **added** to the character's
+`EmperorsFavor-Award` data bucket, a message is posted to the Discord webhook `admin`, and
+cross-zone signal **666** is sent to the character. `plugin::UpdateEmperorsFavorAward`
+(`NMS_custom_events.pl`) consumes the
 bucket on signal 666 and on every zone-in, credits alt currency 6 (account-wide when
 `Custom:EnableAccountAltCurrency` is on) and deletes the bucket. Nothing is written to
 `account_alt_currency` by the command itself — see CODEBASE.md §3.3.

@@ -1308,6 +1308,381 @@ WHERE disc_id IS NOT NULL AND disc_id <> 0;
 		.content_schema_update = false,
 	},
 
+	ManifestEntry{
+		.version = 43,
+		.description = "2026_09_07_armarium_item",
+		.check = "SELECT id FROM items WHERE id = 9011013 AND Name = 'Armarium' AND itemclass = 0 AND itemtype = 33 AND bagslots = 0 AND bagtype = 0 AND book = 0 AND slots = 0 AND nodrop = 0 AND norent = 1 AND notransfer = 1 AND fvnodrop = 1 AND attuneable = 0 AND loregroup = -1 AND clicktype = 1 AND clickeffect = 1 AND clickname = 'Open Armarium' AND casttime = 0 AND maxcharges = -1",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+-- Armarium: lore / no-drop inventory key that opens vault storage (VAULTDATA).
+-- Cloned from Satchel of the Hero (9011010) through a temporary table so every live
+-- items column is copied. Then converted to a non-container key: right-click must
+-- fire the click, not open a bag. clickeffect 1 is a client dummy; the zone
+-- intercepts the click and never casts that spell. nodrop = 0 is NO DROP in this
+-- schema. norent = 1 is rentable: item_data.h treats NoRent == 0 as deleted after
+-- a long camp. Empty CREATE TEMPORARY TABLE ... AS SELECT is not an SQL error, so
+-- if both 9011010 and 9011013 are missing this INSERT of NULL into a NOT NULL
+-- column fails and custom_version is not stamped. UPDATE after INSERT IGNORE
+-- repairs a previously inserted row whose fields drifted (including norent = 0).
+DROP TEMPORARY TABLE IF EXISTS nms_armarium_need_source;
+CREATE TEMPORARY TABLE nms_armarium_need_source (must_exist TINYINT NOT NULL);
+INSERT INTO nms_armarium_need_source (must_exist)
+VALUES (CASE
+    WHEN EXISTS (SELECT 1 FROM items WHERE id = 9011010) THEN 1
+    WHEN EXISTS (SELECT 1 FROM items WHERE id = 9011013) THEN 1
+    ELSE NULL
+END);
+DROP TEMPORARY TABLE IF EXISTS nms_armarium_need_source;
+DROP TEMPORARY TABLE IF EXISTS nms_armarium_tmp;
+CREATE TEMPORARY TABLE nms_armarium_tmp AS SELECT * FROM items WHERE id = 9011010;
+UPDATE nms_armarium_tmp
+SET id = 9011013,
+    Name = 'Armarium',
+    lore = 'A bound key to your Armarium. Right-click to open storage, bank, merchant, Proc Locker, and clickies.',
+    comment = 'NMS Armarium vault opener (custom v43)',
+    itemclass = 0,
+    itemtype = 33,
+    bagsize = 0,
+    bagslots = 0,
+    bagtype = 0,
+    bagwr = 0,
+    book = 0,
+    nodrop = 0,
+    norent = 1,
+    notransfer = 1,
+    fvnodrop = 1,
+    loregroup = -1,
+    magic = 1,
+    slots = 0,
+    weight = 1,
+    size = 1,
+    price = 0,
+    sellrate = 0,
+    stackable = 0,
+    potionbelt = 0,
+    attuneable = 0,
+    clicktype = 1,
+    clickeffect = 1,
+    clicklevel = 0,
+    clicklevel2 = 0,
+    clickname = 'Open Armarium',
+    casttime = 0,
+    casttime_ = 0,
+    recastdelay = 0,
+    recasttype = 0,
+    maxcharges = -1;
+INSERT IGNORE INTO items SELECT * FROM nms_armarium_tmp;
+UPDATE items
+SET Name = 'Armarium',
+    lore = 'A bound key to your Armarium. Right-click to open storage, bank, merchant, Proc Locker, and clickies.',
+    comment = 'NMS Armarium vault opener (custom v43)',
+    itemclass = 0,
+    itemtype = 33,
+    bagsize = 0,
+    bagslots = 0,
+    bagtype = 0,
+    bagwr = 0,
+    book = 0,
+    nodrop = 0,
+    norent = 1,
+    notransfer = 1,
+    fvnodrop = 1,
+    loregroup = -1,
+    magic = 1,
+    slots = 0,
+    weight = 1,
+    size = 1,
+    price = 0,
+    sellrate = 0,
+    stackable = 0,
+    potionbelt = 0,
+    attuneable = 0,
+    clicktype = 1,
+    clickeffect = 1,
+    clicklevel = 0,
+    clicklevel2 = 0,
+    clickname = 'Open Armarium',
+    casttime = 0,
+    casttime_ = 0,
+    recastdelay = 0,
+    recasttype = 0,
+    maxcharges = -1
+WHERE id = 9011013;
+DROP TEMPORARY TABLE IF EXISTS nms_armarium_tmp;
+)",
+		.content_schema_update = true,
+	},
+
+	ManifestEntry{
+		.version = 44,
+		.description = "2026_09_07_firiona_vie_attune_loop",
+		.check = R"(
+SELECT rv.rule_value
+FROM rule_values rv
+WHERE rv.rule_name = 'World:FVNoDropFlag'
+  AND rv.rule_value IN ('1', '2')
+  AND rv.ruleset_id = COALESCE(
+    (
+      SELECT rs.ruleset_id
+      FROM rule_sets rs
+      INNER JOIN variables v ON v.varname = 'RuleSet' AND v.value = rs.`name`
+      LIMIT 1
+    ),
+    (
+      SELECT rs.ruleset_id
+      FROM rule_sets rs
+      WHERE rs.`name` = 'default'
+      LIMIT 1
+    ),
+    1
+  )
+)",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+-- Firiona Vie + attune: unattuned no-drop is tradable; wearable no-drop is
+-- promoted to attuneable at shared_memory load when this rule is not 0.
+-- The dump ships World:FVNoDropFlag = 0. Compiled default is now 1; this
+-- UPDATE is what live rule_values rows actually read. Only rewrite 0 so a
+-- deliberate AdminOnly (2) is not stomped. INSERT covers a ruleset that
+-- never received the stock row. Check is the active ruleset (RuleSet
+-- variable, else 'default', else id 1) already at 1 or 2.
+UPDATE rule_values
+SET rule_value = '1',
+    notes = 'Firiona Vie: unattuned no-drop is tradable; wearable no-drop attunes on equip. 1=all players, 2=GM only (unattuned no-drop), 0=stock no-drop. Attuned and Armarium stay bound. Re-run shared_memory after changing.'
+WHERE rule_name = 'World:FVNoDropFlag'
+  AND rule_value = '0';
+INSERT INTO rule_values (ruleset_id, rule_name, rule_value, notes)
+SELECT 1,
+       'World:FVNoDropFlag',
+       '1',
+       'Firiona Vie: unattuned no-drop is tradable; wearable no-drop attunes on equip. 1=all players, 2=GM only (unattuned no-drop), 0=stock no-drop. Attuned and Armarium stay bound. Re-run shared_memory after changing.'
+FROM DUAL
+WHERE NOT EXISTS (
+    SELECT 1 FROM rule_values WHERE rule_name = 'World:FVNoDropFlag'
+);
+)",
+		.content_schema_update = false,
+	},
+
+	ManifestEntry{
+		.version = 45,
+		.description = "2026_09_08_armarium_rule_on",
+		.check = R"(
+SELECT rv.rule_value
+FROM rule_values rv
+WHERE rv.rule_name = 'Custom:DimensionalVault'
+  AND rv.rule_value IN ('true', '1')
+  AND rv.ruleset_id = COALESCE(
+    (
+      SELECT rs.ruleset_id
+      FROM rule_sets rs
+      INNER JOIN variables v ON v.varname = 'RuleSet' AND v.value = rs.`name`
+      LIMIT 1
+    ),
+    (
+      SELECT rs.ruleset_id
+      FROM rule_sets rs
+      WHERE rs.`name` = 'default'
+      LIMIT 1
+    ),
+    1
+  )
+)",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+-- Armarium / vault storage. Compiled default is now true. Live servers read
+-- rule_values, so a leftover false/0 row would keep the vault sealed. Only
+-- rewrite false/0; a deliberate true is not stomped. INSERT if no row exists.
+UPDATE rule_values
+SET rule_value = 'true',
+    notes = 'Enable Dimensional Vault (#vault_*) storage, Proc Locker, clicky autoload, vault bank/merchant, and the Armarium inventory clicky. Off = no vault commands, grant, or combat hooks.'
+WHERE rule_name = 'Custom:DimensionalVault'
+  AND rule_value IN ('false', '0');
+INSERT INTO rule_values (ruleset_id, rule_name, rule_value, notes)
+SELECT 1,
+       'Custom:DimensionalVault',
+       'true',
+       'Enable Dimensional Vault (#vault_*) storage, Proc Locker, clicky autoload, vault bank/merchant, and the Armarium inventory clicky. Off = no vault commands, grant, or combat hooks.'
+FROM DUAL
+WHERE NOT EXISTS (
+    SELECT 1 FROM rule_values WHERE rule_name = 'Custom:DimensionalVault'
+);
+)",
+		.content_schema_update = false,
+	},
+
+	ManifestEntry{
+		.version = 46,
+		.description = "2026_09_08_rename_echo_of_memory_to_emperors_favor_content",
+		// CONTENT half of the rename: items, db_str, npc_types, spawngroup. The player half
+		// (rule_values, data_buckets, saylink) is v47 with content_schema_update = false, so a
+		// split content/player deployment routes each half to the right connection. Guard on
+		// the alt-currency label, which lives on this same connection: "missing" runs only
+		// while it does not already say Emperor. An absent db_str row also reads as missing,
+		// which is right - the rename still has to happen.
+		.check = "SELECT `value` FROM `db_str` WHERE `id` = 6 AND `type` = 17",
+		.condition = "missing",
+		.match = "Emperor",
+		.sql = R"(
+-- Rename the "Echo of Memory" currency to "Emperor's Favor".
+-- Spec: Release-NMS-Deploy/specs/2026-09-08-currency-rename-emperors-favor.md
+--
+-- Apostrophes are escaped SQL-standard style by DOUBLING them (''), never with a backslash,
+-- so these statements are correct with or without NO_BACKSLASH_ESCAPES.
+
+-- 1. The currency item. Alternate currency 6 maps to item 46779 (alternate_currency row).
+--    The player-visible description text lives in `items`.`lore` varchar(80) -- the items
+--    table has no column named `description`; verified against the items CREATE TABLE and
+--    against the 46779 row itself in release-peq.sql, where the old description string sits
+--    in the `lore` field.
+UPDATE `items`
+   SET `Name` = 'Emperor''s Favor',
+       `lore` = 'A token of the Emperor''s favor, borne by the heroes of old.'
+ WHERE `id` = 46779;
+
+-- 2. The alt-currency window label. Currency id 6, string types 17 and 18.
+UPDATE `db_str` SET `value` = 'Emperor''s Favor' WHERE `id` = 6 AND `type` IN (17, 18);
+
+-- 3. The two themed NPCs. 1120001186 renders as "Imperial Emissary <Favor Merchant>".
+UPDATE `npc_types` SET `name` = 'Imperial Emissary', `lastname` = 'Favor Merchant' WHERE `id` = 1120001186;
+UPDATE `npc_types` SET `name` = 'Imperial Exchanger' WHERE `id` = 1120001290;
+
+-- 4. Internal spawngroup key. No apostrophe on purpose -- this is a lookup key, not player copy.
+UPDATE `spawngroup` SET `name` = 'bazaar_Emperors Favor000_682659186' WHERE `id` = 5003654;
+)",
+		.content_schema_update = true,
+	},
+
+	ManifestEntry{
+		.version = 47,
+		.description = "2026_09_08_rename_echo_of_memory_to_emperors_favor_player",
+		// PLAYER half of the rename: rule_values, data_buckets and the saylink cache. None of
+		// those are content tables, so this entry is content_schema_update = false and both
+		// its check and its SQL run on the player connection - matching v44/v45, which write
+		// rule_values the same way. Guard on the renamed rule key rather than on db_str: db_str
+		// lives on the other connection and would be unreadable here on a split deployment.
+		.check = "SELECT `rule_name` FROM `rule_values` WHERE `rule_name` = 'Custom:EmperorsFavorDropChance'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+-- Rename the "Echo of Memory" currency to "Emperor's Favor".
+-- Spec: Release-NMS-Deploy/specs/2026-09-08-currency-rename-emperors-favor.md
+--
+-- Apostrophes are escaped SQL-standard style by DOUBLING them (''), never with a backslash,
+-- so these statements are correct with or without NO_BACKSLASH_ESCAPES.
+
+-- 5. The five rule renames.
+--
+--    rule_values is keyed on (ruleset_id, rule_name), so a bare "UPDATE ... SET rule_name = ..."
+--    dies with a duplicate-key error on any server where BOTH the old and the new name already
+--    exist in the same ruleset. Guard: delete the new-named row ONLY where the old-named row
+--    also exists in that same ruleset, then rename.
+--
+--    Chosen over an unconditional "delete the new-named row first": on a DB where only the new
+--    name exists (this migration, or a hand edit, already applied) an unconditional delete would
+--    destroy the operator's setting and the rename would then match nothing to put it back.
+--
+--    Every statement keys on rule_name alone and joins on ruleset_id, never on a literal
+--    ruleset id, so all rulesets migrate. Each row keeps its existing rule_value -- only the
+--    drop chance changes, to 150 (see the economics table in the spec).
+--
+--    The four Unlock* rules are deliberately NOT upserted: if a server never wrote them to
+--    rule_values, the compiled default governs and inserting rows here would change behaviour.
+--    The drop chance IS upserted below, because its value is changing on purpose.
+
+DELETE `rv_new` FROM `rule_values` AS `rv_new`
+ INNER JOIN `rule_values` AS `rv_old`
+    ON `rv_old`.`ruleset_id` = `rv_new`.`ruleset_id`
+   AND `rv_old`.`rule_name`  = 'Custom:EventEOMDropChance'
+ WHERE `rv_new`.`rule_name` = 'Custom:EmperorsFavorDropChance';
+
+UPDATE `rule_values`
+   SET `rule_name`  = 'Custom:EmperorsFavorDropChance',
+       `rule_value` = '150',
+       `notes`      = 'Increase this value to make Emperor''s Favor drops more rare. Flat 1 in N roll per eligible player, per kill.'
+ WHERE `rule_name` = 'Custom:EventEOMDropChance';
+
+DELETE `rv_new` FROM `rule_values` AS `rv_new`
+ INNER JOIN `rule_values` AS `rv_old`
+    ON `rv_old`.`ruleset_id` = `rv_new`.`ruleset_id`
+   AND `rv_old`.`rule_name`  = 'Custom:EoMUnlockCharacterSets'
+ WHERE `rv_new`.`rule_name` = 'Custom:EmperorsFavorUnlockCharacterSets';
+
+UPDATE `rule_values`
+   SET `rule_name` = 'Custom:EmperorsFavorUnlockCharacterSets',
+       `notes`     = 'Maximum number of character sets which a player can unlock with Emperor''s Favor.'
+ WHERE `rule_name` = 'Custom:EoMUnlockCharacterSets';
+
+DELETE `rv_new` FROM `rule_values` AS `rv_new`
+ INNER JOIN `rule_values` AS `rv_old`
+    ON `rv_old`.`ruleset_id` = `rv_new`.`ruleset_id`
+   AND `rv_old`.`rule_name`  = 'Custom:EoMUnlockCharacterSetCost'
+ WHERE `rv_new`.`rule_name` = 'Custom:EmperorsFavorUnlockCharacterSetCost';
+
+UPDATE `rule_values`
+   SET `rule_name` = 'Custom:EmperorsFavorUnlockCharacterSetCost',
+       `notes`     = 'Emperor''s Favor cost to unlock a character set'
+ WHERE `rule_name` = 'Custom:EoMUnlockCharacterSetCost';
+
+DELETE `rv_new` FROM `rule_values` AS `rv_new`
+ INNER JOIN `rule_values` AS `rv_old`
+    ON `rv_old`.`ruleset_id` = `rv_new`.`ruleset_id`
+   AND `rv_old`.`rule_name`  = 'Custom:EoMUnlockCharacterSlots'
+ WHERE `rv_new`.`rule_name` = 'Custom:EmperorsFavorUnlockCharacterSlots';
+
+UPDATE `rule_values`
+   SET `rule_name` = 'Custom:EmperorsFavorUnlockCharacterSlots',
+       `notes`     = 'Maximum number of character slots which a player can unlock with Emperor''s Favor.'
+ WHERE `rule_name` = 'Custom:EoMUnlockCharacterSlots';
+
+DELETE `rv_new` FROM `rule_values` AS `rv_new`
+ INNER JOIN `rule_values` AS `rv_old`
+    ON `rv_old`.`ruleset_id` = `rv_new`.`ruleset_id`
+   AND `rv_old`.`rule_name`  = 'Custom:EoMUnlockCharacterSlotCost'
+ WHERE `rv_new`.`rule_name` = 'Custom:EmperorsFavorUnlockCharacterSlotCost';
+
+UPDATE `rule_values`
+   SET `rule_name` = 'Custom:EmperorsFavorUnlockCharacterSlotCost',
+       `notes`     = 'Emperor''s Favor cost to unlock a character slot'
+ WHERE `rule_name` = 'Custom:EoMUnlockCharacterSlotCost';
+
+-- Force the new drop chance on every ruleset that already carried a new-named row (a server
+-- that renamed by hand, or a ruleset the rename above did not reach).
+UPDATE `rule_values` SET `rule_value` = '150' WHERE `rule_name` = 'Custom:EmperorsFavorDropChance';
+
+-- Upsert, not UPDATE, for the same reason version 18 records: on a DB where the rule row does
+-- not exist at all, a bare UPDATE matches zero rows and silently does nothing. This guarantees
+-- ruleset 1 ends up at 150 whether or not anything was there before.
+INSERT INTO `rule_values` (`ruleset_id`, `rule_name`, `rule_value`, `notes`)
+VALUES (1, 'Custom:EmperorsFavorDropChance', '150', 'Increase this value to make Emperor''s Favor drops more rare. Flat 1 in N roll per eligible player, per kill.')
+ON DUPLICATE KEY UPDATE `rule_value` = VALUES(`rule_value`), `notes` = VALUES(`notes`);
+
+-- 6. Pending GM awards. The shipped dump has no such rows, but a live server may -- without
+--    this they would be orphaned under a key nothing reads any more.
+UPDATE `data_buckets` SET `key` = 'EmperorsFavor-Award' WHERE `key` = 'EoM-Award';
+
+-- 7. Saylink cache. `saylink` maps an id to the phrase a clicked chat link makes the player
+--    say; rows are created on demand from bracketed [text] in NPC dialogue and from GM
+--    helpers. Stale rows are not merely untidy: an old link in a player's chat window would
+--    still say "Echo of Memory", and the GM "#find item echo of memory" link returns nothing
+--    once the item is renamed. Keyed on `phrase`, not on a literal id, because ids are
+--    assigned per server. `phrase` is varchar(64) with a NON-unique index -- read from the
+--    `CREATE TABLE saylink` in release-peq.sql: PRIMARY KEY (`id`), KEY `phrase_index`
+--    (`phrase`) USING BTREE -- so a plain UPDATE cannot raise a duplicate-key error.
+--    "#find item emperor" rather than the full name: #find does a substring match, and this
+--    avoids depending on how the apostrophe survives the say path.
+UPDATE `saylink` SET `phrase` = 'Emperor''s Favor' WHERE `phrase` = 'Echo of Memory';
+UPDATE `saylink` SET `phrase` = '#find item emperor' WHERE `phrase` = '#find item echo of memory';
+
+-- Deliberately NOT touched: player_event_logs and player_event_merchant_sell. Those are
+-- historical telemetry and must keep the names the events were recorded under.
+)",
+		.content_schema_update = false,
+	},
+
 	// Used for testing
 	//	ManifestEntry{
 	//		.version = 9229,

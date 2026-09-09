@@ -69,28 +69,28 @@ sub CustomEventItemClickCastEntry {
     return 0;
 }
 
-# Echo of Memory awards.
+# Emperor's Favor awards.
 #
 # #award [Character] [Amount] [Reason] (zone/gm_commands/award.cpp) does not
-# credit currency directly; it adds Amount to the character's "EoM-Award" data
+# credit currency directly; it adds Amount to the character's "EmperorsFavor-Award" data
 # bucket and fires cross-zone signal 666. This hook consumes that bucket. It is
 # called from global_player.pl on signal 666 and from
 # plugin::CommonCharacterUpdate on every zone-in, so an award to an offline
 # character lands the next time they log in.
 #
-# EoM is alternate currency id 6 (EOM_CURRENCY_ID, world/client.h). With
+# Emperor's Favor is alternate currency id 6 (EMPERORS_FAVOR_CURRENCY_ID, world/client.h). With
 # Custom:EnableAccountAltCurrency on, AddAlternateCurrencyValue credits the
 # account-wide balance in account_alt_currency.
-sub UpdateEoMAward {
+sub UpdateEmperorsFavorAward {
     my $client = shift || plugin::val('$client');
     return 0 unless ($client && $client->IsClient());
 
-    my $pending = $client->GetBucket('EoM-Award');
+    my $pending = $client->GetBucket('EmperorsFavor-Award');
     return 0 unless (defined $pending && $pending =~ /^\d+$/ && $pending > 0);
 
     $client->AddAlternateCurrencyValue(6, $pending);
-    $client->DeleteBucket('EoM-Award');
-    $client->Message(15, "You have been awarded $pending Echo of Memory.");
+    $client->DeleteBucket('EmperorsFavor-Award');
+    $client->Message(15, "You have been awarded $pending Emperor's Favor.");
     return 1;
 }
 

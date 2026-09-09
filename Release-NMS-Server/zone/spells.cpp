@@ -3101,10 +3101,16 @@ bool Mob::SpellFinished(uint16 spell_id, Mob *spell_target, CastingSlot slot, in
 					ExpendAlternateAdvancementCharge(rank->base_ability->id);
 				}
 				//set AA recast timer
-				if (RuleB(Custom, UseDynamicAATimers)) {
-					CastToClient()->SendAlternateAdvancementTimer(CastToClient()->GetDynamicAATimer(rank->base_ability->id), 0, 0);
-				} else {
-					CastToClient()->SendAlternateAdvancementTimer(rank->spell_type, 0, 0);
+				// The same index activation keyed the cooldown on (dynamic or stock); never a second
+				// allocation. An untimed ability under dynamic timers has no index and gets no packet.
+				if (rank) {
+					// allocate = false: activation already keyed the cooldown on this index, so a
+					// miss here means there is none. Allowing an allocation would rebuild the whole
+					// AA window from inside spell resolution.
+					const int timer_index = CastToClient()->ResolveAATimerIndex(rank, false);
+					if (timer_index >= 0) {
+						CastToClient()->SendAlternateAdvancementTimer(timer_index, 0, 0);
+					}
 				}
 			}
 		}

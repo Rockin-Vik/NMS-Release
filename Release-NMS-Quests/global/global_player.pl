@@ -1,6 +1,6 @@
 sub EVENT_SIGNAL {
     if ($signal == 666) {
-        plugin::UpdateEoMAward($client);
+        plugin::UpdateEmperorsFavorAward($client);
         return;
     }
 

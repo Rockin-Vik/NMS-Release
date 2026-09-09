@@ -1791,6 +1791,10 @@ void Client::Handle_Connect_OP_ZoneEntry(const EQApplicationPacket *app)
 		LogError("Unable to load ability timers from the database for [{}] ([{}])!", GetCleanName(), CharacterID());
 	}
 
+	// Before any timers packet goes out: drop dynamic AA timer rows the client cannot use
+	// (indexes above 98 from the old allocator), or every row when the rule is off.
+	RepairDynamicAATimers();
+
 	/* Load Spell Slot Refresh from Currently Memoried Spells */
 	for (unsigned int i = 0; i < EQ::spells::SPELL_GEM_COUNT; ++i)
 		if (IsValidSpell(m_pp.mem_spells[i]))
@@ -4739,6 +4743,15 @@ void Client::Handle_OP_CastSpell(const EQApplicationPacket *app)
 			if (inst && inst->IsClassCommon())
 			{
 				const EQ::ItemData* item = inst->GetItem();
+				if (!item) {
+					InterruptSpell(castspell->spell_id);
+					return;
+				}
+				if (NmsVaultTryOpenFromItem(this, item->ID)) {
+					InterruptSpell(castspell->spell_id);
+					SendSpellBarEnable(castspell->spell_id);
+					return;
+				}
 				if (item->Click.Effect != (uint32)castspell->spell_id)
 				{
 					std::string message = fmt::format("OP_CastSpell with item, tried to cast a different spell than what was on item - item spell id [{}] attempted [{}]", item->Click.Effect, (uint32)castspell->spell_id);
@@ -9914,6 +9927,13 @@ void Client::Handle_OP_ItemVerifyRequest(const EQApplicationPacket *app)
 	if (!item) {
 		Message(Chat::Red, "Error: item not found in inventory slot #%i", slot_id);
 		DeleteItemInInventory(slot_id, 0, true);
+		return;
+	}
+
+	if (NmsVaultTryOpenFromItem(this, item->ID)) {
+		if (item->Click.Effect > 0) {
+			SendSpellBarEnable(item->Click.Effect);
+		}
 		return;
 	}
 
@@ -17297,7 +17317,7 @@ void Client::Handle_OP_HeroRequest(const EQApplicationPacket *app)
 		return;
 	}
 
-	// The remove path can be refused by the Perl (lockout, or not enough Echo of Memory)
+	// The remove path can be refused by the Perl (lockout, or not enough Emperor's Favor)
 	// without changing anything the C++ gate above tests, so an unthrottled client could
 	// replay the same rejected packet in a tight loop and spin a Perl dispatch, two cache
 	// scans and a reply packet every iteration on the zone thread. Armed here rather than
@@ -17317,7 +17337,7 @@ void Client::Handle_OP_HeroRequest(const EQApplicationPacket *app)
 		return;
 	}
 
-	// Fail closed here. The policy (free add, Echo of Memory fee and lockout on removal,
+	// Fail closed here. The policy (free add, Emperor's Favor fee and lockout on removal,
 	// announcements) is the same Perl the guildmasters and the Vision of Ayonae use.
 	if (request->op == HeroRequestAdd) {
 		if (CanAddExtraClass(class_id, false) != AddClassResult::Ok) {

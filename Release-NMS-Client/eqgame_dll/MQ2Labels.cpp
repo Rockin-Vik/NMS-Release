@@ -1851,7 +1851,7 @@ PLUGIN_API VOID InitializeMQ2Labels(VOID)
 	eqTypesMap[(EQLabelTypes)6705] = [](EQLabelTypes) { return GetStringRepresentationOfStat(eStatCapSpellDamage); };
 	eqTypesMap[(EQLabelTypes)6706] = [](EQLabelTypes) { return GetStringRepresentationOfStat(eStatCapWornATK); };
 
-	// Detour EQType 338 to return the dynamic value of Echo of Memory (Alternate Currency ID 6)
+	// Detour EQType 338 to return the dynamic value of Emperor's Favor (Alternate Currency ID 6)
 	eqTypesMap[(EQLabelTypes)338] = [](EQLabelTypes) {
 		if (GetCharInfo() && pPlayerPointManager) {
 			return std::to_string(pPlayerPointManager->GetAltCurrency(6));

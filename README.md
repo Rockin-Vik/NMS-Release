@@ -39,7 +39,7 @@ Contributing with an AI agent? Its instructions and skills live in [`agents/`](a
 
 - **Multiclassing** — a character can take up to three classes at once
 - **Multiple pets** — pet classes control several pets, with a custom pet window
-- **Echo of Memory** — an alternate currency that drops from kills and buys unlocks
+- **Emperor's Favor** — an alternate currency that drops from kills and buys unlocks
 - **Item upgrade tiers** — drops can roll as Enchanted or Legendary versions
 - Assorted client-side quality-of-life fixes, shipped as `dinput8.dll`
 

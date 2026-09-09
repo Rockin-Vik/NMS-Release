@@ -204,6 +204,32 @@ newest at the bottom.
 - I committed a rebuilt `dinput8.dll` after a build whose errors I had printed but not gated on, so the
   commit shipped the previous binary under a message claiming the fix. Gate every binary commit on the
   build's exit code and a fresh output timestamp, never on reading a log.
+- I drove a live client test through the maintainer and read his "dims alone" as a pass, then declared a
+  254 timer-number ceiling and ran four more cycles on it; he had meant "nothing else dimmed", not "the
+  button I clicked dimmed" — no assigned number had ever worked. When the maintainer is my hands and
+  eyes, define the positive signal **before** the first run (what changes, on which element, for how
+  long), state the negative alongside it, and require that observation back in his words. An ambiguous
+  confirmation is CANNOT-DETERMINE, not a pass, and every conclusion stacked on one is void.
+- The same test wasted his time because my prose named abilities by AA id; the client UI only ever shows
+  him names, so he could not tell which button I meant. In prose use the name the user sees on screen
+  (ability, zone, item, rule); ids, paths and opcodes belong inside the commands he pastes, not in the
+  sentences he reads.
+- Renaming `plugin::SpendEOM`, I told the worker to skip `Tearel.pl` and `Son_of_Tearel.pl` as
+  "link-only" from a grep for the currency *name* — while an earlier grep of mine for *callers* had
+  already listed both calling it. A file's exclusion must be justified by the grep that matches what is
+  actually changing (the symbol), never by a different grep that happened to miss it; `perl -c` cannot
+  catch it because `plugin::` resolves at runtime, so the handin fails silently in front of players.
+- I added manifest entry v43 and left `CUSTOM_BINARY_DATABASE_VERSION` at 42, so
+  `DatabaseUpdate` (`database_update.cpp:158`, `version_low + 1 .. version_high`) would never have
+  considered it — the exact miss commit `2560bbf1` already recorded. A custom migration is four
+  artifacts, not one: the manifest entry, the `common/version.h` bump, the CODEBASE.md declared/live
+  counts, and a probe in `utils/sql/nms_content_health_check.sql`. Ship all four or the entry is dead
+  code, and a rule *rename* fails worst of all — the binary reads the new key, the DB keeps the old
+  one, and every affected rule silently falls back to its compiled default with nothing logged.
+- I opened a PR for a database script that had never touched a database and read only ruleset 1,
+  while the server layers a named ruleset over "default". Before a PR is opened: run the change
+  against a disposable local stand-in (portable MariaDB, a scratch DB) when the real target is out
+  of reach, and hand it to an adversarial reviewer; "parses clean" is not a test.
 
 ## Project skills
 
