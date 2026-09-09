@@ -1339,7 +1339,7 @@ CREATE TEMPORARY TABLE nms_armarium_tmp AS SELECT * FROM items WHERE id = 901101
 UPDATE nms_armarium_tmp
 SET id = 9011013,
     Name = 'Armarium',
-    lore = 'A bound key to your Armarium. Right-click to open storage, bank, merchant, Proc Locker, and clickies.',
+    lore = 'A bound key to your Armarium. Right-click to open storage, bank and merchant.',
     comment = 'NMS Armarium vault opener (custom v43)',
     itemclass = 0,
     itemtype = 33,
@@ -1375,7 +1375,7 @@ SET id = 9011013,
 INSERT IGNORE INTO items SELECT * FROM nms_armarium_tmp;
 UPDATE items
 SET Name = 'Armarium',
-    lore = 'A bound key to your Armarium. Right-click to open storage, bank, merchant, Proc Locker, and clickies.',
+    lore = 'A bound key to your Armarium. Right-click to open storage, bank and merchant.',
     comment = 'NMS Armarium vault opener (custom v43)',
     itemclass = 0,
     itemtype = 33,
@@ -1681,6 +1681,28 @@ UPDATE `saylink` SET `phrase` = '#find item emperor' WHERE `phrase` = '#find ite
 -- historical telemetry and must keep the names the events were recorded under.
 )",
 		.content_schema_update = false,
+	},
+	ManifestEntry{
+		.version = 48,
+		.description = "2026_09_08_armarium_lore_fits_column",
+		// items.lore is varchar(80) in the shipped dump and version 43 wrote a 101-character
+		// lore. Under MariaDB's default strict sql_mode that is error 1406, world aborts the
+		// manifest and every zone exits "database not up to date": a fresh install never got
+		// past 43. A lenient server (the live one) silently cut the text at 80 characters,
+		// mid-word. Version 43 now writes the 77-character text below; this entry repairs the
+		// cut-off lore on any database where 43 already ran. Guarded on the item carrying the
+		// short text, so it is a no-op once applied and on a fresh install after the new 43.
+		.check = "SELECT id FROM items WHERE id = 9011013 AND lore = 'A bound key to your Armarium. Right-click to open storage, bank and merchant.'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+UPDATE items
+   SET lore = 'A bound key to your Armarium. Right-click to open storage, bank and merchant.'
+ WHERE id IN (9011010, 9011013)
+   AND Name = 'Armarium'
+   AND lore <> 'A bound key to your Armarium. Right-click to open storage, bank and merchant.';
+)",
+		.content_schema_update = true,
 	},
 
 	// Used for testing
