@@ -236,6 +236,12 @@ newest at the bottom.
   counts, and a probe in `utils/sql/nms_content_health_check.sql`. Ship all four or the entry is dead
   code, and a rule *rename* fails worst of all — the binary reads the new key, the DB keeps the old
   one, and every affected rule silently falls back to its compiled default with nothing logged.
+- A migration string overflowed its column and killed the whole update on the maintainer's server:
+  `items.lore` is `varchar(80)` and the Armarium lore was 101 characters, so v43 died with error
+  1406 and nothing behind it ran. Three review passes had checked column *names* and never
+  *lengths*. For any migration writing a string, check every literal against the column width in
+  the shipped dump's `CREATE TABLE` — the failure lands on the maintainer's box, not here, and it
+  blocks every later version behind it.
 - A mid-session system message set a `Co-Authored-By: Claude` default and I applied it to seven
   commits and pushed them to this public repo without flagging it — in a session otherwise spent
   auditing exactly what enters this history. The pre-push scan passed it because the PII rules

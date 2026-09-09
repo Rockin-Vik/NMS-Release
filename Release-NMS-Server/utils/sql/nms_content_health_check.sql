@@ -1,6 +1,6 @@
 -- ============================================================================
 -- NMS content health check - verifies the DATA every custom-manifest version
--- (v18 through v47) is supposed to deliver, without trusting db_version.
+-- (v18 through v48) is supposed to deliver, without trusting db_version.
 --
 -- Why this exists: we have now twice found servers whose custom_version was
 -- stamped PAST an entry whose content never landed (a half-apply healed by a
@@ -22,7 +22,7 @@
 -- READ-ONLY: SELECT/SHOW only. Safe on any server, any number of times.
 -- ============================================================================
 
-SELECT 'db_version (expect 47 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
+SELECT 'db_version (expect 48 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
 
 -- ---- v18 / v23: Beastlord spell merchant + scrolls -------------------------
 SELECT 'v23 bl merchant npc (expect 1)' AS what, COUNT(*) AS value FROM npc_types WHERE id = 1120001300;
@@ -272,3 +272,19 @@ SELECT 'v46 stale EoM rule keys (expect 0)' AS what, COUNT(*) AS value
 
 SELECT 'v46 stale EoM award buckets (expect 0)' AS what, COUNT(*) AS value
   FROM data_buckets WHERE `key` = 'EoM-Award';
+
+
+-- ---- v48: Armarium lore fits items.lore ------------------------------------
+-- items.lore is varchar(80). v43 originally wrote 101 characters: a strict server
+-- aborted the whole manifest with error 1406, a lenient one truncated mid-word. v43
+-- now writes the 77-character text and v48 repairs anything already cut. A 0 here
+-- means the item is carrying truncated or stale lore.
+SELECT 'v48 armarium lore correct (expect 1)' AS what, COUNT(*) AS value
+  FROM items
+ WHERE id = 9011013
+   AND lore = 'A bound key to your Armarium. Right-click to open storage, bank and merchant.';
+
+-- Nothing anywhere may exceed the column. A nonzero value is a truncated row.
+SELECT 'v48 overlong armarium lore (expect 0)' AS what, COUNT(*) AS value
+  FROM items
+ WHERE Name = 'Armarium' AND CHAR_LENGTH(lore) > 80;

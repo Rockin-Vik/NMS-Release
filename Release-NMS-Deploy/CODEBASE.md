@@ -308,7 +308,7 @@ NMS runs a **second migration manifest in parallel with stock EQEmu's**:
 | Manifest | File | Version column | Current |
 | --- | --- | --- | --- |
 | Stock | `database_update_manifest.cpp` | `db_version.version` | 9325 |
-| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **47** |
+| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **48** |
 | Bots | `database_update_manifest_bots.cpp` | `db_version.bots_database_version` | |
 
 Both are `#include`d directly into `common/database/database_update.cpp` (lines 9–11) and run
@@ -329,7 +329,7 @@ ALTER TABLE db_version ADD COLUMN custom_version INT UNSIGNED NOT NULL DEFAULT 0
 
 ### 4.2 What is actually in the custom manifest
 
-47 entries declared (v1–v47), **44 live**. Numbering is a plain sequence independent of the 9325
+48 entries declared (v1–v48), **45 live**. Numbering is a plain sequence independent of the 9325
 stock number. Entries carry `content_schema_update` to target the content DB rather than the
 player DB.
 
@@ -358,6 +358,7 @@ player DB.
 | v45 | `Custom:DimensionalVault = true` on the active player `rule_values` row (does not stomp an existing true). Armarium grant and vault commands are on. | Live |
 | v46 | **Content half** of the Emperor's Favor rename: item `46779` name and `lore`, the `db_str` alt-currency label, the two themed merchant NPCs, the `spawngroup` key. Guards on the `db_str` label, so a fresh install from the regenerated dump skips it. | Live |
 | v47 | **Player half** of the same rename: the five `Custom:EmperorsFavor*` rule keys (drop chance to 150), the `EmperorsFavor-Award` bucket, the stale `saylink` rows. Separate entry so a split content/player deployment routes each half to the right connection. Guards on the renamed rule key. | Live |
+| v48 | Repairs the Armarium `lore` on databases where v43 already ran. `items.lore` is `varchar(80)` and v43 originally wrote 101 characters: a strict server failed with error 1406 and applied nothing, a lenient one silently cut the text mid-word. v43 now writes 77 characters; this repairs the cut rows. Guarded on the short text, so it is a no-op once applied. | Live |
 
 ### 4.3 ⚠️ The version number is a claim, not a fact
 
