@@ -523,8 +523,12 @@ void Client::OPCombatAbility(const CombatAbility_Struct *ca_atk, bool is_riposte
 		}
 	}
 
-	// Check to see if actually have skill
-	if (!MaxSkill(static_cast<EQ::skills::SkillType>(ca_atk->m_skill)) && !bypass_skill_check) {
+	// Check to see if actually have skill. A hero's held-class skill works at any hero level
+	// (hero rule 2): a 70 Monk at hero level 1 presses Flying Kick although the Monk cap is 0
+	// until 30, so a skill the character holds passes even when the level cap says 0.
+	const auto ca_skill = static_cast<EQ::skills::SkillType>(ca_atk->m_skill);
+	const bool has_combat_skill = MaxSkill(ca_skill) > 0 || (RuleB(Custom, MulticlassingEnabled) && HasSkill(ca_skill));
+	if (!has_combat_skill && !bypass_skill_check) {
 		LogDebug("INVALID SKILL USAGE: [{}] tried to use skill [{}]", GetCleanName(), ca_atk->m_skill);
 		return;
 	}

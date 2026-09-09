@@ -214,7 +214,7 @@ struct CharacterSetList_Struct {
 	uint32 character_count;
 	uint32 max_character_sets;
 	uint32 max_character_slots;
-	uint32 eom_available;
+	uint32 emperors_favor_available;
 	uint32 character_slot_cost;
 	uint32 character_set_cost;
 	uint32 available_slot_unlocks;
@@ -952,7 +952,10 @@ static const uint32 MAX_PP_LANGUAGE = 28;
 
 static const uint32 MAX_PP_SKILL		= PACKET_SKILL_ARRAY_SIZE;	// 100 - actual skills buffer size
 static const uint32 MAX_PP_INNATE_SKILL	= 25;
-static const uint32 MAX_PP_AA_ARRAY		= 240;
+// 300 is the RoF2 client's own owned-AA list size (and the RoF/SoF/SoD/UF wire blocks); a hero that
+// keeps every held class's ranks can own more than the old 240 at level 70. Titanium's encoder
+// copies only its own 240 and is unaffected.
+static const uint32 MAX_PP_AA_ARRAY		= 300;
 static const uint32 MAX_GROUP_MEMBERS	= 6;
 static const uint32 MAX_RECAST_TYPES	= 20;
 

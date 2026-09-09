@@ -3041,46 +3041,40 @@ bool NPC::Death(Mob* killer_mob, int64 damage, uint16 spell, EQ::skills::SkillTy
 			}
 		}
 
-		// Echo of Memory: direct alt-currency award, rolled once per eligible player. Currency is
-		// personal - it never enters the loot tables or the corpse. Gated by con color (the kill has
-		// to be worth something to the roller) and by the same level-range rule as the XP split.
+		// Emperor's Favor: direct alt-currency award, rolled once per player in the group or raid.
+		// Currency is personal - it never enters the loot tables or the corpse. Deliberately ungated:
+		// every corpse counts, at any level. See specs/2026-09-08-currency-rename-emperors-favor.md.
 		if (killer && killer->IsClient()) {
-			auto TryEOMAward = [this](Client* c, int reference_level) {
-				if (!c || !Mob::IsWithinRewardLevelRange(c->GetRewardLevel(), reference_level)) {
+			auto TryEmperorsFavorAward = [](Client* c) {
+				if (!c) {
 					return;
 				}
-				const uint32 con_color = c->GetLevelCon(GetLevel());
-				if (con_color != ConsiderColor::Red && con_color != ConsiderColor::Yellow && con_color != ConsiderColor::White) {
-					return;
-				}
-				const int eom_drop_chance = RuleI(Custom, EventEOMDropChance);
-				if (eom_drop_chance > 0 && zone->random.Int(0, eom_drop_chance - 1) == 0) {
+				const int chance = RuleI(Custom, EmperorsFavorDropChance);
+				if (chance > 0 && zone->random.Int(0, chance - 1) == 0) {
 					c->CheckItemDiscoverability(46779);
 					c->AddAlternateCurrencyValue(6, 1, true);
-					c->Message(Chat::Green, "You receive 1 Echo of Memory.");
-					c->SendMarqueeMessage(15, "YOU HAVE FOUND AN ECHO OF MEMORY!", 4000);
+					c->Message(Chat::Green, "You receive 1 Emperor's Favor.");
+					c->SendMarqueeMessage(15, "YOU HAVE FOUND AN EMPEROR'S FAVOR!", 4000);
 				}
 			};
 
 			Client* kc = killer->CastToClient();
 			if (Raid* r = entity_list.GetRaidByClient(kc)) {
-				const int raid_top = (int)r->GetHighestRewardLevel();
 				for (const auto& m : r->members) {
 					if (m.member && m.member->IsClient()) {
-						TryEOMAward(m.member->CastToClient(), raid_top);
+						TryEmperorsFavorAward(m.member->CastToClient());
 					}
 				}
 			}
 			else if (Group* g = entity_list.GetGroupByClient(kc)) {
-				const int grp_top = (int)g->GetHighestRewardLevel();
 				for (const auto& mm : g->members) {
 					if (mm && mm->IsClient()) {
-						TryEOMAward(mm->CastToClient(), grp_top);
+						TryEmperorsFavorAward(mm->CastToClient());
 					}
 				}
 			}
 			else {
-				TryEOMAward(kc, kc->GetRewardLevel());
+				TryEmperorsFavorAward(kc);
 			}
 		}
 

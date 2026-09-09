@@ -835,6 +835,11 @@ bool NmsLootOfferApply(Client *c, const NmsLootOffer &offer, NmsLootAction actio
 		if (!inst) {
 			return false;
 		}
+		if (NmsVaultIsArmoryItem(inst->GetID())) {
+			c->Message(Chat::Red, "[NMS] The Armarium cannot be stored here.");
+			safe_delete(inst);
+			return false;
+		}
 		const int vault_slot = NmsVaultTryDepositInstance(c, inst);
 		if (!vault_slot) {
 			c->Message(Chat::Red, "[NMS] Your vault is full.");

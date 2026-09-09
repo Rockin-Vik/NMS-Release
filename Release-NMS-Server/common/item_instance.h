@@ -223,6 +223,7 @@ namespace EQ
 
 		bool IsSlotAllowed(int16 slot_id) const;
 
+		bool IsCharacterBound(bool recurse = true) const;
 		bool IsDroppable(bool recurse = true) const;
 
 		bool IsScaling() const				{ return m_scaling; }

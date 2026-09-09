@@ -9,7 +9,7 @@ sub CommonCharacterUpdate {
         }
         plugin::EnableTitles($client);
         plugin::UpdateCharMaxLevel($client);
-        plugin::UpdateEoMAward($client);
+        plugin::UpdateEmperorsFavorAward($client);
         plugin::RegisterSeasonalLogin($client);
 
         plugin::DoEventRewards($client);
@@ -43,10 +43,9 @@ sub CommonCharacterUpdate {
         for my $i (grep { !($_ ~~ @skip_ids) } 0..77) {
             if ($i == 53) { # Tracking (skill id 53)
                 my $base_cap = $client->MaxSkill($i);
-                if ($base_cap == 0) {
-                    # No tracking-capable class in the bitmask -> clear the skill.
-                    $client->SetSkill($i, 0) if $client->GetSkill($i) > 0;
-                } elsif ($client->GetSkill($i) < $base_cap) {
+                # A dropped tracker's value is kept in place (hero rule 5) and reads as 0 until a
+                # tracking class is held again; it is never cleared here.
+                if ($base_cap > 0 && $client->GetSkill($i) < $base_cap) {
                     # Multiclass auto-grant: bring a tracker up to at least the base cap.
                     $client->SetSkill($i, $base_cap);
                 }
@@ -386,7 +385,7 @@ sub RemoveClass {
         my $class_name = quest::getclassname($class_id);
 
         $client->Message(15, "You are NO LONGER a $class_name, and have lost access to all Spells, Disciplines, Skills, and Abilities of that class.");
-        $client->BuffFadeAll();
+        # Buffs are not wiped on a class change (hero rule 6: no penalty on switching).
         return 1;
     } else {
         $client->Message(13, "Remove Class Operation Failed.");
@@ -395,7 +394,7 @@ sub RemoveClass {
 }
 
 # --- Class removal policy: one place for the Vision of Ayonae and the Hero tab ----------------
-sub RemoveClassCost        { return 10; } # Echo of Memory
+sub RemoveClassCost        { return 10; } # Emperor's Favor
 sub RemoveClassLockoutDays { return 7; }
 
 # The first removal is free (bucket free_remove_class_used). Returns 1 when a class was removed.
@@ -408,7 +407,7 @@ sub RemoveClassFree {
     return 1;
 }
 
-# Paid removal: Echo of Memory fee plus a lockout before the next one. Returns 1 when removed.
+# Paid removal: Emperor's Favor fee plus a lockout before the next one. Returns 1 when removed.
 sub RemoveClassPaid {
     my ($client, $class_id) = @_;
     return 0 unless $client && HasClass($client, $class_id);
@@ -418,12 +417,12 @@ sub RemoveClassPaid {
         plugin::YellowText("You cannot remove a class at this time, you still are under cooldown from a previous class removal.", $client);
         return 0;
     }
-    if (plugin::GetEOM($client) < $cost) {
-        plugin::YellowText("It costs $cost Echo of Memory in order to remove a class. You can obtain Echo of Memory through contributions to the server or purchase from other players in the Bazaar.", $client);
+    if (plugin::GetEmperorsFavor($client) < $cost) {
+        plugin::YellowText("It costs $cost Emperor's Favor in order to remove a class. You can obtain Emperor's Favor through contributions to the server or purchase from other players in the Bazaar.", $client);
         return 0;
     }
     return 0 unless RemoveClass($class_id, $client);
-    plugin::SpendEOM($client, $cost);
+    plugin::SpendEmperorsFavor($client, $cost);
     $client->AddExpeditionLockout("Class Removal Lockout", "", $days * 24 * 60 * 60);
     return 1;
 }

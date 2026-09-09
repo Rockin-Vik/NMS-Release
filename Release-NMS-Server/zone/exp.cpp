@@ -1492,6 +1492,10 @@ void Client::SetLevel(uint8 set_level, bool command)
 	} else if (set_level < m_pp.level) {
 		int levels_lost = (m_pp.level - set_level);
 
+		// Hero rule 4: spells follow the current level. Gems the new level cannot cast are dropped;
+		// the spellbook is untouched. (m_pp.level is still the old level here; that is the test.)
+		UnmemorizeGemsAboveLevel(set_level);
+
 		if (parse->PlayerHasQuestSub(EVENT_LEVEL_DOWN)) {
 			parse->EventPlayer(EVENT_LEVEL_DOWN, this, std::to_string(levels_lost), 0);
 		}

@@ -1,6 +1,6 @@
 -- ============================================================================
 -- NMS content health check - verifies the DATA every custom-manifest version
--- (v18 through v42) is supposed to deliver, without trusting db_version.
+-- (v18 through v48) is supposed to deliver, without trusting db_version.
 --
 -- Why this exists: we have now twice found servers whose custom_version was
 -- stamped PAST an entry whose content never landed (a half-apply healed by a
@@ -14,10 +14,15 @@
 --     < nms_content_health_check.sql
 -- Or from any mysql/mariadb client: source nms_content_health_check.sql
 --
+-- Split player/content schemas: this script uses one DATABASE(). Point it at the
+-- player schema for db_version, rule_values, and character_nms_* tables; point it
+-- at the content schema for items / npc / zone / aa checks. A single run against
+-- one schema cannot prove both halves.
+--
 -- READ-ONLY: SELECT/SHOW only. Safe on any server, any number of times.
 -- ============================================================================
 
-SELECT 'db_version (expect 42 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
+SELECT 'db_version (expect 48 once current)' AS what, custom_version AS value FROM db_version LIMIT 1;
 
 -- ---- v18 / v23: Beastlord spell merchant + scrolls -------------------------
 SELECT 'v23 bl merchant npc (expect 1)' AS what, COUNT(*) AS value FROM npc_types WHERE id = 1120001300;
@@ -141,3 +146,145 @@ SELECT 'v42 learned carry-over tables (expect 3)' AS what, COUNT(*) AS value
   WHERE table_schema = DATABASE()
     AND table_name IN ('character_learned_spells', 'character_learned_discs',
                        'character_learned_mem');
+
+-- ---- v43: Armarium inventory clicky ----------------------------------------
+-- Identity is items.id 9011013. Runtime matching is id >= 9011013 AND
+-- id % 1000000 = 11013 so stock 11013 (Boots of Quickness) is not Armarium.
+-- norent must be nonzero (1): NoRent == 0 is deleted after a long camp.
+SELECT 'v43 armarium item (expect 1)' AS what, COUNT(*) AS value
+  FROM items WHERE id = 9011013 AND Name = 'Armarium';
+SELECT 'v43 armarium norent (expect 1)' AS what, norent AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium nodrop (expect 0)' AS what, nodrop AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium notransfer (expect 1)' AS what, notransfer AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium fvnodrop (expect 1)' AS what, fvnodrop AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium itemclass (expect 0)' AS what, itemclass AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium itemtype (expect 33)' AS what, itemtype AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium bagslots (expect 0)' AS what, bagslots AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium clicktype (expect 1)' AS what, clicktype AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium clickeffect (expect 1)' AS what, clickeffect AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium clickname (expect Open Armarium)' AS what, clickname AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium casttime (expect 0)' AS what, casttime AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium maxcharges (expect -1)' AS what, maxcharges AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium loregroup (expect -1)' AS what, loregroup AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium attuneable (expect 0)' AS what, attuneable AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium slots (expect 0)' AS what, slots AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium book (expect 0)' AS what, book AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 armarium bagtype (expect 0)' AS what, bagtype AS value
+  FROM items WHERE id = 9011013;
+SELECT 'v43 clone source 9011010 (expect 1)' AS what, COUNT(*) AS value
+  FROM items WHERE id = 9011010;
+
+-- ---- v44: Firiona Vie + attune loop ----------------------------------------
+-- Player schema (rule_values). Expect 1 (all players) or 2 (GM only) on the
+-- active ruleset: RuleSet variable, else rule_sets 'default', else id 1.
+SELECT 'v44 World:FVNoDropFlag active (expect 1 or 2)' AS what, rv.rule_value AS value
+  FROM rule_values rv
+ WHERE rv.rule_name = 'World:FVNoDropFlag'
+   AND rv.ruleset_id = COALESCE(
+     (SELECT rs.ruleset_id FROM rule_sets rs
+       INNER JOIN variables v ON v.varname = 'RuleSet' AND v.value = rs.`name`
+       LIMIT 1),
+     (SELECT rs.ruleset_id FROM rule_sets rs WHERE rs.`name` = 'default' LIMIT 1),
+     1
+   )
+ LIMIT 1;
+
+-- Absence probe: the value SELECT above returns NO ROW when the rule is missing on
+-- the active ruleset, which reads identically to 'this file was never run'. COUNT(*)
+-- always returns exactly one row, so 0 is unambiguous.
+SELECT 'v44 World:FVNoDropFlag row present (expect 1)' AS what, COUNT(*) AS value
+  FROM rule_values rv
+ WHERE rv.rule_name = 'World:FVNoDropFlag'
+   AND rv.ruleset_id = COALESCE(
+     (SELECT rs.ruleset_id FROM rule_sets rs
+       INNER JOIN variables v ON v.varname = 'RuleSet' AND v.value = rs.`name`
+       LIMIT 1),
+     (SELECT rs.ruleset_id FROM rule_sets rs WHERE rs.`name` = 'default' LIMIT 1),
+     1
+   );
+
+-- ---- v45: Armarium / vault rule on ----------------------------------------
+-- Player schema (rule_values). Expect true or 1 on the active ruleset.
+SELECT 'v45 Custom:DimensionalVault active (expect true or 1)' AS what, rv.rule_value AS value
+  FROM rule_values rv
+ WHERE rv.rule_name = 'Custom:DimensionalVault'
+   AND rv.ruleset_id = COALESCE(
+     (SELECT rs.ruleset_id FROM rule_sets rs
+       INNER JOIN variables v ON v.varname = 'RuleSet' AND v.value = rs.`name`
+       LIMIT 1),
+     (SELECT rs.ruleset_id FROM rule_sets rs WHERE rs.`name` = 'default' LIMIT 1),
+     1
+   )
+ LIMIT 1;
+
+-- Absence probe: the value SELECT above returns NO ROW when the rule is missing on
+-- the active ruleset, which reads identically to 'this file was never run'. COUNT(*)
+-- always returns exactly one row, so 0 is unambiguous.
+SELECT 'v45 Custom:DimensionalVault row present (expect 1)' AS what, COUNT(*) AS value
+  FROM rule_values rv
+ WHERE rv.rule_name = 'Custom:DimensionalVault'
+   AND rv.ruleset_id = COALESCE(
+     (SELECT rs.ruleset_id FROM rule_sets rs
+       INNER JOIN variables v ON v.varname = 'RuleSet' AND v.value = rs.`name`
+       LIMIT 1),
+     (SELECT rs.ruleset_id FROM rule_sets rs WHERE rs.`name` = 'default' LIMIT 1),
+     1
+   );
+
+
+-- ---- v46 / v47: Echo of Memory -> Emperor's Favor rename ---------------------
+-- The rename spans the item, the alt-currency window label and the five rule keys. The
+-- dangerous half is rule_values: the binary looks up Custom:EmperorsFavor*, so if the rows
+-- kept their old names every one of those rules silently falls back to its compiled default
+-- and any operator tuning is ignored with nothing logged.
+SELECT 'v46 item 46779 renamed (expect 1)' AS what, COUNT(*) AS value
+  FROM items WHERE id = 46779 AND Name = 'Emperor''s Favor';
+
+SELECT 'v46 alt-currency label rows (expect 2)' AS what, COUNT(*) AS value
+  FROM db_str WHERE id = 6 AND type IN (17, 18) AND value = 'Emperor''s Favor';
+
+SELECT 'v46 renamed rule keys (expect 5)' AS what, COUNT(*) AS value
+  FROM rule_values WHERE rule_name IN (
+    'Custom:EmperorsFavorDropChance',
+    'Custom:EmperorsFavorUnlockCharacterSets',
+    'Custom:EmperorsFavorUnlockCharacterSetCost',
+    'Custom:EmperorsFavorUnlockCharacterSlots',
+    'Custom:EmperorsFavorUnlockCharacterSlotCost');
+
+SELECT 'v46 stale EoM rule keys (expect 0)' AS what, COUNT(*) AS value
+  FROM rule_values WHERE rule_name LIKE 'Custom:EoM%' OR rule_name = 'Custom:EventEOMDropChance';
+
+SELECT 'v46 stale EoM award buckets (expect 0)' AS what, COUNT(*) AS value
+  FROM data_buckets WHERE `key` = 'EoM-Award';
+
+
+-- ---- v48: Armarium lore fits items.lore ------------------------------------
+-- items.lore is varchar(80). v43 originally wrote 101 characters: a strict server
+-- aborted the whole manifest with error 1406, a lenient one truncated mid-word. v43
+-- now writes the 77-character text and v48 repairs anything already cut. A 0 here
+-- means the item is carrying truncated or stale lore.
+SELECT 'v48 armarium lore correct (expect 1)' AS what, COUNT(*) AS value
+  FROM items
+ WHERE id = 9011013
+   AND lore = 'A bound key to your Armarium. Right-click to open storage, bank and merchant.';
+
+-- Nothing anywhere may exceed the column. A nonzero value is a truncated row.
+SELECT 'v48 overlong armarium lore (expect 0)' AS what, COUNT(*) AS value
+  FROM items
+ WHERE Name = 'Armarium' AND CHAR_LENGTH(lore) > 80;

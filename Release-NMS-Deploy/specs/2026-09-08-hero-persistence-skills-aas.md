@@ -1,6 +1,6 @@
 # Skills and AAs persist through the level-1 reset and across class drops
 
-Status: draft v3 for review, 2026-09-08. Second item under the hero class-switching decision (local ADR-0002, rules 2, 3 and 5, plus the level-drop side effects under rules 1, 4 and 8). Lands after the AA reuse timer spec (`2026-09-08-aa-reuse-timer-ids.md`), which is itself NO-GO until its client spike runs; the one sentence here that depends on that spike's outcome is marked in D7. Not built. v1 was verified by three independent readers against the tree; v2 went through a twelve-agent adversarial review (NO-GO: the sizing claim was wrong and the read clamp alone let shelved skills leak into combat); every confirmed finding is folded in. A delta review of v3 then found D8 built on a loader that refuses shelved ranks (NO-GO) and three wrong sentences; all four are corrected below, plus one clarification on the D1 cache.
+Status: **built on branch `hero-persistence`, reviewed adversarially (four-agent code review, findings folded in), merged with main after the AA timer PR landed, and run through §4 on a local test server (2026-09-08; stock dump plus migrations, RoF2 client, a Paladin/Monk/Berserker at 70 adding a Warrior with catch-up on): steps 1 to 9 hold, 10 and 11 not run for lack of a caster and of a 300-plus combination. Results are in the PR body. One fix came out of the pass: the skill redraw after a class change sends only the skills whose state flipped, since the client prints a line for every skill packet.** Second item under the hero class-switching decision (local ADR-0002, rules 2, 3 and 5, plus the level-drop side effects under rules 1, 4 and 8). Lands after the AA reuse timer spec (`2026-09-08-aa-reuse-timer-ids.md`), now on main; the one sentence here that depended on that spec's spike is marked in D7. Three implementation choices that differ in shape from the text below, none in effect: D8 pays shelved rows from the database first and then lets the stock `RefundAA` pay the held ranks from memory (same refund, stock structure kept, held grant-only ranks stay in memory as today); the combat-ability gate admits a skill when the level cap is positive **or** the character holds it under multiclassing (a strict superset of today); the D1 zero-return and the gem hooks are gated on `Custom:MulticlassingEnabled` so a server with the rule off keeps stock behaviour exactly, and the gem hooks and the cast gate additionally on `HasMultipleClasses()` so a single-class character keeps its gems through a level loss as stock does. One thing the spec missed and the code review caught: **innate racial skills** (a Dark Elf's Hide, a Halfling's Sneak, an Iksar's Forage, and the rest of the creation list in `world/client.cpp`) are not in `skill_caps` for the class, so "no held class has a cap for it" is true of them and D1 would have read them as shelved. `CanHaveSkill` now answers true for any skill the character's race grants (`RaceGrantsSkill`, mirroring creation and the racial adds in `GetMaxSkillAfterSpecializationRules`), and D6's grey-whatever-the-value behaviour applies only under the rule. The Ayonae refusal in D9 counts class **rows** (held or shelved), not held bits, since a hero that dropped to one class still has shelved rows the level change would rewrite. v1 was verified by three independent readers against the tree; v2 went through a twelve-agent adversarial review (NO-GO: the sizing claim was wrong and the read clamp alone let shelved skills leak into combat); every confirmed finding is folded in. A delta review of v3 then found D8 built on a loader that refuses shelved ranks (NO-GO) and three wrong sentences; all four are corrected below, plus one clarification on the D1 cache.
 
 ## 1. Problem
 
@@ -156,6 +156,44 @@ One test, `UnmemorizeGemsAboveLevel(level)`: unmemorize every gem whose spell re
 - **`Handle_OP_CastSpell` gem casts** (`client_packet.cpp` 4698-4713) so a stale client gem cannot cast, with the stock "You must be level N" style message.
 
 Re-memorizing is already gated (`client_process.cpp` 1482). The gates spec makes level-1 adds routine and adds no gem handling of its own. **Owner decision:** none; rule 4 is explicit.
+
+## 2.1 Amendments (2026-09-09, from the post-merge review)
+
+**A1 — `Handle_OP_Track` is a skill-lowering path §1.1 missed.** `client_packet.cpp` seeds
+Tracking to 1 when `GetSkill(SkillTracking) == 0`, and `SetSkill` persists immediately. Under D1
+that reading is 0 for a shelved class's skill while the stored value may be a trained 200, so one
+keypress destroyed it permanently. The gate is not Ranger-only: `GetTrackingDistance`'s
+`else if (base_skill > 0)` branch admits **any** held class once Situational Awareness is owned.
+This is the exact C++ twin of the Perl Tracking write D2 deleted. Fixed by testing `GetRawSkill`
+before seeding, so stock behaviour (raw 0 seeds 1) is unchanged and a stored value is never
+overwritten.
+
+**A2 — the class-add skill redraw was a guaranteed no-op.** `AddExtraClass` assigned
+`m_pp.classes` and only then took the `SnapshotCanHaveSkills()` "before" image, so the snapshot
+equalled the post-add state, every skill hit `SendSkillValues`' unchanged-skip, and no packet was
+sent: a re-added class's skills stayed greyed until a re-zone. `RemoveExtraClass` already
+snapshots before its assignment, which is why greying on a drop worked. The snapshot now precedes
+the assignment on both paths. Note this is consistent with §4 step 6 passing in game: the plugin's
+level-1 fill sends its own `SetSkill` packet per skill under 50, which masks the miss for exactly
+the skills that test was likely to look at.
+
+**A3 — D8's refund now covers the same rows the delete does.** The shelved-row refund was gated
+on `Custom:MulticlassingEnabled` while `DeleteCharacterAAs` was not, so a server that turned the
+rule off with shelved rows still in the database would destroy those ranks and refund nothing on
+any of the nine reset doors — the pre-PR bug D8 exists to close, surviving behind the rule. The
+gate is removed: paying for a row that is about to be deleted is correct in every case, and the
+`aa_ranks` dedup makes over-payment impossible, so the single-class path is unchanged in effect.
+
+**Reported, not changed:** D5 gates `#set level`'s clamp on `HasMultipleClasses()` (held bits),
+while D9 gates the Ayonae refusal on class *rows*. A hero that dropped back to one held class
+still has shelved rows and 70-level values, and for it the `#set level` clamp still runs. That is
+what D5 specifies, so it is a decision to revisit rather than a coding slip. GM-only.
+
+**Conditional, needs a DB read:** `CanHaveSkill` covers class caps and race grants but not skills
+granted by a bonus — `SE_GrantForage` (`bonuses.cpp`) and `SE_RaiseSkillCap`. If any AA or item in
+the live catalog grants a skill to a class with no `skill_caps` row for it, `GetSkill` now returns
+0 and the grant is inert. Settle with:
+`SELECT id, name FROM aa_ability WHERE id IN (SELECT abilityid FROM aa_rank_effects WHERE effectid IN (188, 224));`
 
 ### D12 — Sizing (rules 2 and 5, the cost)
 

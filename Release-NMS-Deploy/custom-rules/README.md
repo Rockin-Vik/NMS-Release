@@ -22,7 +22,7 @@ python Release-NMS-Deploy/custom-rules/generate.py
 
 - [Multiclass / client contract](#multiclass--client-contract) — 9 rules
 - [Pets](#pets) — 16 rules
-- [Echo of Memory / character sets](#echo-of-memory--character-sets) — 8 rules
+- [Emperor's Favor / character sets](#emperors-favor--character-sets) — 8 rules
 - [Item tiers / Power Source / mutations](#item-tiers--power-source--mutations) — 12 rules
 - [Combat / spells](#combat--spells) — 47 rules
 - [Instances](#instances) — 5 rules
@@ -41,7 +41,7 @@ Turning one of these off often looks like a C++ or client bug. `MulticlassingEna
 | `MaxMulticlasses` | INT | `4` | — | Cap on multiclasses; inert unless MulticlassingEnabled and requires Character:UseOldClassExpPenalties false. |
 | `HeroCatchupEnabled` | BOOL | `false` | — | Off (default): a new class joins at the character's current level and all class rows shadow the single pool. On: new classes start at NewClassStartLevel and the effective level is the lowest class until it catches up. Inert unless MulticlassingEnabled. |
 | `NewClassStartLevel` | INT | `1` | — | New class start level; ignored when catch-up is off and inert unless MulticlassingEnabled. |
-| `UseDynamicAATimers` | BOOL | `true` | `AAIgnoreExpansionGate` `BypassMulticlassStackConflict` `MulticlassingEnabled` `ServerAuthStats` | Enable using dynamic AA timers. Required to deconflict multiclass AA timers |
+| `UseDynamicAATimers` | BOOL | `true` | `AAIgnoreExpansionGate` `BypassMulticlassStackConflict` `MulticlassingEnabled` `ServerAuthStats` | Give every timed AA a character owns its own client shared-timer index (1..98 per character, allocated at the table send) instead of aa_ranks.spell_type, so two classes' abilities never lock each other out. Unowned ranks are sent as index 0. Re-zone after switching; rows above 98 from older builds are repaired at zone entry. |
 | `AAIgnoreExpansionGate` | BOOL | `true` | `BypassMulticlassStackConflict` `MulticlassingEnabled` `ServerAuthStats` `UseDynamicAATimers` | When true, skip aa_ranks.expansion vs character/World expansion bitmasks and Expansion:UseCurrentExpansionAAOnly. Off = stock EQEmu expansion refuse. Does not change zone time-locks. |
 | `BypassMulticlassStackConflict` | BOOL | `true` | `AAIgnoreExpansionGate` `MulticlassingEnabled` `ServerAuthStats` `UseDynamicAATimers` | Allow all of your class spells to stack |
 | `ServerAuthKey` | INT | `352236586` | — | Value used to verify patch serial number |
@@ -69,20 +69,20 @@ Cap, window, bags, swarm AA, and pet combat ceilings. Pet window refresh is the 
 | `ConditionalPetRampageImmunity` | BOOL | `true` | `TauntTogglesPetTanking` | Enable to make pets which are not taunting immune to rampage |
 | `PetAssistRateLimit` | INT | `1000` | `AbsolutePetLimit` `EnablePetBags` | Minimum time in milliseconds between pet assist commands |
 
-## Echo of Memory / character sets
+## Emperor's Favor / character sets
 
-Account-wide alt currency (id 6) and the EoM unlocks for character sets/slots. `#award` does not write `account_alt_currency`. See CODEBASE.md §3.3 and §3.6.
+Account-wide alt currency (id 6) and the Emperor's Favor unlocks for character sets/slots. `#award` does not write `account_alt_currency`. See CODEBASE.md §3.3 and §3.6.
 
 | Rule | Type | Default | Related | Notes |
 | --- | --- | --- | --- | --- |
-| `BaseCharacterSets` | INT | `2` | `EoMUnlockCharacterSetCost` `EoMUnlockCharacterSets` | Base number of character sets which players have access to. |
-| `EoMUnlockCharacterSets` | INT | `3` | `BaseCharacterSets` `EoMUnlockCharacterSetCost` | Maximum number of character sets which a player can unlock with EoM. |
-| `EoMUnlockCharacterSetCost` | INT | `5` | `BaseCharacterSets` `EoMUnlockCharacterSets` | EoM Cost to unlock a character set |
-| `BaseCharacterSlots` | INT | `24` | `EoMUnlockCharacterSlotCost` `EoMUnlockCharacterSlots` | Base number of character slots which players have access to. |
-| `EoMUnlockCharacterSlots` | INT | `12` | `BaseCharacterSlots` `EoMUnlockCharacterSlotCost` | Maximum number of character slots which a player can unlock with EoM. |
-| `EoMUnlockCharacterSlotCost` | INT | `5` | `BaseCharacterSlots` `EoMUnlockCharacterSlots` | EoM Cost to unlock a character slot |
-| `EventEOMDropChance` | INT | `200` | `EnableAccountAltCurrency` | Increase this value to make EoM drops during event more rare |
-| `EnableAccountAltCurrency` | BOOL | `true` | `EventEOMDropChance` | Enable account-based alternate currency. |
+| `BaseCharacterSets` | INT | `2` | `EmperorsFavorUnlockCharacterSetCost` `EmperorsFavorUnlockCharacterSets` | Base number of character sets which players have access to. |
+| `EmperorsFavorUnlockCharacterSets` | INT | `3` | `BaseCharacterSets` `EmperorsFavorUnlockCharacterSetCost` | Maximum number of character sets which a player can unlock with Emperor's Favor. |
+| `EmperorsFavorUnlockCharacterSetCost` | INT | `5` | `BaseCharacterSets` `EmperorsFavorUnlockCharacterSets` | Emperor's Favor cost to unlock a character set |
+| `BaseCharacterSlots` | INT | `24` | `EmperorsFavorUnlockCharacterSlotCost` `EmperorsFavorUnlockCharacterSlots` | Base number of character slots which players have access to. |
+| `EmperorsFavorUnlockCharacterSlots` | INT | `12` | `BaseCharacterSlots` `EmperorsFavorUnlockCharacterSlotCost` | Maximum number of character slots which a player can unlock with Emperor's Favor. |
+| `EmperorsFavorUnlockCharacterSlotCost` | INT | `5` | `BaseCharacterSlots` `EmperorsFavorUnlockCharacterSlots` | Emperor's Favor cost to unlock a character slot |
+| `EmperorsFavorDropChance` | INT | `150` | `EnableAccountAltCurrency` | Increase this value to make Emperor's Favor drops more rare (1 in N per player per kill) |
+| `EnableAccountAltCurrency` | BOOL | `true` | `EmperorsFavorDropChance` | Enable account-based alternate currency. |
 
 ## Item tiers / Power Source / mutations
 
@@ -171,11 +171,11 @@ Static (no respawn) and farming (long-respawn disabled) instance versions, plus 
 
 ## Dimensional Vault / loot offers
 
-Optional /nmsloot offer pipe and Dimensional Vault. On NPC death each in-zone group/raid member gets an independent loot roll. Both default off. Stock corpse loot and no vault when the rule is off or the tables are missing.
+Dimensional Vault and the Armarium inventory clicky (DimensionalVault default on) plus the optional /nmsloot offer pipe (NmsLootOffers default off). On NPC death each in-zone group/raid member gets an independent loot roll. Stock corpse loot when NmsLootOffers is off; no vault or Armarium grant when DimensionalVault is off or the tables are missing.
 
 | Rule | Type | Default | Related | Notes |
 | --- | --- | --- | --- | --- |
-| `DimensionalVault` | BOOL | `false` | `NmsLootOfferExpireSeconds` `NmsLootOffers` | Enable Dimensional Vault (#vault_*) storage, Proc Locker, clicky autoload, and vault bank/merchant. Off = no vault commands or combat hooks. |
+| `DimensionalVault` | BOOL | `true` | `NmsLootOfferExpireSeconds` `NmsLootOffers` | Enable Dimensional Vault (#vault_*) storage, Proc Locker, clicky autoload, vault bank/merchant, and the Armarium inventory clicky. Off = no vault commands, grant, or combat hooks. |
 | `NmsLootOffers` | BOOL | `false` | `DimensionalVault` `NmsLootOfferExpireSeconds` | On NPC death, independently re-roll loot for the killer and every group or raid member in this zone and send those items to /nmsloot. Keep/Sell/Tribute/Destroy/Pass grant that personal roll from anywhere in the zone. Opening a corpse only resends. Off = native corpse loot only. |
 | `NmsLootOfferExpireSeconds` | INT | `300` | `DimensionalVault` `NmsLootOffers` | Seconds before an unclaimed /nmsloot offer expires. Used only when NmsLootOffers is on. |
 

@@ -618,6 +618,7 @@ public:
 	int64 CalcManaRegenCap() final;
 
 	uint32 GetClassesBits() const;
+	bool HasMultipleClasses() const; // more than one bit set in GetClassesBits()
 	AddClassResult CanAddExtraClass(int class_id, bool join_at_watermark = false) const;
 	static const char* AddClassResultMessage(AddClassResult result);
 	const char* CanAddExtraClassMessage(int class_id, bool join_at_watermark = false) const;
@@ -1063,8 +1064,16 @@ public:
 	uint32 GetRawSkill(EQ::skills::SkillType skill_id) const { if (skill_id <= EQ::skills::HIGHEST_SKILL) { return(m_pp.skills[skill_id]); } return 0; }
 	bool HasSkill(EQ::skills::SkillType skill_id) const;
 	bool CanHaveSkill(EQ::skills::SkillType skill_id) const;
+	bool RaceGrantsSkill(EQ::skills::SkillType skill_id) const; // innate racial skills outside skill_caps
 	void SetSkill(EQ::skills::SkillType skill_num, uint16 value);
 	void AddSkill(EQ::skills::SkillType skillid, uint16 value);
+	// One OP_SkillUpdate per skill: the raw value for a skill a held class can have, the greyed
+	// sentinel for the rest. Sent after a class add or remove so the window follows without a re-zone.
+	// The client prints "You have become better at..." for every one of these packets, so a class
+	// change passes the can-have state from before the change and only the skills whose state
+	// flipped are sent (the dropped or re-added class's own skills).
+	std::array<bool, EQ::skills::HIGHEST_SKILL + 1> SnapshotCanHaveSkills() const;
+	void SendSkillValues(const std::array<bool, EQ::skills::HIGHEST_SKILL + 1> *before = nullptr);
 	void CheckSpecializeIncrease(uint16 spell_id);
 	void CheckSongSkillIncrease(uint16 spell_id);
 	bool CheckIncreaseSkill(EQ::skills::SkillType skillid, Mob *against_who, int chancemodi = 0);
@@ -1102,6 +1111,10 @@ public:
 	void UnmemSpell(int slot, bool update_client = true);
 	void UnmemSpellBySpellID(int32 spell_id);
 	void UnmemSpellAll(bool update_client = true);
+	// Hero rule 4: spells follow the current level. True when some held class can cast the spell
+	// at that level; used by the gem cast gate and by UnmemorizeGemsAboveLevel.
+	bool CanCastSpellAtLevel(uint16 spell_id, uint8 level) const;
+	void UnmemorizeGemsAboveLevel(uint8 level);
 	int FindEmptyMemSlot();
 	uint16 FindMemmedSpellBySlot(int slot);
 	int FindMemmedSpellBySpellID(uint16 spell_id);
@@ -1189,17 +1202,32 @@ public:
 
 	inline PTimerList &GetPTimers() { return(p_timers); }
 
-	//Dynamic AA timer stuff
-	void GetDynamicAATimers();
-	int GetDynamicAATimer(int aa_id);
-	int SetDynamicAATimer(int aa_id);
-	void ClearDynamicAATimers();
+	// Dynamic AA reuse timers (Custom:UseDynamicAATimers). Every timed ability a character OWNS
+	// (grant-only ones included: their stock ids sit inside 1..98) gets its own client
+	// shared-timer index, 1..98 per character, handed out at the table send, so two abilities
+	// never lock each other out. The RoF2 client keeps a 100-entry table indexed 0..99 and
+	// silently discards anything above (spike, 2026-09-08): 0 means "no id" (unowned ranks, and
+	// overflow past 98); 99 is Situational Awareness on the wire. An untimed ability has no
+	// index at all (kNoAATimerIndex) so it never touches the index-0 group.
+	// Spec: Release-NMS-Deploy/specs/2026-09-08-aa-reuse-timer-ids.md.
+	static const int kDynamicAATimerMax = 98;
+	static const int kNoAATimerIndex = -1;
+	void GetDynamicAATimers();                        // load the mapping rows into the cache
+	int  GetDynamicAATimer(int aa_id);                // lookup only; 0 when the ability has no id (or sits on the overflow index)
+	int  AcquireDynamicAATimer(int aa_id);            // stored id, else the lowest free id (released ones are recycled); 0 on exhaustion
+	int  ResolveAATimerIndex(AA::Rank *rank, bool allocate = true); // the index every timer composer uses: dynamic with the rule on (an owned miss allocates unless allocate is false), stock spell_type otherwise; kNoAATimerIndex when untimed under the rule, or on a lookup-only miss
+	bool IsDynamicAATimerHeld(int aa_id, int timer_id); // owned by a held class, or its cooldown still running
+	void RepairDynamicAATimers();                     // zone entry, after p_timers.Load: drop rows above 98 and rows no longer held; rule off: drop every row
+	void ClearDynamicAATimers();                      // every mapping row and every AA cooldown (the reset paths)
+	void ResetAlternateAdvancementTimerByIndex(int index);
 
 	void GetAllToggleAAStatus();
 	void SetToggleAAStatus(int ability_id, bool status);
 	bool GetToggleAAStatus(int ability_id) const;
 
-	std::unordered_map<int, int> m_aa_timers_cache; // Cache to store AA timers as key-value pairs (aa_id -> timerID)
+	std::unordered_map<int, int> m_aa_timers_cache; // aa_id -> timer index, the character's mapping rows
+	bool m_aa_timers_loaded = false;                // the cache reflects the table (an empty table is a valid state)
+	bool m_aa_timer_pool_exhausted_logged = false;  // one log line per zone-in when every index is held
 
 	//New AA Methods
 	void SendAlternateAdvancementRank(int aa_id, int level);
@@ -1263,7 +1291,9 @@ public:
 	void ResetAA();
 	void ResetLeadershipAA();
 	void RefundAA();
-	void RefundUnusuableAA();
+	// Hero persistence: drop the loaded AA set and reload it for the current class bits (a shelved
+	// class's ranks stay in the database, out of memory), then recompute the spent total.
+	void ReloadAlternateAdvancementForClasses();
 	void SendClearLeadershipAA();
 	void SendClearPlayerAA();
 	inline uint32 GetAAXP() const { return m_pp.expAA; }
@@ -1323,6 +1353,7 @@ public:
 	int32 GetItemIDAt(int16 slot_id);
 	int32 GetAugmentIDAt(int16 slot_id, uint8 augslot);
 	bool PutItemInInventory(int16 slot_id, const EQ::ItemInstance& inst, bool client_update = false);
+	void RollbackFailedItemPut(int16 slot_id, bool client_update = true);
 	bool PutItemInInventoryWithStacking(EQ::ItemInstance* inst);
 	bool FindNumberOfFreeInventorySlotsWithSizeCheck(std::vector<BuyerLineTradeItems_Struct> items);
 	bool PushItemOnCursor(const EQ::ItemInstance& inst, bool client_update = false);
@@ -1411,6 +1442,7 @@ public:
 
 	bool CheckTradeLoreConflict(Client* other);
 	bool CheckTradeNonDroppable();
+	bool CanGiveItemInTrade(const EQ::ItemInstance *inst);
 	void LinkDead();
 	bool CheckDoubleAttack();
 	bool CheckTripleAttack();
@@ -1454,7 +1486,9 @@ public:
 	float CalcNewPriceMod(Mob* other = 0, bool reverse = false);
 	float CalcPriceMod(Mob* other = 0, bool reverse = false);
 	void ResetTrade();
-	void DropInst(const EQ::ItemInstance* inst);
+	bool ReturnTradeItemToInventory(int16 trade_slot, const EQ::ItemInstance *inst);
+	bool PushTradeReturnOrRetain(int16 trade_slot, const EQ::ItemInstance *inst);
+	bool DropInst(const EQ::ItemInstance* inst);
 	bool TrainDiscipline(uint32 itemid);
 	bool MemorizeSpellFromItem(uint32 item_id);
 	void TrainDiscBySpellID(int32 spell_id);
@@ -2413,9 +2447,12 @@ private:
 	std::vector<PetInfo> m_petinfomulti;
 
 	std::map<EQ::skills::SkillType, bool> m_autoskill;
-	mutable std::array<uint16, EQ::skills::HIGHEST_SKILL + 1> m_catchup_skill_caps{};
-	mutable uint8 m_catchup_skill_caps_level = 0;
-	mutable bool m_catchup_skill_caps_valid = false;
+	// Which skills any held class can have (CanHaveSkill), cached per class bits because GetSkill
+	// sits on the per-swing path and CanHaveSkill is a sixteen-class SkillCaps lookup. Starts
+	// invalid; GetSkill rebuilds it whenever the flag is false; every writer of m_pp.classes
+	// clears the flag (AddExtraClass, RemoveExtraClass).
+	mutable std::array<bool, EQ::skills::HIGHEST_SKILL + 1> m_can_have_skill{};
+	mutable bool m_can_have_skill_valid = false;
 
 	InspectMessage_Struct m_inspect_message;
 	bool temp_pvp;

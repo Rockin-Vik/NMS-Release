@@ -201,6 +201,21 @@ sub EVENT_SAY {
         my $desired_level = $1;
         my $stored_level = $client->GetBucket("MaxLevelAchieved") || 0;
 
+        # A hero's level is its lowest class and every class row moves with SetLevel, shelved ones
+        # included; a paid level change would rewrite what a shelved class earned. Refused for any
+        # character with more than one class row, held or shelved (a row always reads level 1+).
+        my $class_rows = 0;
+        for my $row_class (1..16) {
+            $class_rows++ if $client->GetClassLevel($row_class) > 0;
+        }
+        if ($class_rows > 1 || plugin::GetClassesCount($client) > 1) {
+            plugin::NPCTell(
+                "Your path is woven from more than one class, and I will not unpick it. "
+              . "A hero's level is the lowest of its classes; raise that class and the rest follows."
+            );
+            return;
+        }
+
         if ($desired_level > 0 && $desired_level <= $stored_level) {
             my $current_level = $client->GetLevel();
             my $level_difference = abs($current_level - $desired_level);
@@ -243,18 +258,18 @@ sub EVENT_SAY {
             plugin::YellowText("You have a free AA Reset available. Would you like to [".quest::saylink("free_reset_aa", 1, "use it")."]?");
         }
        
-        if (plugin::GetEOM($client) >= $reset_aa_cost) {
-                plugin::YellowText("It will cost $reset_aa_cost Echo of Memory in order to reset your AA. Would you like to ["
+        if (plugin::GetEmperorsFavor($client) >= $reset_aa_cost) {
+                plugin::YellowText("It will cost $reset_aa_cost Emperor's Favor in order to reset your AA. Would you like to ["
                                 .quest::saylink("confirm_reset_aa", 1, "Proceed")."]?");
-        
+
         } else {
-                plugin::YellowText("It costs $reset_aa_cost Echo of Memory in order to reset your AA. You can obtain
-                                Echo of Memory through contributions to the sever or purchase from other players in the Bazaar.");
-        }  
+                plugin::YellowText("It costs $reset_aa_cost Emperor's Favor in order to reset your AA. You can obtain
+                                Emperor's Favor through contributions to the sever or purchase from other players in the Bazaar.");
+        }
     }
 
-    if ($text eq 'confirm_reset_aa') {        
-        if (plugin::SpendEOM($client, $reset_aa_cost)) {
+    if ($text eq 'confirm_reset_aa') {
+        if (plugin::SpendEmperorsFavor($client, $reset_aa_cost)) {
             plugin::YellowText("All of your AA have been refunded.");
             $client->ResetAA();
             plugin::CommonCharacterUpdate($client);
@@ -276,15 +291,15 @@ sub EVENT_SAY {
         }
 
         if (plugin::HasClass($client, $class_id)) {
-            if (plugin::GetEOM($client) >= $remove_class_cost) {
-                 plugin::YellowText("It will cost $remove_class_cost Echo of Memory in order to remove a class. Additionally, 
+            if (plugin::GetEmperorsFavor($client) >= $remove_class_cost) {
+                 plugin::YellowText("It will cost $remove_class_cost Emperor's Favor in order to remove a class. Additionally,
                                     there is a $remove_class_lockout-day cooldown after removing a class before you can remove another.
                                     Would you like to [".quest::saylink("proceed_$class_id", 1, "Proceed")."]?");
-            
+
             } else {
-                 plugin::YellowText("It costs $remove_class_cost Echo of Memory in order to remove a class. You can obtain
-                                    Echo of Memory through contributions to the sever or purchase from other players in the Bazaar.");
-            }           
+                 plugin::YellowText("It costs $remove_class_cost Emperor's Favor in order to remove a class. You can obtain
+                                    Emperor's Favor through contributions to the sever or purchase from other players in the Bazaar.");
+            }
         }
     }
 

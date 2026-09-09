@@ -102,7 +102,12 @@ It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `Player
 - Spell knowledge is `character_learned_spells` / `character_learned_discs` (uncapped). The live
   book is 2880 slots; the RoF2 window shows one 720-slot volume at a time (`/book 1-4` in the
   add-on). `RemoveExtraClass` hides class-owned spells the current mask cannot use; it does not
-  delete learned rows. If the learned tables cannot be read, reconcile skips hide/restore
+  delete learned rows. Skills and AA ranks are shelved the same way: skill values stay in
+  `character_skills` (read as 0 and shown greyed while no held class can have them, no level
+  clamp on a held class's value), AA rows stay in `character_alternate_abilities` and leave
+  memory only (`ReloadAlternateAdvancementForClasses`), and a reset refunds shelved rows too.
+  Only spells follow the hero level (`UnmemorizeGemsAboveLevel` on a drop and on re-add).
+  If the learned tables cannot be read, reconcile skips hide/restore
   rather than unscribing against an empty set. Coordinated server + DLL deploy; CAuth cannot
   reject an old add-on before the profile goes out. Spec: `specs/2026-09-07-spellbook-capacity.md`.
 - **`Mob::HasClass(class, bitmask)`** (`zone/mob.cpp:4859`) replaces every stock
@@ -123,8 +128,12 @@ It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `Player
    the client that this is a mask and not a class id.
 
 Supporting rules: `Custom:ServerAuthStats` (server-authoritative stats, requires the DLL),
-`Custom:UseDynamicAATimers` (+ `character_dynamic_aa_timers` table, deconflicts AA timers that
-collide across classes), `Custom:AAIgnoreExpansionGate` (skip `aa_ranks.expansion` vs the
+`Custom:UseDynamicAATimers` (+ `character_dynamic_aa_timers` table: every timed AA a character
+owns, grant-only ones included, gets its own client shared-timer index, 1..98 per character,
+allocated at the table send and on a first-rank purchase; unowned ranks go out as 0; the RoF2
+client discards indexes above 99, so rows above 98 and rows for abilities no longer held are
+dropped at zone entry; a dropped class's index frees itself once its cooldown ends; spec
+`specs/2026-09-08-aa-reuse-timer-ids.md`), `Custom:AAIgnoreExpansionGate` (skip `aa_ranks.expansion` vs the
 character/World bitmask so later-era AAs remain trainable; off = stock refuse),
 `Custom:BypassMulticlassStackConflict`, `Custom:MaxMulticlasses`,
 `Custom:HeroCatchupEnabled`, `Custom:NewClassStartLevel`, and the `character_aa_disabled` table.
@@ -146,23 +155,27 @@ character/World bitmask so later-era AAs remain trainable; off = stock refuse),
 - Related: pet bags (`Custom:EnablePetBags`), suspended minions (`m_suspendedminions`,
   `zone/client.h:2343`, stored with pet ids offset by 100), `familiar_names` content table (v10)
 
-### 3.3 Echo of Memory (EoM)
+### 3.3 Emperor's Favor
 
-**Alt currency id 6** (`constexpr uint8 EOM_CURRENCY_ID = 6`, `world/client.h:40`). The custom
-part is that it is stored **per account, not per character**.
+**Alt currency id 6** (`constexpr uint8 EMPERORS_FAVOR_CURRENCY_ID = 6`, `world/client.h:40`). The
+custom part is that it is stored **per account, not per character**.
 
 - Table: `account_alt_currency (account_id, currency_id, amount)` — manifest v9, which also
   back-fills by SUMming `character_alt_currency` per account
 - Repository: `common/repositories/account_alt_currency_repository.h`
 - Gate: `RuleB(Custom, EnableAccountAltCurrency)`. `Client::SetAlternateCurrencyValue`
   (`zone/client.cpp:8901`) routes to `UpdateAccountAltCurrencyValue` when on.
-- Drops: `zone/attack.cpp:3054` — `Custom:EventEOMDropChance` (1 in 200), con-color gated,
-  awarded to the whole group/raid
+- Drops: `zone/attack.cpp:3054` — a flat `Custom:EmperorsFavorDropChance` roll (1 in 150),
+  independently per eligible player per corpse, awarded to every member of the group or raid.
+  **No level gate and no con-color gate of any kind** — both were deliberately removed (see
+  `Release-NMS-Deploy/specs/2026-09-08-currency-rename-emperors-favor.md`). This means a
+  low-level member of a group still rolls, and a grey-con kill still rolls: both are accepted
+  design choices, not defects — do not reintroduce either gate without asking first.
 - Spent at character select to unlock character sets and slots (`world/client.cpp:3178-3240`)
 
 ⚠️ **`#award` does not touch `account_alt_currency` directly.** The GM command
-(`zone/gm_commands/award.cpp`) adds to the character's `EoM-Award` data bucket, fires a
-Discord webhook, and sends cross-zone signal 666. `plugin::UpdateEoMAward`
+(`zone/gm_commands/award.cpp`) adds to the character's `EmperorsFavor-Award` data bucket, fires a
+Discord webhook, and sends cross-zone signal 666. `plugin::UpdateEmperorsFavorAward`
 (`NMS_custom_events.pl`) consumes the bucket on that signal and on every zone-in and credits
 currency 6 through `AddAlternateCurrencyValue`. If the balance did not change, check that the
 plugin is the real one and not the original `return 0;` stub.
@@ -213,7 +226,7 @@ A player teleport-hub system. `zone/nms_waypoints.cpp` (453 lines) + `.h`.
 ### 3.6 Character sets
 
 Accounts get named "sets" of characters. `MAX_CHARACTER_SETS = 64`, 24 base slots, more
-purchasable with EoM. Opcodes `OP_CharacterSetRequest/Create/Move/Unlock`,
+purchasable with Emperor's Favor. Opcodes `OP_CharacterSetRequest/Create/Move/Unlock`,
 `OP_SendCharacterSets`. Handled in `world/client.cpp` and `world/worlddb.cpp`.
 
 ⚠️ See §4.2 — the tables this needs have **no migration**.
@@ -233,6 +246,62 @@ purchasable with EoM. Opcodes `OP_CharacterSetRequest/Create/Move/Unlock`,
   `FadeNPCDebuffsOutofCombat`
 - **Seasonal characters** — `Custom:EnableSeasonalCharacters` + `SeasonalCharacter` bucket
 
+### 3.8 Firiona Vie + attune loop
+
+NMS loot is tradable until worn. `World:FVNoDropFlag` compiled default is **1** (dump
+row is 0 until custom **v44**). Unattuned no-drop can be traded, dropped, and shared-banked.
+Wearable no-drop (and no-drop augs) that are not already attuneable are promoted at
+`shared_memory` load so equip sets attuned. Attuned instances stay bound: `IsDroppable`
+returns false (contents and augs are inspected before the FV parent
+early-return), and drop / trade / shared-bank no longer bypass that with
+`CanTradeFVNoDropItem()`. Trade finish still consults that helper for **AdminOnly**
+GMs giving unattuned no-drop; character-bound items stay rejected. Urthron's
+Ultimate Unattuner (`9208` / `52024`) clears attuned instance state even when
+item-table `nodrop` is 0; it refuses when the cursor is at the RoF2 persist
+limit and does not consume the source until the returned item is saved. A failed
+cursor or inventory put rolls back the destination clone so the kept source is
+not duplicated. Armarium
+stays bound (`fvnodrop = 1` plus identity in `IsDroppable`; vault refuse is
+recursive). Re-run `shared_memory` after changing the FV rule.
+`Items:DisableAttuneable` or FV `0` keeps stock item flags.
+
+Spec: `Release-NMS-Deploy/specs/2026-09-07-fv-attune-loop.md` (decisions D1-D6).
+
+### 3.9 Armarium — the inventory clicky that opens vault storage
+
+One lore / no-drop inventory key, item **`9011013`**, named **Armarium**. Right-click opens the
+vault window on page 1. Gated by `Custom:DimensionalVault` (compiled default **true**; custom
+**v45** sets the live `rule_values` row).
+
+- **Auto-summoned** on zone-in / login when the character does not already hold one. "Already
+  holds one" means inventory, bags, the **entire** cursor queue, bank, shared bank, the vault
+  itself, **and the character's corpses** — vault storage is invisible to `CountItem`, so a
+  location missed here is a duplicate key.
+- **Identity is two-part:** `id >= 9011013 && id % 1000000 == 11013`
+  (`common/nms_vault_item.h`). Remainder alone would match stock `11013`, Boots of Quickness.
+- **Vault deposit is refused, recursively** — cursor deposit, a bag containing the key,
+  bag-in-vault, and `/nmsloot` Vault. Deposit-then-regrant would duplicate it.
+- **The click is intercepted server-side.** `clickeffect` is spell id `1`, a dummy that only
+  exists so the RoF2 client draws a clicky; the zone never casts it and `IsValidSpell` rejects
+  ids below 2. Opening storage is `NmsVaultHandlePage(c, 1)` → `VAULTDATA|` — the same wire as
+  `#vault_page 1`, so no client change was needed.
+- **Fail closed:** rule off, tables missing, item absent from `items` or shared memory, or an
+  ownership query that *fails* rather than returning no rows — none of those grant. A query
+  failure is not "not owned".
+- Bound even under Firiona Vie, and bound regardless of the vault rule.
+
+⚠️ The two-part identity test protects the Armarium's own checks, **not** the generic
+`% 1000000` normalization this fork uses elsewhere. NPC hand-ins (`zone/npc.cpp:5915`) match on
+the remainder, and the bound-item trade guard (`zone/inventory.cpp:2255`) only fires for
+player-to-player trades, so an NPC quest requiring Boots of Quickness (`11013`) would accept and
+consume an Armarium — which the next zone-in re-grants. No shipped quest requires `11013`
+(verified against `Release-NMS-Quests/` and the dump: only `11013` and `9011013` share that
+remainder), so this is latent, not live. Check before adding one:
+`SELECT id, Name FROM items WHERE id % 1000000 = 11013;`
+
+Spec: `Release-NMS-Deploy/specs/2026-09-07-armarium.md` (decisions D1-D9, and §4 as the
+acceptance checklist).
+
 ---
 
 ## 4. The migration system — read this before touching the DB
@@ -244,7 +313,7 @@ NMS runs a **second migration manifest in parallel with stock EQEmu's**:
 | Manifest | File | Version column | Current |
 | --- | --- | --- | --- |
 | Stock | `database_update_manifest.cpp` | `db_version.version` | 9325 |
-| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **41** |
+| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **48** |
 | Bots | `database_update_manifest_bots.cpp` | `db_version.bots_database_version` | |
 
 Both are `#include`d directly into `common/database/database_update.cpp` (lines 9–11) and run
@@ -265,7 +334,7 @@ ALTER TABLE db_version ADD COLUMN custom_version INT UNSIGNED NOT NULL DEFAULT 0
 
 ### 4.2 What is actually in the custom manifest
 
-42 entries declared (v1–v42), **39 live**. Numbering is a plain sequence independent of the 9325
+48 entries declared (v1–v48), **45 live**. Numbering is a plain sequence independent of the 9325
 stock number. Entries carry `content_schema_update` to target the content DB rather than the
 player DB.
 
@@ -289,6 +358,12 @@ player DB.
 | v40 | `passed_from` (client offer `name2` passer name) | Live |
 | v41 | `character_nms_vault` per-instance item state: attunement, `custom_data`, ornamentation, `guid` | Live |
 | v42 | `character_learned_spells` / `character_learned_discs` / `character_learned_mem` (B1 hide/restore) | Live |
+| v43 | Armarium item `9011013` (inventory clicky that opens vault storage; `Custom:DimensionalVault`). Identity is `id >= 9011013` and `id % 1000000 = 11013` so stock `11013` is not the key. `norent = 1`, `fvnodrop = 1`, `attuneable = 0`. Missing clone source `9011010` (and missing dest) is an SQL error, not a silent stamp. | Live |
+| v44 | `World:FVNoDropFlag = 1` on the active player `rule_values` row (dump `0` only; does not stomp `2`). Firiona Vie + attune loop. Wearable no-drop is promoted at `shared_memory` load, not by rewriting the dump. | Live |
+| v45 | `Custom:DimensionalVault = true` on the active player `rule_values` row (does not stomp an existing true). Armarium grant and vault commands are on. | Live |
+| v46 | **Content half** of the Emperor's Favor rename: item `46779` name and `lore`, the `db_str` alt-currency label, the two themed merchant NPCs, the `spawngroup` key. Guards on the `db_str` label, so a fresh install from the regenerated dump skips it. | Live |
+| v47 | **Player half** of the same rename: the five `Custom:EmperorsFavor*` rule keys (drop chance to 150), the `EmperorsFavor-Award` bucket, the stale `saylink` rows. Separate entry so a split content/player deployment routes each half to the right connection. Guards on the renamed rule key. | Live |
+| v48 | Repairs the Armarium `lore` on databases where v43 already ran. `items.lore` is `varchar(80)` and v43 originally wrote 101 characters: a strict server failed with error 1406 and applied nothing, a lenient one silently cut the text mid-word. v43 now writes 77 characters; this repairs the cut rows. Guarded on the short text, so it is a no-op once applied. | Live |
 
 ### 4.3 ⚠️ The version number is a claim, not a fact
 
@@ -476,7 +551,7 @@ The 11 `NMS_*` plugins in `Release-NMS-Plugins/`:
 | `NMS_popup_utils.pl` | Tutorial popup framework (IDs shaped `628<nnn>0`) |
 | `NMS_instance_utils.pl` | `OfferStandardInstance` — DZ creation, `ScaleInstanceNPC` |
 | `NMS_progression`/`seasonal`/`soulmark` | Seasonal chars; Soulmark/CheaterFlag warnings |
-| `NMS_custom_events.pl` | **Hook stubs for you to extend** — say, death, handin, spawn, exp gain, item equip/click. Each is commented with whether its return value gates the caller. `UpdateEoMAward` is live (consumes the `#award` bucket). |
+| `NMS_custom_events.pl` | **Hook stubs for you to extend** — say, death, handin, spawn, exp gain, item equip/click. Each is commented with whether its return value gates the caller. `UpdateEmperorsFavorAward` is live (consumes the `#award` bucket). |
 | `NMS_general.pl` | Shared helpers: announces, serialization, `transform_item` |
 
 ### ⚠️ Perl dependencies
@@ -513,11 +588,14 @@ Quick reference. Each links to the section above.
 | 1 | Branch on `HasClass()`, never `GetClass()` | 3.1 |
 | 2 | Character select smuggles the class mask through `Deity`; guilds use `mask + 1000` | 3.1 |
 | 3 | Pet window refreshes via the dirty flag, not by sending `OP_PetList` | 3.2 |
-| 4 | `#award` writes a bucket + Discord ping; `plugin::UpdateEoMAward` does the credit | 3.3 |
+| 4 | `#award` writes a bucket + Discord ping; `plugin::UpdateEmperorsFavorAward` does the credit | 3.3 |
 | 4b | Lua scripts use `eq.`, not `quest.`; Lua loads before Perl on a name collision | QUEST-API §0 |
 | 4c | `SummonItem()` rolls an upgrade tier; use `SummonFixedItem()` for an exact item | QUEST-API §0.1 |
 | 5 | Quest hand-ins must normalize item ids with `% 1000000` | 3.4 |
 | 6 | Item stat changes need `shared_memory` re-run | 3.4 |
+| 6b | Changing `World:FVNoDropFlag` needs a `shared_memory` re-run — the wearable no-drop promotion is a load-time mutation | 3.8 |
+| 6c | Armarium identity is `id >= 9011013` **and** `id % 1000000 == 11013`; remainder alone matches stock Boots of Quickness | 3.9 |
+| 6d | **Latent:** NPC hand-ins normalize with `% 1000000` (`npc.cpp:5915`), so the Armarium would satisfy a quest requiring Boots of Quickness (`11013`) and be consumed, then re-granted. No shipped quest requires `11013`. Do not write one. | 3.9 |
 | 7 | `db_version.custom_version` is a claim — audit with the health-check SQL | 4.3 |
 | 8 | Migrations create schema only; content comes from the dump | 4.4 |
 | 9 | Waypoint seed data exists **only** as a comment in `nms_waypoints.h` | 4.4 |
