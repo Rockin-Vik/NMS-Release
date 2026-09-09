@@ -15117,13 +15117,18 @@ bool Client::AddExtraClass(int class_id, bool join_at_watermark)
 		return false;
 	}
 
+	// Snapshot BEFORE the class bits change: SendSkillValues sends only the skills whose
+	// can-have state flipped, so a snapshot taken after the assignment equals the new state,
+	// every skill compares equal, and the whole redraw is a no-op - a re-added class's skills
+	// would stay greyed until the next re-zone. RemoveExtraClass already orders it this way.
+	const auto skills_before = SnapshotCanHaveSkills();
+
 	m_pp.classes = new_classes;
 	// A class that joins below the current pool drags the pool down to it by design; set it here so
 	// SetEXP sees a consistent pool and the repair branch in exp.cpp stays a true inconsistency alarm.
 	if (inserted_row && m_class_exp[class_id_u8] < m_pp.exp) {
 		m_pp.exp = m_class_exp[class_id_u8];
 	}
-	const auto skills_before = SnapshotCanHaveSkills();
 	m_can_have_skill_valid = false;
 	SetEXP(ExpSource::Quest, m_pp.exp, GetAAXP());
 	// The re-added class's ranks come back from the database (hero rule 5) before bonuses are

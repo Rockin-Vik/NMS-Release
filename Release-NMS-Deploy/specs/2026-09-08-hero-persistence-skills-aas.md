@@ -157,6 +157,37 @@ One test, `UnmemorizeGemsAboveLevel(level)`: unmemorize every gem whose spell re
 
 Re-memorizing is already gated (`client_process.cpp` 1482). The gates spec makes level-1 adds routine and adds no gem handling of its own. **Owner decision:** none; rule 4 is explicit.
 
+## 2.1 Amendments (2026-09-09, from the post-merge review)
+
+**A1 — `Handle_OP_Track` is a skill-lowering path §1.1 missed.** `client_packet.cpp` seeds
+Tracking to 1 when `GetSkill(SkillTracking) == 0`, and `SetSkill` persists immediately. Under D1
+that reading is 0 for a shelved class's skill while the stored value may be a trained 200, so one
+keypress destroyed it permanently. The gate is not Ranger-only: `GetTrackingDistance`'s
+`else if (base_skill > 0)` branch admits **any** held class once Situational Awareness is owned.
+This is the exact C++ twin of the Perl Tracking write D2 deleted. Fixed by testing `GetRawSkill`
+before seeding, so stock behaviour (raw 0 seeds 1) is unchanged and a stored value is never
+overwritten.
+
+**A2 — the class-add skill redraw was a guaranteed no-op.** `AddExtraClass` assigned
+`m_pp.classes` and only then took the `SnapshotCanHaveSkills()` "before" image, so the snapshot
+equalled the post-add state, every skill hit `SendSkillValues`' unchanged-skip, and no packet was
+sent: a re-added class's skills stayed greyed until a re-zone. `RemoveExtraClass` already
+snapshots before its assignment, which is why greying on a drop worked. The snapshot now precedes
+the assignment on both paths. Note this is consistent with §4 step 6 passing in game: the plugin's
+level-1 fill sends its own `SetSkill` packet per skill under 50, which masks the miss for exactly
+the skills that test was likely to look at.
+
+**Reported, not changed:** D5 gates `#set level`'s clamp on `HasMultipleClasses()` (held bits),
+while D9 gates the Ayonae refusal on class *rows*. A hero that dropped back to one held class
+still has shelved rows and 70-level values, and for it the `#set level` clamp still runs. That is
+what D5 specifies, so it is a decision to revisit rather than a coding slip. GM-only.
+
+**Conditional, needs a DB read:** `CanHaveSkill` covers class caps and race grants but not skills
+granted by a bonus — `SE_GrantForage` (`bonuses.cpp`) and `SE_RaiseSkillCap`. If any AA or item in
+the live catalog grants a skill to a class with no `skill_caps` row for it, `GetSkill` now returns
+0 and the grant is inert. Settle with:
+`SELECT id, name FROM aa_ability WHERE id IN (SELECT abilityid FROM aa_rank_effects WHERE effectid IN (188, 224));`
+
 ### D12 — Sizing (rules 2 and 5, the cost)
 
 Reproducible from `Release-NMS-Deploy/research/aa_persistence_census.py` (stock dump, `enabled = 1`, `status = 0`, category not shroud, class mask `1 << (class_id - 1)`, which is the dump's convention only because the server shifts the mask left once at load, `aa.cpp` 2283; race, deity, heritage and expansion not applied):

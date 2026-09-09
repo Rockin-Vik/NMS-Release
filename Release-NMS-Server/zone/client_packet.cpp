@@ -15247,8 +15247,16 @@ void Client::Handle_OP_Track(const EQApplicationPacket *app)
 		return;
 	}
 
-	if (GetSkill(EQ::skills::SkillTracking) == 0)
-		SetSkill(EQ::skills::SkillTracking, 1);
+	// GetSkill returns 0 for a skill no HELD class can have, even when the character has a
+	// trained value stored from a class it has since dropped. Seeding 1 on that reading would
+	// overwrite the stored value, and SetSkill persists immediately - a dropped Ranger's
+	// Tracking 200 becomes 1 forever on one keypress. The gate above is reachable for any
+	// class once Situational Awareness is owned, so test the RAW value before seeding.
+	if (GetSkill(EQ::skills::SkillTracking) == 0) {
+		if (GetRawSkill(EQ::skills::SkillTracking) == 0) {
+			SetSkill(EQ::skills::SkillTracking, 1);
+		}
+	}
 	else
 		CheckIncreaseSkill(EQ::skills::SkillTracking, nullptr, 15);
 
