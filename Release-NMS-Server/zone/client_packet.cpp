@@ -15252,8 +15252,11 @@ void Client::Handle_OP_Track(const EQApplicationPacket *app)
 	// overwrite the stored value, and SetSkill persists immediately - a dropped Ranger's
 	// Tracking 200 becomes 1 forever on one keypress. The gate above is reachable for any
 	// class once Situational Awareness is owned, so test the RAW value before seeding.
+	// And only seed a skill the character can actually have: with the Situational Awareness
+	// gate working, a class with no Tracking cap reaches this line too, and a 1 written for it
+	// would be a permanent row for a skill it can never raise.
 	if (GetSkill(EQ::skills::SkillTracking) == 0) {
-		if (GetRawSkill(EQ::skills::SkillTracking) == 0) {
+		if (GetRawSkill(EQ::skills::SkillTracking) == 0 && CanHaveSkill(EQ::skills::SkillTracking)) {
 			SetSkill(EQ::skills::SkillTracking, 1);
 		}
 	}

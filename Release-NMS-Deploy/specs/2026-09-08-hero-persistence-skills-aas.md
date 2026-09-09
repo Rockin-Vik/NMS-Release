@@ -184,6 +184,30 @@ any of the nine reset doors — the pre-PR bug D8 exists to close, surviving beh
 gate is removed: paying for a row that is about to be deleted is correct in every case, and the
 `aa_ranks` dedup makes over-payment impossible, so the single-class path is unchanged in effect.
 
+**A4 — the Situational Awareness gate A1 relies on never opened.** `GetTrackingDistance` read
+the AA with `GetAA(17786)`, but 17786 is the *ability* id (its first rank is 18973) and `GetAA`
+takes a rank id, so it returned 0 for every character: the AA added no tracking range to anyone,
+no non-tracking class ever gained tracking from it, and the seeding line A1 hardened was
+unreachable for any character without a held tracking class. Custom code since the initial
+commit; upstream never consults this AA for tracking. Now `GetAAByAAID`. Not rule-gated. With the
+gate working a class with no Tracking cap reaches A1's seed line too, so the seed now also requires
+`CanHaveSkill(SkillTracking)`: a Ranger with a raw 0 still seeds 1, a Warrior with the AA writes
+nothing (review finding, folded). Found on
+a local build when a Warrior holding the AA was refused a track list; a live run printed
+`GetAA(17786) = 0` next to `GetAAByAAID(17786) = 1` on the same character.
+
+**Verified on a local build of main 618a2cf7 plus A4 (2026-09-09, RoF2 client):** A2 — re-adding
+a shelved Monk printed one skill-up line per Monk skill, values flipping from 0 to the stored
+number, no zone. A3 — with the rule set false in the zone at run time, a reset on a hero with a
+shelved Bard refunded 5236 points, every non-grant row including the shelved Bard's 504, all rows
+deleted. A1 — a level-1 Ranger with Tracking 100 added a Warrior and dropped the Ranger in the
+same session with the track window already open on auto-update (the button the client leaves on
+screen after a drop is inert; only an open window keeps re-requesting, until a relog), so a
+track request went out with no tracking class held: the list filled and the stored 100 survived
+it. The `CanHaveSkill` seed gate is read-verified and compiled, not run: the client sends no
+request for a zeroed skill, so the raw-0 case cannot be reached from a stock client either way. Before A4 the same request was refused by the gate, so A1 could not be
+reached from any client.
+
 **Reported, not changed:** D5 gates `#set level`'s clamp on `HasMultipleClasses()` (held bits),
 while D9 gates the Ayonae refusal on class *rows*. A hero that dropped back to one held class
 still has shelved rows and 70-level values, and for it the `#set level` clamp still runs. That is
