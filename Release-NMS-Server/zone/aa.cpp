@@ -569,7 +569,14 @@ void Client::ResetAA()
 {
 	SendClearPlayerAA();
 
-	if (RuleB(Custom, MulticlassingEnabled)) {
+	// Deliberately NOT gated on Custom:MulticlassingEnabled. DeleteCharacterAAs below is
+	// unconditional, so the refund has to cover the same rows or a reset destroys ranks it
+	// never paid for. That bites a server that turns the rule off while characters still hold
+	// shelved rows from when it was on, and it also covers a single-class character whose row
+	// no longer loads because the catalog changed under it. Paying for a row that is about to
+	// be deleted is correct in every case, and the aa_ranks check below makes over-payment
+	// impossible.
+	{
 		// A shelved class's ranks are in the database but not in memory (the loader takes only
 		// what a held class can use, and SetAA would refuse them anyway), yet DeleteCharacterAAs
 		// below removes their rows. Pay for them from the rows first, so a reset refunds every

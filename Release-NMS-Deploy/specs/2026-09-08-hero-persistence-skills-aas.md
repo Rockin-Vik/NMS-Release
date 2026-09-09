@@ -177,6 +177,13 @@ the assignment on both paths. Note this is consistent with §4 step 6 passing in
 level-1 fill sends its own `SetSkill` packet per skill under 50, which masks the miss for exactly
 the skills that test was likely to look at.
 
+**A3 — D8's refund now covers the same rows the delete does.** The shelved-row refund was gated
+on `Custom:MulticlassingEnabled` while `DeleteCharacterAAs` was not, so a server that turned the
+rule off with shelved rows still in the database would destroy those ranks and refund nothing on
+any of the nine reset doors — the pre-PR bug D8 exists to close, surviving behind the rule. The
+gate is removed: paying for a row that is about to be deleted is correct in every case, and the
+`aa_ranks` dedup makes over-payment impossible, so the single-class path is unchanged in effect.
+
 **Reported, not changed:** D5 gates `#set level`'s clamp on `HasMultipleClasses()` (held bits),
 while D9 gates the Ayonae refusal on class *rows*. A hero that dropped back to one held class
 still has shelved rows and 70-level values, and for it the `#set level` clamp still runs. That is
