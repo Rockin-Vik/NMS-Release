@@ -37,10 +37,14 @@ void SetLevel(Client *c, const Seperator *sep)
 	t->SetLevel(static_cast<uint8>(requested_level), true);
 
 	if (t->IsClient()) {
-		for (const auto& s : EQ::skills::GetSkillTypeMap()) {
-			const uint16 max_skill_value = t->CastToClient()->MaxSkill(s.first);
-			if (t->GetSkill(s.first) > max_skill_value) {
-				t->CastToClient()->SetSkill(s.first, max_skill_value);
+		// A hero keeps every skill its classes earned at any level (hero rule 2); the stock clamp
+		// runs for single-class characters only. #set skill remains the way to lower one by hand.
+		if (!t->CastToClient()->HasMultipleClasses()) {
+			for (const auto& s : EQ::skills::GetSkillTypeMap()) {
+				const uint16 max_skill_value = t->CastToClient()->MaxSkill(s.first);
+				if (t->GetSkill(s.first) > max_skill_value) {
+					t->CastToClient()->SetSkill(s.first, max_skill_value);
+				}
 			}
 		}
 

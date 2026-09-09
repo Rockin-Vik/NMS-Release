@@ -2054,7 +2054,9 @@ namespace RoF
 			outapp->WriteUInt32(emu->aa_array[r].charges);
 		}
 
-		// Fill the other 60 AAs with zeroes
+		// Pad up to the client's own AA list size. This is now zero iterations: the server's
+		// MAX_PP_AA_ARRAY was raised to 300 to match structs::MAX_PP_AA_ARRAY, so the loop
+		// above already writes all 300. Kept because it self-adjusts if either constant moves.
 
 		for (uint32 r = 0; r < structs::MAX_PP_AA_ARRAY - MAX_PP_AA_ARRAY; r++)
 		{

@@ -545,9 +545,62 @@ void Mob::WakeTheDead(uint16 spell_id, Corpse *corpse_to_use, Mob *tar, uint32 d
 	delete made_npc;
 }
 
+// What a rank pays back on a reset: nothing for a grant-only ability or an expendable one with
+// no charges left, else the rank's total cost. Shared by RefundAA (held ranks, from memory) and
+// ResetAA's shelved-rank pass (from the database rows).
+static int RefundableCost(const AA::Ability *ability, const AA::Rank *rank, uint32 charges)
+{
+	if (!ability || !rank) {
+		return 0;
+	}
+
+	if (ability->charges > 0 && charges < 1) {
+		return 0;
+	}
+
+	if (ability->grant_only) {
+		return 0;
+	}
+
+	return rank->total_cost;
+}
+
 void Client::ResetAA()
 {
 	SendClearPlayerAA();
+
+	if (RuleB(Custom, MulticlassingEnabled)) {
+		// A shelved class's ranks are in the database but not in memory (the loader takes only
+		// what a held class can use, and SetAA would refuse them anyway), yet DeleteCharacterAAs
+		// below removes their rows. Pay for them from the rows first, so a reset refunds every
+		// rank the character ever bought (hero rules 2 and 5). Held ranks are paid by RefundAA.
+		int shelved_refund = 0;
+
+		const auto rows = CharacterAlternateAbilitiesRepository::GetWhere(
+			database,
+			fmt::format("`id` = {}", CharacterID())
+		);
+
+		for (const auto &e : rows) {
+			auto first_rank = zone->GetAlternateAdvancementRank(e.aa_id);
+			if (!first_rank || !first_rank->base_ability) {
+				continue;
+			}
+
+			auto ability = first_rank->base_ability;
+			if (aa_ranks.count(ability->id)) {
+				continue; // held: RefundAA pays it from memory
+			}
+
+			shelved_refund += RefundableCost(ability, ability->GetRankByPointsSpent(e.aa_value), e.charges);
+		}
+
+		if (shelved_refund > 0) {
+			m_pp.aapoints += shelved_refund;
+			Save();
+			LogInfo("Refunded [{}] AA points for shelved ranks of character [{}] on reset", shelved_refund, CharacterID());
+		}
+	}
 
 	// The mapping rows go with the ranks, whichever door the reset came through.
 	if (RuleB(Custom, UseDynamicAATimers)) {
@@ -558,7 +611,7 @@ void Client::ResetAA()
 
 	memset(&m_pp.aa_array[0], 0, sizeof(AA_Array) * MAX_PP_AA_ARRAY);
 
-	int slot_id = 0;
+	uint32 slot_id = 0;
 
 	for (auto& rank_value: aa_ranks) {
 		auto ability_rank = zone->GetAlternateAdvancementAbilityAndRank(rank_value.first, rank_value.second.first);
@@ -567,6 +620,11 @@ void Client::ResetAA()
 
 		if (!rank) {
 			continue;
+		}
+
+		if (slot_id >= MAX_PP_AA_ARRAY) {
+			LogError("Character [{}] holds more than [{}] AA abilities after a reset; the client list is short", CharacterID(), MAX_PP_AA_ARRAY);
+			break;
 		}
 
 		m_pp.aa_array[slot_id].AA      = rank_value.first;
@@ -887,18 +945,14 @@ void Client::RefundAA() {
 			continue;
 		}
 
-		if (ability->charges > 0 && rank_value->second.second < 1) {
+		const int cost = RefundableCost(ability, rank, rank_value->second.second);
+		if (cost <= 0) {
 			++rank_value;
 			continue;
 		}
 
-		if (ability->grant_only) {
-			++rank_value;
-			continue;
-		}
-
-		refunded += rank->total_cost;
-		rank_value        = aa_ranks.erase(rank_value);
+		refunded += cost;
+		rank_value = aa_ranks.erase(rank_value);
 	}
 
 	if (refunded > 0) {
@@ -912,48 +966,15 @@ void Client::RefundAA() {
 	SendAlternateAdvancementStats();
 }
 
-void Client::RefundUnusuableAA() {
-	int refunded = 0;
-
-	auto rank_value = aa_ranks.begin();
-	while (rank_value != aa_ranks.end()) {
-		auto ability_rank = zone->GetAlternateAdvancementAbilityAndRank(rank_value->first, rank_value->second.first);
-		auto ability      = ability_rank.first;
-		auto rank         = ability_rank.second;
-
-		if (!ability) {
-			++rank_value;
-			continue;
-		}
-
-		if (ability->charges > 0 && rank_value->second.second < 1) {
-			++rank_value;
-			continue;
-		}
-
-		if (ability->grant_only) {
-			++rank_value;
-			continue;
-		}
-
-		if (CanUseAlternateAdvancementRank(rank)) {
-			++rank_value;
-			continue;
-		}
-
-		refunded += rank->total_cost;
-		rank_value        = aa_ranks.erase(rank_value);
-	}
-
-	if (refunded > 0) {
-		m_pp.aapoints += refunded;
-		SaveAA();
-		Save();
-	}
-
-	SendAlternateAdvancementTable();
-	SendAlternateAdvancementPoints();
-	SendAlternateAdvancementStats();
+void Client::ReloadAlternateAdvancementForClasses()
+{
+	// The loader takes every row a held class can use and nothing else, so a dropped class's
+	// ranks leave memory (and its passives leave the next CalcBonuses) while their rows stay,
+	// and a re-added class's ranks come back. SaveAA recomputes the spent total from what is
+	// loaded; the rows it REPLACEs are the held ones only.
+	memset(&m_pp.aa_array[0], 0, sizeof(AA_Array) * MAX_PP_AA_ARRAY);
+	database.LoadAlternateAdvancement(this);
+	SaveAA();
 }
 
 SwarmPet::SwarmPet()
@@ -1157,6 +1178,10 @@ void Client::SendAlternateAdvancementPoints() {
 		if(ranks) {
 			AA::Rank *rank = aa.second->GetRankByPointsSpent(ranks);
 			if(rank) {
+				if (i >= MAX_PP_AA_ARRAY) {
+					LogError("Character [{}] owns more than [{}] AA abilities; the client's points list is short", CharacterID(), MAX_PP_AA_ARRAY);
+					break;
+				}
 				aa2->aa_list[i].AA = rank->id;
 				aa2->aa_list[i].value = rank->total_cost;
 				aa2->aa_list[i].charges = charges;
@@ -2024,9 +2049,16 @@ bool ZoneDatabase::LoadAlternateAdvancement(Client *c) {
 		rank = ability->GetRankByPointsSpent(aa_value);
 
 		if (c->CanUseAlternateAdvancementRank(rank)) {
-			c->GetPP().aa_array[slot_id].AA      = aa_id;
-			c->GetPP().aa_array[slot_id].value   = aa_value;
-			c->GetPP().aa_array[slot_id].charges = charges;
+			// Past the client's list size the rank is still applied (SetAA feeds CalcAABonuses);
+			// only the profile slot is skipped, so a hero above the limit loses window entries,
+			// never the ability.
+			if (slot_id < MAX_PP_AA_ARRAY) {
+				c->GetPP().aa_array[slot_id].AA      = aa_id;
+				c->GetPP().aa_array[slot_id].value   = aa_value;
+				c->GetPP().aa_array[slot_id].charges = charges;
+			} else if (slot_id == MAX_PP_AA_ARRAY) {
+				LogError("Character [{}] owns more than [{}] AA abilities; the client list is short", c->CharacterID(), MAX_PP_AA_ARRAY);
+			}
 
 			c->SetAA(aa_id, aa_value, charges);
 

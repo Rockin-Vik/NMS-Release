@@ -201,6 +201,21 @@ sub EVENT_SAY {
         my $desired_level = $1;
         my $stored_level = $client->GetBucket("MaxLevelAchieved") || 0;
 
+        # A hero's level is its lowest class and every class row moves with SetLevel, shelved ones
+        # included; a paid level change would rewrite what a shelved class earned. Refused for any
+        # character with more than one class row, held or shelved (a row always reads level 1+).
+        my $class_rows = 0;
+        for my $row_class (1..16) {
+            $class_rows++ if $client->GetClassLevel($row_class) > 0;
+        }
+        if ($class_rows > 1 || plugin::GetClassesCount($client) > 1) {
+            plugin::NPCTell(
+                "Your path is woven from more than one class, and I will not unpick it. "
+              . "A hero's level is the lowest of its classes; raise that class and the rest follows."
+            );
+            return;
+        }
+
         if ($desired_level > 0 && $desired_level <= $stored_level) {
             my $current_level = $client->GetLevel();
             my $level_difference = abs($current_level - $desired_level);

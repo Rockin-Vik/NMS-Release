@@ -1837,7 +1837,10 @@ void Client::Handle_Connect_OP_ZoneEntry(const EQApplicationPacket *app)
 	PlayerProfile_Struct* pp_packet = (PlayerProfile_Struct*)outapp->pBuffer;
 	for (int i = 0; i < MAX_PP_SKILL; i++) {
 		if (i <= EQ::skills::HIGHEST_SKILL) {
-			if (!CanHaveSkill((EQ::skills::SkillType)i) && pp_packet->skills[i] == 0) {
+			// Under multiclassing, greyed whatever the value: a shelved class's skill keeps its
+			// number in the profile (hero rule 5) and must not read as usable. Stock keeps the
+			// zero-only test.
+			if (!CanHaveSkill((EQ::skills::SkillType)i) && (pp_packet->skills[i] == 0 || RuleB(Custom, MulticlassingEnabled))) {
 				pp_packet->skills[i] = 0xFFFFFFFF;
 			}
 		}
@@ -4709,6 +4712,15 @@ void Client::Handle_OP_CastSpell(const EQApplicationPacket *app)
 			}
 		}
 		else if (castspell->slot >= EQ::spells::SPELL_GEM_COUNT) {
+			InterruptSpell();
+			return;
+		}
+
+		// Hero rule 4: a gem memorized at 70 does not cast at hero level 1. The gem is dropped
+		// on the level change; this catches a client that still shows it.
+		if (RuleB(Custom, MulticlassingEnabled) && HasMultipleClasses() && IsValidSpell(spell_to_cast) && !CanCastSpellAtLevel(spell_to_cast, GetLevel())) {
+			Message(Chat::Red, "You are not yet high enough level to cast that spell.");
+			UnmemSpell(castspell->slot, true);
 			InterruptSpell();
 			return;
 		}

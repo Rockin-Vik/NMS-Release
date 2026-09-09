@@ -102,7 +102,12 @@ It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `Player
 - Spell knowledge is `character_learned_spells` / `character_learned_discs` (uncapped). The live
   book is 2880 slots; the RoF2 window shows one 720-slot volume at a time (`/book 1-4` in the
   add-on). `RemoveExtraClass` hides class-owned spells the current mask cannot use; it does not
-  delete learned rows. If the learned tables cannot be read, reconcile skips hide/restore
+  delete learned rows. Skills and AA ranks are shelved the same way: skill values stay in
+  `character_skills` (read as 0 and shown greyed while no held class can have them, no level
+  clamp on a held class's value), AA rows stay in `character_alternate_abilities` and leave
+  memory only (`ReloadAlternateAdvancementForClasses`), and a reset refunds shelved rows too.
+  Only spells follow the hero level (`UnmemorizeGemsAboveLevel` on a drop and on re-add).
+  If the learned tables cannot be read, reconcile skips hide/restore
   rather than unscribing against an empty set. Coordinated server + DLL deploy; CAuth cannot
   reject an old add-on before the profile goes out. Spec: `specs/2026-09-07-spellbook-capacity.md`.
 - **`Mob::HasClass(class, bitmask)`** (`zone/mob.cpp:4859`) replaces every stock
