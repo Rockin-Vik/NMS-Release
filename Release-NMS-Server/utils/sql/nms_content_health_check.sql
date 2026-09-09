@@ -248,7 +248,10 @@ SELECT 'v45 Custom:DimensionalVault row present (expect 1)' AS what, COUNT(*) AS
    );
 
 
--- ---- v46 / v47: Echo of Memory -> Emperor's Favor rename ---------------------
+-- ---- v46 (content) / v47 (player): Echo of Memory -> Emperor's Favor rename ---
+-- v46 writes items and db_str; v47 writes rule_values, data_buckets and saylink. Each
+-- probe below is labelled with the version that actually delivers it, so a failure names
+-- the right half.
 -- The rename spans the item, the alt-currency window label and the five rule keys. The
 -- dangerous half is rule_values: the binary looks up Custom:EmperorsFavor*, so if the rows
 -- kept their old names every one of those rules silently falls back to its compiled default
@@ -259,7 +262,7 @@ SELECT 'v46 item 46779 renamed (expect 1)' AS what, COUNT(*) AS value
 SELECT 'v46 alt-currency label rows (expect 2)' AS what, COUNT(*) AS value
   FROM db_str WHERE id = 6 AND type IN (17, 18) AND value = 'Emperor''s Favor';
 
-SELECT 'v46 renamed rule keys (expect 5)' AS what, COUNT(*) AS value
+SELECT 'v47 renamed rule keys (expect 5)' AS what, COUNT(*) AS value
   FROM rule_values WHERE rule_name IN (
     'Custom:EmperorsFavorDropChance',
     'Custom:EmperorsFavorUnlockCharacterSets',
@@ -267,10 +270,10 @@ SELECT 'v46 renamed rule keys (expect 5)' AS what, COUNT(*) AS value
     'Custom:EmperorsFavorUnlockCharacterSlots',
     'Custom:EmperorsFavorUnlockCharacterSlotCost');
 
-SELECT 'v46 stale EoM rule keys (expect 0)' AS what, COUNT(*) AS value
+SELECT 'v47 stale EoM rule keys (expect 0)' AS what, COUNT(*) AS value
   FROM rule_values WHERE rule_name LIKE 'Custom:EoM%' OR rule_name = 'Custom:EventEOMDropChance';
 
-SELECT 'v46 stale EoM award buckets (expect 0)' AS what, COUNT(*) AS value
+SELECT 'v47 stale EoM award buckets (expect 0)' AS what, COUNT(*) AS value
   FROM data_buckets WHERE `key` = 'EoM-Award';
 
 
