@@ -131,4 +131,25 @@ if (-not $NoStart) {
 $total = [math]::Round(((Get-Date) - $started).TotalMinutes, 1)
 Write-Host ''
 Write-Host "Update complete in $total min." -ForegroundColor Cyan
-Write-Host "Health-check output is under $InstallRoot\logs - confirm db_version reads 33 and every 'expect' line matches."
+Write-Host "Health-check output is under $InstallRoot\logs."
+
+# Read the target from version.h rather than printing a literal. A hardcoded number goes stale
+# the next time a migration lands - this line said 33 from 2026-09-06 until v48 shipped. Same
+# parse 2-Setup-NMSServer.ps1 does before it waits for migrations. Best-effort on purpose: the
+# update already succeeded by the time this prints, so an unreadable version.h loses the number,
+# not the run.
+$versionH = Join-Path $InstallRoot 'src\Release-NMS-Server\common\version.h'
+$target   = $null
+if (Test-Path $versionH) {
+    $vh = Get-Content $versionH -Raw
+    if ($vh -match 'CUSTOM_BINARY_DATABASE_VERSION\s+(\d+)') { $target = [int]$Matches[1] }
+}
+if ($target) {
+    Write-Host "Confirm db_version.custom_version reads $target and every 'expect' line matches."
+} else {
+    Write-Host "Confirm db_version.custom_version matches CUSTOM_BINARY_DATABASE_VERSION in common\version.h, and every 'expect' line matches."
+}
+# custom_version is a claim, not a fact (CODEBASE.md 4.3): early entries used bare UPDATEs that
+# no-opped silently and still stamped. The 'expect' lines are the evidence, and they do not cover
+# v26 or v29-v32 - a clean run is not proof those landed.
+Write-Host "custom_version alone is not proof - the 'expect' lines are. No probes exist for v26 or v29-v32."
