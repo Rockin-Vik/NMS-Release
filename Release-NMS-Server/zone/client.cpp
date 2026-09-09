@@ -13763,9 +13763,11 @@ uint16 Client::GetClassTrackingDistanceMultiplier(uint16 class_) {
 }
 
 int Client::GetTrackingDistance() {
+	// 17786 is the ABILITY id of Situational Awareness (its first rank is 18973): look it up by
+	// ability, not by rank. GetAA() takes a rank id and returned 0 for every character here.
 	#define AA_SITUATIONAL_AWARENESS 17786
 	auto distance = 0.0f;
-	int base_skill = 5 * GetAA(AA_SITUATIONAL_AWARENESS);
+	int base_skill = 5 * GetAAByAAID(AA_SITUATIONAL_AWARENESS);
 
 	for (int i = Class::Warrior; i <= Class::Berserker; i++) {
 		if (HasClass(i)) {
