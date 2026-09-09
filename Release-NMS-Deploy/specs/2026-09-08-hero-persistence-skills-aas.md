@@ -189,11 +189,29 @@ while D9 gates the Ayonae refusal on class *rows*. A hero that dropped back to o
 still has shelved rows and 70-level values, and for it the `#set level` clamp still runs. That is
 what D5 specifies, so it is a decision to revisit rather than a coding slip. GM-only.
 
-**Conditional, needs a DB read:** `CanHaveSkill` covers class caps and race grants but not skills
-granted by a bonus — `SE_GrantForage` (`bonuses.cpp`) and `SE_RaiseSkillCap`. If any AA or item in
-the live catalog grants a skill to a class with no `skill_caps` row for it, `GetSkill` now returns
-0 and the grant is inert. Settle with:
-`SELECT id, name FROM aa_ability WHERE id IN (SELECT abilityid FROM aa_rank_effects WHERE effectid IN (188, 224));`
+**A4 — `CanHaveSkill` now recognises bonus-granted skills.** It covered class caps and race grants
+but not skills handed over by a bonus, so a skill a class has no base cap for read 0 under D1 even
+when the character had earned it. Measured against the shipped dump: 127 AA rank rows carry
+`SE_RaiseSkillCap` and four of them grant a skill to a class with no base row — Double Attack to
+Shaman, Righteous Zeal's Double Attack to Cleric, Cat-like Reflexes' Safe Fall to Beastlord, and a
+Forage grant to Shaman. No spell uses either SPA, so AAs were the whole exposure.
+
+The fix is deliberately general rather than a list of those four. `Client::BonusGrantsSkill` mirrors,
+field for field, the bonus terms `GetMaxSkillAfterSpecializationRules` already adds to a cap —
+`spellbonuses`, `itembonuses` and `aabonuses` `RaiseSkillCap[skill]`, plus `GrantForage` for Forage,
+the one effect with its own field. Any future content granting a skill that way is covered the day
+it is added. If a new skill-granting field is added to `StatBonuses`, both places need it.
+
+Because this makes the answer depend on bonuses rather than on class bits alone, the cache is now
+invalidated at the **end** of `Client::CalcBonuses` — the end specifically, because `ProcessItemCaps`
+and the `Calc*` calls read caps while the arrays are still being built, and a rebuild from
+half-computed bonuses would cache a wrong answer. Cost is roughly 78 in-memory hash lookups per held
+class, against the item, spell and AA passes that function already runs.
+
+The drop path stays correct without extra work: both class-change paths reload AAs *before*
+`CalcBonuses`, so a dropped class's AA is already evicted when bonuses recompute, `BonusGrantsSkill`
+returns false, and the skill goes back to reading 0. A skill lives exactly as long as its granting
+AA is loaded.
 
 ### D12 — Sizing (rules 2 and 5, the cost)
 

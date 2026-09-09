@@ -126,6 +126,14 @@ void Client::CalcBonuses()
 	if (RuleB(Custom, ServerAuthStats)) {
 		SendBulkStatsUpdate();
 	}
+
+	// CanHaveSkill now depends on the bonus arrays above, not on class bits alone, so the cached
+	// answers are stale once those change. Invalidated at the END on purpose: ProcessItemCaps and
+	// the Calc* calls read caps while the arrays are still being built, and a rebuild from
+	// half-computed bonuses would cache a wrong answer. Clearing here means the next GetSkill
+	// rebuilds from finished data. The rebuild is ~78 in-memory hash lookups per held class, which
+	// is noise beside the item, spell and AA passes this function already runs.
+	m_can_have_skill_valid = false;
 }
 
 int Mob::CalcRecommendedLevelBonus(uint8 current_level, uint8 recommended_level, int base_stat)

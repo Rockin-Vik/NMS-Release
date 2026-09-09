@@ -4294,9 +4294,39 @@ bool Client::RaceGrantsSkill(EQ::skills::SkillType skill_id) const
 	}
 }
 
+// True when a bonus source hands this character a positive cap for a skill its held classes
+// have no base cap for. Deliberately generic: it mirrors, field for field, the bonus terms
+// GetMaxSkillAfterSpecializationRules adds to the cap, so any content that grants a skill that
+// way is covered without naming a single ability. SE_RaiseSkillCap (base2 = skill) is the
+// general mechanism; GrantForage is the one effect with its own dedicated field. If another
+// skill-granting field is ever added to StatBonuses, add it in both places together.
+bool Client::BonusGrantsSkill(EQ::skills::SkillType skill_id) const
+{
+	if (skill_id > EQ::skills::HIGHEST_SKILL) {
+		return false;
+	}
+
+	if (
+		spellbonuses.RaiseSkillCap[skill_id] > 0 ||
+		itembonuses.RaiseSkillCap[skill_id] > 0 ||
+		aabonuses.RaiseSkillCap[skill_id] > 0
+	) {
+		return true;
+	}
+
+	return skill_id == EQ::skills::SkillForage && aabonuses.GrantForage > 0;
+}
+
 bool Client::CanHaveSkill(EQ::skills::SkillType skill_id) const
 {
 	if (RaceGrantsSkill(skill_id)) {
+		return true;
+	}
+
+	// A skill a class has no base cap for can still be earned when an AA, item or spell raises
+	// that cap from zero - a Shaman's Double Attack, a Cleric's from Righteous Zeal. Without
+	// this the hero read below reports the trained value as 0 and the grant is inert.
+	if (BonusGrantsSkill(skill_id)) {
 		return true;
 	}
 
