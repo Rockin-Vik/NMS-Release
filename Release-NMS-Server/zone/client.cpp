@@ -3053,15 +3053,28 @@ void Client::AddSkill(EQ::skills::SkillType skillid, uint16 value) {
 	SetSkill(skillid, value);
 }
 
-void Client::SendSkillValues()
+std::array<bool, EQ::skills::HIGHEST_SKILL + 1> Client::SnapshotCanHaveSkills() const
+{
+	std::array<bool, EQ::skills::HIGHEST_SKILL + 1> can_have{};
+	for (int skill_id = EQ::skills::Skill1HBlunt; skill_id <= EQ::skills::HIGHEST_SKILL; ++skill_id) {
+		can_have[skill_id] = CanHaveSkill(static_cast<EQ::skills::SkillType>(skill_id));
+	}
+	return can_have;
+}
+
+void Client::SendSkillValues(const std::array<bool, EQ::skills::HIGHEST_SKILL + 1> *before)
 {
 	auto outapp = new EQApplicationPacket(OP_SkillUpdate, sizeof(SkillUpdate_Struct));
 	auto *skill = (SkillUpdate_Struct *) outapp->pBuffer;
 
 	for (int skill_id = EQ::skills::Skill1HBlunt; skill_id <= EQ::skills::HIGHEST_SKILL; ++skill_id) {
 		const auto skill_type = static_cast<EQ::skills::SkillType>(skill_id);
+		const bool can_have   = CanHaveSkill(skill_type);
+		if (before && (*before)[skill_id] == can_have) {
+			continue; // unchanged: the window already shows it right, and every packet prints a line
+		}
 		skill->skillId = skill_id;
-		skill->value   = CanHaveSkill(skill_type) ? m_pp.skills[skill_id] : 0xFFFFFFFF;
+		skill->value   = can_have ? m_pp.skills[skill_id] : 0xFFFFFFFF;
 		QueuePacket(outapp);
 	}
 
@@ -15110,6 +15123,7 @@ bool Client::AddExtraClass(int class_id, bool join_at_watermark)
 	if (inserted_row && m_class_exp[class_id_u8] < m_pp.exp) {
 		m_pp.exp = m_class_exp[class_id_u8];
 	}
+	const auto skills_before = SnapshotCanHaveSkills();
 	m_can_have_skill_valid = false;
 	SetEXP(ExpSource::Quest, m_pp.exp, GetAAXP());
 	// The re-added class's ranks come back from the database (hero rule 5) before bonuses are
@@ -15130,7 +15144,7 @@ bool Client::AddExtraClass(int class_id, bool join_at_watermark)
 	ReconcileLearnedSpells(true, true);
 	// Reconcile restores hidden gems without a level test; rule 4 gates them at the hero level.
 	UnmemorizeGemsAboveLevel(GetLevel());
-	SendSkillValues();
+	SendSkillValues(&skills_before);
 	SendBulkStatsUpdate();
 	Save();
 	return true;
@@ -15167,6 +15181,7 @@ bool Client::RemoveExtraClass(int class_id) {
     };
 
     // Update classes bitmask
+    const auto skills_before = SnapshotCanHaveSkills();
     m_pp.classes = new_classes;
 	m_can_have_skill_valid = false;
 
@@ -15212,7 +15227,7 @@ bool Client::RemoveExtraClass(int class_id) {
     // The clear above also forgets every running cooldown on the client; the server still holds
     // them (nothing above wiped p_timers), so replay them onto the rebuilt window.
     SendAlternateAdvancementTimers();
-    SendSkillValues();
+    SendSkillValues(&skills_before);
 
     // Save changes
 	// The pool is a cache of the lowest held row. Once the class is gone the pool follows the

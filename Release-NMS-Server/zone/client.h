@@ -1069,7 +1069,11 @@ public:
 	void AddSkill(EQ::skills::SkillType skillid, uint16 value);
 	// One OP_SkillUpdate per skill: the raw value for a skill a held class can have, the greyed
 	// sentinel for the rest. Sent after a class add or remove so the window follows without a re-zone.
-	void SendSkillValues();
+	// The client prints "You have become better at..." for every one of these packets, so a class
+	// change passes the can-have state from before the change and only the skills whose state
+	// flipped are sent (the dropped or re-added class's own skills).
+	std::array<bool, EQ::skills::HIGHEST_SKILL + 1> SnapshotCanHaveSkills() const;
+	void SendSkillValues(const std::array<bool, EQ::skills::HIGHEST_SKILL + 1> *before = nullptr);
 	void CheckSpecializeIncrease(uint16 spell_id);
 	void CheckSongSkillIncrease(uint16 spell_id);
 	bool CheckIncreaseSkill(EQ::skills::SkillType skillid, Mob *against_who, int chancemodi = 0);
