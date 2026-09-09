@@ -10076,7 +10076,7 @@
 			<CY>24</CY>
 		</Size>
 		<Style_Transparent>false</Style_Transparent>
-		<TooltipReference>Drop the selected class. Your free removal is used first; after that 10 Emperor's Favor and a 7-day lockout.</TooltipReference>
+		<TooltipReference>Drop the selected class. What it earned is kept.</TooltipReference>
 		<Style_Checkbox>false</Style_Checkbox>
 		<Text>Remove Class</Text>
 		<TextColor>

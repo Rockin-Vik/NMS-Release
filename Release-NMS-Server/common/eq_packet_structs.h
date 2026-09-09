@@ -1622,8 +1622,8 @@ struct WaypointRequest_Struct
 };
 
 // NMS Hero tab (inventory window): the client asks to add or drop a class. The zone handler
-// fail-closes with CanAddExtraClass / HasClass and hands the request to EVENT_HERO_REQUEST,
-// where the Perl policy (free add, fee and lockout on removal) lives.
+// fail-closes with CanAddExtraClass / CanRemoveExtraClass and hands the request to
+// EVENT_HERO_REQUEST, where the Perl dispatch lives; the C++ gates are the policy.
 enum HeroRequestOp : uint32 {
 	HeroRequestAdd    = 1,
 	HeroRequestRemove = 2

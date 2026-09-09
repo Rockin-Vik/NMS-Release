@@ -17325,12 +17325,11 @@ void Client::Handle_OP_HeroRequest(const EQApplicationPacket *app)
 		return;
 	}
 
-	// The remove path can be refused by the Perl (lockout, or not enough Emperor's Favor)
-	// without changing anything the C++ gate above tests, so an unthrottled client could
-	// replay the same rejected packet in a tight loop and spin a Perl dispatch, two cache
-	// scans and a reply packet every iteration on the zone thread. Armed here rather than
-	// at the dispatch, so the paths that get REFUSED below are covered too - those return
-	// before the dispatch and so would never have started the window.
+	// The C++ gates below and the Perl last-class check are the only refusals, but an
+	// unthrottled client could still replay a rejected packet in a tight loop and spin a Perl
+	// dispatch, two cache scans and a reply packet every iteration on the zone thread. Armed
+	// here rather than at the dispatch, so the paths that get REFUSED below are covered too -
+	// those return before the dispatch and so would never have started the window.
 	if (m_hero_request_timer.Enabled() && !m_hero_request_timer.Check(false)) {
 		Message(Chat::Red, "Please wait a moment before changing classes again.");
 		return;
@@ -17345,25 +17344,16 @@ void Client::Handle_OP_HeroRequest(const EQApplicationPacket *app)
 		return;
 	}
 
-	// Fail closed here. The policy (free add, Emperor's Favor fee and lockout on removal,
-	// announcements) is the same Perl the guildmasters and the Vision of Ayonae use.
+	// Fail closed here. The policy is free add, free remove, in combat refused on both; the
+	// Perl the guildmasters and the Vision of Ayonae share only dispatches.
 	if (request->op == HeroRequestAdd) {
 		if (CanAddExtraClass(class_id, false) != AddClassResult::Ok) {
 			Message(Chat::Red, "%s", CanAddExtraClassMessage(class_id, false));
 			return;
 		}
 	} else if (request->op == HeroRequestRemove) {
-		if (!HasClass(static_cast<uint8>(class_id))) {
-			Message(Chat::Red, "You do not hold that class.");
-			return;
-		}
-
-		int held = 0;
-		for (uint32 bits = GetClassesBits(); bits; bits >>= 1) {
-			held += bits & 1u;
-		}
-		if (held <= 1) {
-			Message(Chat::Red, "You cannot remove your last class.");
+		if (CanRemoveExtraClass(class_id) != RemoveClassResult::Ok) {
+			Message(Chat::Red, "%s", CanRemoveExtraClassMessage(class_id));
 			return;
 		}
 	} else {

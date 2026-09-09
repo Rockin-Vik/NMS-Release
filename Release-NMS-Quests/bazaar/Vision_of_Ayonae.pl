@@ -8,20 +8,13 @@ sub EVENT_SAY {
         return;
     }
    
-    my $remove_class_cost = plugin::RemoveClassCost();
     my $reset_aa_cost = 5;
-    my $remove_class_lockout = plugin::RemoveClassLockoutDays();
 
     if ($text=~/hail/i) {   
         if (plugin::GetClassesCount($client) <= 1) {
             plugin::NPCTell("Ah, a blank slate arrives. Your singular existence beckons for direction. Do you wish to submit yourself to the [whims of blind fate]?");
         } else {
             plugin::NPCTell("You dare stand before me, tainted by the stench of your choices? Your free will has marred the purity of your destiny. I may yet [reforge your path], if you have the resolve.");
-        }
-
-        my $free_class_remove = ($client->GetBucket("free_remove_class_used") || 0);
-        if (!$free_class_remove) {
-            plugin::YellowText("You have a free class removal available. You will be given the option to use it by proceeding with the menu.");
         }
 
         my $free_aa_reset_used = ($client->GetBucket("free_aa_reset_used") || 0);
@@ -34,8 +27,8 @@ sub EVENT_SAY {
     
     if ($text=~/blind fate/i) {
         if (plugin::GetClassesCount($client) == 1) {
-            plugin::NPCTell("You will be put upon an irrevocable path, impossible to predict. Are you certain that you wish to do this?");
-            plugin::YellowText("WARNING: If you [".quest::saylink('randomize_me_bitch', 1, 'continue')."], you will be assigned ".plugin::MaxMulticlasses()." random classes. This decision cannot be reversed.");
+            plugin::NPCTell("Fate will choose your path, impossible to predict. Are you certain that you wish to do this?");
+            plugin::YellowText("WARNING: If you [".quest::saylink('randomize_me_bitch', 1, 'continue')."], you will be assigned ".plugin::MaxMulticlasses()." random classes. Your current class is dropped and random ones assigned; they can be changed again afterwards.");
         } else {
             plugin::NPCTell("Mortal. You are unsuitable, your fate has already been tainted by your pathetic free will. Begone.");
         }
@@ -279,35 +272,17 @@ sub EVENT_SAY {
 
     if ($text =~ /^del_class_(\d+)$/i) {
         my $class_id = $1;
-
-        my $free_class_remove = ($client->GetBucket("free_remove_class_used") || 0);
-        if (!$free_class_remove) {
-            plugin::YellowText("You have a free class removal available. Would you like to [".quest::saylink("free_$class_id", 1, "use it")."]? This will bypass any lockouts or costs.");
-        } else {
-            if ($client->HasExpeditionLockout("Class Removal Lockout", "")) {
-                plugin::YellowText("You cannot remove a class at this time, you still are under cooldown from a previous class removal.");
-                return 0;
-            }
-        }
+        my $class_name = quest::getclassname($class_id);
 
         if (plugin::HasClass($client, $class_id)) {
-            if (plugin::GetEmperorsFavor($client) >= $remove_class_cost) {
-                 plugin::YellowText("It will cost $remove_class_cost Emperor's Favor in order to remove a class. Additionally,
-                                    there is a $remove_class_lockout-day cooldown after removing a class before you can remove another.
-                                    Would you like to [".quest::saylink("proceed_$class_id", 1, "Proceed")."]?");
-
-            } else {
-                 plugin::YellowText("It costs $remove_class_cost Emperor's Favor in order to remove a class. You can obtain
-                                    Emperor's Favor through contributions to the sever or purchase from other players in the Bazaar.");
-            }
+            plugin::YellowText("Sever the thread of the $class_name? This takes effect at once and costs nothing. [".quest::saylink("remove_$class_id", 1, "Proceed")."]");
         }
     }
 
-    if ($text =~ /^proceed_(\d+)$/i) {
-        plugin::RemoveClassPaid($client, $1);
-    }
-    if ($text =~ /^free_(\d+)$/i) {
-        plugin::RemoveClassFree($client, $1);
+    # Removal is free and immediate; the server refuses it in combat or for the last class.
+    if ($text =~ /^remove_(\d+)$/i) {
+        return 0 unless plugin::HasClass($client, $1);
+        plugin::RemoveClass($1, $client);
     }
     if ($text =~ /unmem/i) {
         for ($i = 0; $i < 12; $i++) {

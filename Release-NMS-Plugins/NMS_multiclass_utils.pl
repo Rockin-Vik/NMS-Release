@@ -356,18 +356,15 @@ sub AddClass {
         my $class_name = quest::getclassname($class_id);
         my $full_class_name = GetPrettyClassString();        
 
-        $client->Message(15, "You have permanently gained access to the $class_name class, and are now a $full_class_name.");
+        $client->Message(15, "You have gained access to the $class_name class, and are now a $full_class_name.");
         CommonCharacterUpdate();
 
         if ($client->IsTaskActivityActive(3, 2)) {
             $client->UpdateTaskActivity(3, 2, 1);
         }
 
-        if (GetClassesCount() >= plugin::MaxMulticlasses() && CheckUniqueClass($client->GetClassesBitmask())) {
-            my $class_bits          = $client->GetClassesBitmask();
-            quest::set_data("class-$class_bits", $class_bits);
-            plugin::WorldAnnounce("$name has become the FIRST $full_class_name.");            
-        }
+        # No first-of-a-kind announcement (owner decision, 2026-09-08): a class change is a
+        # player's own business and switching is meant to be routine.
 
         return 1;
     }    
@@ -384,7 +381,7 @@ sub RemoveClass {
     if ($client->RemoveExtraClass($class_id)) {
         my $class_name = quest::getclassname($class_id);
 
-        $client->Message(15, "You are NO LONGER a $class_name, and have lost access to all Spells, Disciplines, Skills, and Abilities of that class.");
+        $client->Message(15, "You are no longer a $class_name. Everything it earned is kept and returns when you take it up again.");
         # Buffs are not wiped on a class change (hero rule 6: no penalty on switching).
         return 1;
     } else {
@@ -393,43 +390,10 @@ sub RemoveClass {
     }
 }
 
-# --- Class removal policy: one place for the Vision of Ayonae and the Hero tab ----------------
-sub RemoveClassCost        { return 10; } # Emperor's Favor
-sub RemoveClassLockoutDays { return 7; }
-
-# The first removal is free (bucket free_remove_class_used). Returns 1 when a class was removed.
-sub RemoveClassFree {
-    my ($client, $class_id) = @_;
-    return 0 unless $client && HasClass($client, $class_id);
-    return 0 if ($client->GetBucket("free_remove_class_used") || 0);
-    return 0 unless RemoveClass($class_id, $client);
-    $client->SetBucket("free_remove_class_used", 1);
-    return 1;
-}
-
-# Paid removal: Emperor's Favor fee plus a lockout before the next one. Returns 1 when removed.
-sub RemoveClassPaid {
-    my ($client, $class_id) = @_;
-    return 0 unless $client && HasClass($client, $class_id);
-    my $cost = RemoveClassCost();
-    my $days = RemoveClassLockoutDays();
-    if ($client->HasExpeditionLockout("Class Removal Lockout", "")) {
-        plugin::YellowText("You cannot remove a class at this time, you still are under cooldown from a previous class removal.", $client);
-        return 0;
-    }
-    if (plugin::GetEmperorsFavor($client) < $cost) {
-        plugin::YellowText("It costs $cost Emperor's Favor in order to remove a class. You can obtain Emperor's Favor through contributions to the server or purchase from other players in the Bazaar.", $client);
-        return 0;
-    }
-    return 0 unless RemoveClass($class_id, $client);
-    plugin::SpendEmperorsFavor($client, $cost);
-    $client->AddExpeditionLockout("Class Removal Lockout", "", $days * 24 * 60 * 60);
-    return 1;
-}
-
 # Hero tab request (EVENT_HERO_REQUEST): op 1 = add, 2 = remove. The zone handler has already
-# fail-closed the request with CanAddExtraClass / HasClass; this applies the same policy the
-# guildmasters (free add) and the Vision of Ayonae (free first removal, then fee + lockout) use.
+# fail-closed the request with CanAddExtraClass / CanRemoveExtraClass. Free add, free remove;
+# the C++ gates (in combat, last class, cap) are the whole policy, shared with the guildmasters
+# and the Vision of Ayonae.
 sub HeroRequest {
     my ($client, $op, $class_id) = @_;
     return 0 unless $client && $class_id && $class_id >= 1 && $class_id <= 16;
@@ -442,23 +406,11 @@ sub HeroRequest {
     }
     if ($op == 2) {
         return 0 if GetClassesCount($client) <= 1; # never drop the last class
-        return 1 if RemoveClassFree($client, $class_id);
-        return RemoveClassPaid($client, $class_id);
+        return RemoveClass($class_id, $client) ? 1 : 0;
     }
     return 0;
 }
 
-sub CheckUniqueClass {
-    my $client              = plugin::val('$client');
-    my $class_bits          = $client->GetClassesBitmask();
-    my $class_bit_bucket    = quest::get_data("class-$class_bits");    
-
-    if ($class_bit_bucket) {
-        return 0;
-    } else {
-        return 1;
-    }
-}
 
 sub GetPrettyClassString {
     my $client = shift || plugin::val('$client');  # Ensure $client is available
