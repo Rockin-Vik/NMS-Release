@@ -37,7 +37,7 @@ Contributing with an AI agent? Its instructions and skills live in [`agents/`](a
 
 ## What makes it different
 
-- **Multiclassing** — a character can take up to three classes at once
+- **Multiclassing** — a character can take up to four classes at once
 - **Multiple pets** — pet classes control several pets, with a custom pet window
 - **Emperor's Favor** — an alternate currency that drops from kills and buys unlocks
 - **Item upgrade tiers** — drops can roll as Enchanted or Legendary versions
