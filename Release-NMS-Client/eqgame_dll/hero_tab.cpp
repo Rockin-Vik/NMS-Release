@@ -127,9 +127,9 @@ namespace {
 			text += "</c>: ";
 			if (Held(mask, selected)) {
 				text += "active. Remove drops it; everything it earned is kept and returns when you add it again.<br>";
-			} else if (NMS_GetClassLevel(selected) > 0) {
+			} else if (NMS_GetClassLevelRaw(selected) > 0) {
 				char kept[96];
-				sprintf_s(kept, "current at level %d, not in play. Add is free and brings it back at that level.<br>", NMS_GetClassLevel(selected));
+				sprintf_s(kept, "current at level %d, not in play. Add is free and brings it back at that level.<br>", NMS_GetClassLevelRaw(selected));
 				text += kept;
 			} else {
 				text += "never played. Add is free.<br>";
@@ -169,9 +169,11 @@ namespace {
 					sprintf_s(level, "%d", NMS_GetClassLevel(class_id));
 					status = "Active";
 					color = kGreen;
-				} else if (NMS_GetClassLevel(class_id) > 0) {
-					// The server sends the row level for a dropped class too; it was held once.
-					sprintf_s(level, "%d", NMS_GetClassLevel(class_id));
+				} else if (NMS_GetClassLevelRaw(class_id) > 0) {
+					// The server sends the row level for a class not in play too; raw, because the
+					// plain reader falls back to the on-screen level and would show 1 for a class
+					// the character never played.
+					sprintf_s(level, "%d", NMS_GetClassLevelRaw(class_id));
 					status = "Current";
 					color = kGold;
 				}

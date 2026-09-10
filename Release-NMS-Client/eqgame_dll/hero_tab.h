@@ -17,4 +17,8 @@ bool HeroTab_HandleClick(void *thisPtr, void *sender);
 // Provided by MQ2Labels.cpp, where the stat map and the class tables are file-local.
 uint32_t NMS_GetClassesBitmask();
 int NMS_GetClassLevel(int class_id);
+// The stat as sent, 0 when the server sent 0 or nothing yet: for classes NOT in play, where
+// NMS_GetClassLevel's fall-back to the on-screen level would invent a level for a class the
+// character never played.
+int NMS_GetClassLevelRaw(int class_id);
 const char *NMS_GetClassAbbr(int class_id);
