@@ -104,7 +104,7 @@ namespace {
 
 	// The server owns the class cap (Custom:MaxMulticlasses) and the join level (the catch-up
 	// rule); the tab never second-guesses them. Refusals come back as the same red lines the
-	// guildmasters and the Vision of Ayonae give.
+	// guildmasters and Lady Lachesis the Measurer give.
 	void RenderInfo(uint32_t mask)
 	{
 		CStmlWnd *info = InfoBox();
@@ -137,7 +137,7 @@ namespace {
 		} else {
 			text += "Select a class, then press Add Class or Remove Class.<br>";
 		}
-		text += "The guildmasters and the Vision of Ayonae in the Bazaar make the same changes.";
+		text += "The guildmasters and Lady Lachesis the Measurer in the Bazaar make the same changes.";
 
 		CXStr stml(text.c_str());
 		info->SetSTMLText(stml, true, NULL);

@@ -17348,7 +17348,7 @@ void Client::Handle_OP_HeroRequest(const EQApplicationPacket *app)
 	}
 
 	// Fail closed here. The policy is free add, free remove, in combat refused on both; the
-	// Perl the guildmasters and the Vision of Ayonae share only dispatches.
+	// Perl the guildmasters and Lady Lachesis the Measurer share only dispatches.
 	if (request->op == HeroRequestAdd) {
 		if (CanAddExtraClass(class_id, false) != AddClassResult::Ok) {
 			Message(Chat::Red, "%s", CanAddExtraClassMessage(class_id, false));
@@ -17367,7 +17367,7 @@ void Client::Handle_OP_HeroRequest(const EQApplicationPacket *app)
 	// Global script only: a zone-local player.pl must not be able to answer (or bypass) this.
 	if (!parse->PlayerHasQuestSubGlobal(EVENT_HERO_REQUEST)) {
 		LogError("OP_HeroRequest from [{}] dropped: global_player has no EVENT_HERO_REQUEST", GetCleanName());
-		Message(Chat::Red, "Class changes are not available from this window right now. See a guildmaster or the Vision of Ayonae.");
+		Message(Chat::Red, "Class changes are not available from this window right now. See a guildmaster or Lady Lachesis the Measurer.");
 		return;
 	}
 

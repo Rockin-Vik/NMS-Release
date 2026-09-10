@@ -3202,7 +3202,7 @@ void Zone::ApplyGlobalBuffs()
 }
 
 // NMS: Handles the Custom:PermanentServerBuffsEnabled rule toggle.
-// Called on rule reload (e.g., via Spire). Sets the 4 Echo server buff spell IDs
+// Called on rule reload (e.g., via Spire). Sets the 4 Favor server buff spell IDs
 // to a 1-year duration when enabled, or removes them when disabled.
 // Automatically refreshes the 1-year clock on every server start / rule reload.
 void Zone::HandlePermanentServerBuffs()

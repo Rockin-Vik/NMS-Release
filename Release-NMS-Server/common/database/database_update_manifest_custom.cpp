@@ -1705,6 +1705,80 @@ UPDATE items
 		.content_schema_update = true,
 	},
 
+	ManifestEntry{
+		.version = 49,
+		.description = "2026_09_10_rename_echo_spells_to_favor_spells_content",
+		// CONTENT half of the Echo -> Favor world buff spell renames: spells_new table.
+		// Renames the 9 custom server-wide world buff spells to 'Favor of ...'.
+		// Guard on the first renamed spell carrying its new name: "empty" runs only
+		// while it does not already say 'Favor of Luck'.
+		.check = "SELECT id FROM spells_new WHERE id = 17779 AND name = 'Favor of Luck'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+UPDATE `spells_new` SET `name` = 'Favor of Luck' WHERE `id` = 17779;
+UPDATE `spells_new` SET `name` = 'Favor of Power' WHERE `id` = 36856;
+UPDATE `spells_new` SET `name` = 'Favor of Experience' WHERE `id` = 43002;
+UPDATE `spells_new` SET `name` = 'Favor of Aegolism' WHERE `id` = 43003;
+UPDATE `spells_new` SET `name` = 'Favor of Focus' WHERE `id` = 43004;
+UPDATE `spells_new` SET `name` = 'Favor of Selo' WHERE `id` = 43005;
+UPDATE `spells_new` SET `name` = 'Favor of Koadic' WHERE `id` = 43006;
+UPDATE `spells_new` SET `name` = 'Favor of the Brood' WHERE `id` = 43007;
+UPDATE `spells_new` SET `name` = 'Favor of the Grove' WHERE `id` = 43008;
+)",
+		.content_schema_update = true,
+	},
+
+	ManifestEntry{
+		.version = 50,
+		.description = "2026_09_10_rename_echo_spells_to_favor_spells_player",
+		// PLAYER half of the spell rename: updates stale saylink cache entries.
+		// saylink lives on the player/system DB, so content_schema_update = false.
+		// Guard on whether any matching stale phrases exist.
+		.check = "SELECT id FROM saylink WHERE phrase IN ('#find item echo of power', '#find spell echo of selo') LIMIT 1",
+		.condition = "not_empty",
+		.match = "",
+		.sql = R"(
+UPDATE `saylink` SET `phrase` = '#find item favor of power' WHERE `phrase` = '#find item echo of power';
+UPDATE `saylink` SET `phrase` = '#find spell favor of selo' WHERE `phrase` = '#find spell echo of selo';
+)",
+		.content_schema_update = false,
+	},
+
+	ManifestEntry{
+		.version = 51,
+		.description = "2026_09_10_rename_apocrypha_and_vision_of_ayonae_content",
+		// CONTENT half of the NPC renames:
+		// 1. Apocrypha (1120001125) -> Decimus
+		// 2. Vision of Ayonae (151063) -> Lady Lachesis <the Measurer>
+		// 3. Spawngroup 5003653 -> bazaar_Decimus000_681750305
+		// Guard on Decimus being present: "empty" runs only while it does not already say Decimus.
+		.check = "SELECT id FROM npc_types WHERE id = 1120001125 AND name = 'Decimus'",
+		.condition = "empty",
+		.match = "",
+		.sql = R"(
+UPDATE `npc_types` SET `name` = 'Decimus' WHERE `id` = 1120001125;
+UPDATE `npc_types` SET `name` = 'Lady_Lachesis', `lastname` = 'the Measurer' WHERE `id` = 151063;
+UPDATE `spawngroup` SET `name` = 'bazaar_Decimus000_681750305' WHERE `id` = 5003653;
+)",
+		.content_schema_update = true,
+	},
+
+	ManifestEntry{
+		.version = 52,
+		.description = "2026_09_10_rename_apocrypha_saylinks_player",
+		// PLAYER half of the NPC rename: update stale saylink cache entries.
+		// Guard on whether matching stale phrases exist.
+		.check = "SELECT id FROM saylink WHERE phrase IN ('#goto Apocrypha', '#summon Apocrypha') LIMIT 1",
+		.condition = "not_empty",
+		.match = "",
+		.sql = R"(
+UPDATE `saylink` SET `phrase` = '#goto Decimus' WHERE `phrase` = '#goto Apocrypha';
+UPDATE `saylink` SET `phrase` = '#summon Decimus' WHERE `phrase` = '#summon Apocrypha';
+)",
+		.content_schema_update = false,
+	},
+
 	// Used for testing
 	//	ManifestEntry{
 	//		.version = 9229,

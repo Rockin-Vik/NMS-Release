@@ -783,7 +783,7 @@ sub UpdateDayNightCycle {
 
 # Hero tab (inventory window, OP_HeroRequest). The zone handler has already fail-closed the
 # request (in combat, last class, cap); free add, free remove, shared with the guildmasters and
-# the Vision of Ayonae.
+# Lady Lachesis the Measurer.
 sub EVENT_HERO_REQUEST {
     return unless plugin::IsNMS();
     plugin::HeroRequest($client, $hero_op, $class_id);

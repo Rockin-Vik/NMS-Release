@@ -15233,7 +15233,7 @@ bool Client::AddExtraClass(int class_id, bool join_at_watermark)
 }
 
 bool Client::RemoveExtraClass(int class_id) {
-	// One gate for every door (Hero tab, Ayonae, blind fate, the Perl and Lua exports): the
+	// One gate for every door (Hero tab, Lady Lachesis, blind fate, the Perl and Lua exports): the
 	// reason is messaged here so a script caller needs no test of its own.
 	const auto reason = CanRemoveExtraClass(class_id);
 	if (reason != RemoveClassResult::Ok) {

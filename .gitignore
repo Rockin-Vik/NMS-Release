@@ -36,8 +36,10 @@ credentials.txt
 /Release-NMS-Server/eqemu_config.json
 /Release-NMS-Server/login.json
 
-# Local Claude Code state (the tracked skills live in agents/skills)
+# Local Claude Code & agent state (the tracked skills live in agents/skills)
 .claude/
+.agents/
+graphify-out/
 
 # Compact-wrapper logs
 .logs/

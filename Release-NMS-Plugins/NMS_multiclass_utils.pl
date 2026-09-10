@@ -393,7 +393,7 @@ sub RemoveClass {
 # Hero tab request (EVENT_HERO_REQUEST): op 1 = add, 2 = remove. The zone handler has already
 # fail-closed the request with CanAddExtraClass / CanRemoveExtraClass. Free add, free remove;
 # the C++ gates (in combat, last class, cap) are the whole policy, shared with the guildmasters
-# and the Vision of Ayonae.
+# and Lady Lachesis the Measurer.
 sub HeroRequest {
     my ($client, $op, $class_id) = @_;
     return 0 unless $client && $class_id && $class_id >= 1 && $class_id <= 16;

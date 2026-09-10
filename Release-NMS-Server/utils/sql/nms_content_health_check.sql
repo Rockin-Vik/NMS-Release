@@ -291,3 +291,57 @@ SELECT 'v48 armarium lore correct (expect 1)' AS what, COUNT(*) AS value
 SELECT 'v48 overlong armarium lore (expect 0)' AS what, COUNT(*) AS value
   FROM items
  WHERE Name = 'Armarium' AND CHAR_LENGTH(lore) > 80;
+
+
+-- ---- v49: Favor world buff spells rename -----------------------------------
+-- Renames the 9 custom 'Echo of' server buffs to 'Favor of'.
+-- spells_new is content schema.
+SELECT 'v49 favor spells renamed (expect 9)' AS what, COUNT(*) AS value
+  FROM spells_new
+ WHERE id IN (17779, 36856, 43002, 43003, 43004, 43005, 43006, 43007, 43008)
+   AND name IN (
+     'Favor of Luck',
+     'Favor of Power',
+     'Favor of Experience',
+     'Favor of Aegolism',
+     'Favor of Focus',
+     'Favor of Selo',
+     'Favor of Koadic',
+     'Favor of the Brood',
+     'Favor of the Grove'
+   );
+
+SELECT 'v49 stale echo buff spells (expect 0)' AS what, COUNT(*) AS value
+  FROM spells_new
+ WHERE id IN (17779, 36856, 43002, 43003, 43004, 43005, 43006, 43007, 43008)
+   AND name LIKE 'Echo of %';
+
+
+-- ---- v50: saylink cache favor spell cleanup --------------------------------
+SELECT 'v50 stale echo spell saylinks (expect 0)' AS what, COUNT(*) AS value
+  FROM saylink
+ WHERE phrase IN ('#find item echo of power', '#find spell echo of selo');
+
+
+-- ---- v51: NPC renames (Apocrypha -> Decimus, Vision of Ayonae -> Lady Lachesis)
+SELECT 'v51 Decimus npc (expect 1)' AS what, COUNT(*) AS value
+  FROM npc_types WHERE id = 1120001125 AND name = 'Decimus';
+
+SELECT 'v51 Lady Lachesis npc (expect 1)' AS what, COUNT(*) AS value
+  FROM npc_types WHERE id = 151063 AND name = 'Lady_Lachesis' AND lastname = 'the Measurer';
+
+SELECT 'v51 stale Apocrypha npc (expect 0)' AS what, COUNT(*) AS value
+  FROM npc_types WHERE id = 1120001125 AND name = 'Apocrypha';
+
+SELECT 'v51 stale Vision of Ayonae npc (expect 0)' AS what, COUNT(*) AS value
+  FROM npc_types WHERE id = 151063 AND name = 'Vision_of_Ayonae';
+
+SELECT 'v51 Decimus spawngroup (expect 1)' AS what, COUNT(*) AS value
+  FROM spawngroup WHERE id = 5003653 AND name = 'bazaar_Decimus000_681750305';
+
+
+-- ---- v52: saylink cache Apocrypha cleanup ----------------------------------
+SELECT 'v52 stale Apocrypha saylinks (expect 0)' AS what, COUNT(*) AS value
+  FROM saylink WHERE phrase IN ('#goto Apocrypha', '#summon Apocrypha');
+
+

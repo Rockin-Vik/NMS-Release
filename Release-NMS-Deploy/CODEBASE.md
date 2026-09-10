@@ -314,7 +314,7 @@ NMS runs a **second migration manifest in parallel with stock EQEmu's**:
 | Manifest | File | Version column | Current |
 | --- | --- | --- | --- |
 | Stock | `database_update_manifest.cpp` | `db_version.version` | 9325 |
-| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **48** |
+| **Custom** | `database_update_manifest_custom.cpp` | **`db_version.custom_version`** | **52** |
 | Bots | `database_update_manifest_bots.cpp` | `db_version.bots_database_version` | |
 
 Both are `#include`d directly into `common/database/database_update.cpp` (lines 9–11) and run
@@ -335,7 +335,7 @@ ALTER TABLE db_version ADD COLUMN custom_version INT UNSIGNED NOT NULL DEFAULT 0
 
 ### 4.2 What is actually in the custom manifest
 
-48 entries declared (v1–v48), **45 live**. Numbering is a plain sequence independent of the 9325
+52 entries declared (v1–v52), **49 live**. Numbering is a plain sequence independent of the 9325
 stock number. Entries carry `content_schema_update` to target the content DB rather than the
 player DB.
 
@@ -365,6 +365,10 @@ player DB.
 | v46 | **Content half** of the Emperor's Favor rename: item `46779` name and `lore`, the `db_str` alt-currency label, the two themed merchant NPCs, the `spawngroup` key. Guards on the `db_str` label, so a fresh install from the regenerated dump skips it. | Live |
 | v47 | **Player half** of the same rename: the five `Custom:EmperorsFavor*` rule keys (drop chance to 150), the `EmperorsFavor-Award` bucket, the stale `saylink` rows. Separate entry so a split content/player deployment routes each half to the right connection. Guards on the renamed rule key. | Live |
 | v48 | Repairs the Armarium `lore` on databases where v43 already ran. `items.lore` is `varchar(80)` and v43 originally wrote 101 characters: a strict server failed with error 1406 and applied nothing, a lenient one silently cut the text mid-word. v43 now writes 77 characters; this repairs the cut rows. Guarded on the short text, so it is a no-op once applied. | Live |
+| v49 | **Content half** of the Echo world buff spells rename: renames the 9 custom server-wide world buff spells in `spells_new` to 'Favor of ...' (Luck, Power, Experience, Aegolism, Focus, Selo, Koadic, the Brood, the Grove). Guards on `Favor of Luck`. | Live |
+| v50 | **Player half** of the spell rename: updates stale `#find item echo of power` and `#find spell echo of selo` in `saylink`. Guards on stale phrases existing. | Live |
+| v51 | **Content half** of the NPC renames: renames Apocrypha (1120001125) to Decimus, Vision of Ayonae (151063) to Lady Lachesis <the Measurer>, and spawngroup 5003653 to `bazaar_Decimus000_681750305`. Guards on Decimus. | Live |
+| v52 | **Player half** of the NPC rename: updates stale `#goto Apocrypha` and `#summon Apocrypha` in `saylink`. Guards on stale phrases existing. | Live |
 
 ### 4.3 ⚠️ The version number is a claim, not a fact
 
