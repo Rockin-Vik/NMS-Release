@@ -14,7 +14,7 @@ namespace {
 	const uint32_t kHeroRemove = 2;
 	const COLORREF kWhite = 0xFFFFFFFF;
 	const COLORREF kGreen = 0xFF80FF80;
-	const COLORREF kGold  = 0xFFE0C060; // shelved: held once, level kept
+	const COLORREF kGold  = 0xFFE0C060; // current: played before, level kept, not in play
 
 #pragma pack(push, 1)
 	struct HeroRequest_Struct {
@@ -113,7 +113,7 @@ namespace {
 		}
 
 		char head[64];
-		sprintf_s(head, "<c \"#FFFF00\">Level %d</c>  Classes held: %d", EffectiveLevel(), CountBits(mask));
+		sprintf_s(head, "<c \"#FFFF00\">Level %d</c>  Active classes: %d", EffectiveLevel(), CountBits(mask));
 
 		std::string text = head;
 		text += " (";
@@ -126,13 +126,13 @@ namespace {
 			text += ClassName(selected);
 			text += "</c>: ";
 			if (Held(mask, selected)) {
-				text += "held. Remove drops it; everything it earned is kept and returns when you add it again.<br>";
+				text += "active. Remove drops it; everything it earned is kept and returns when you add it again.<br>";
 			} else if (NMS_GetClassLevel(selected) > 0) {
 				char kept[96];
-				sprintf_s(kept, "shelved at level %d. Add is free and brings it back at that level.<br>", NMS_GetClassLevel(selected));
+				sprintf_s(kept, "current at level %d, not in play. Add is free and brings it back at that level.<br>", NMS_GetClassLevel(selected));
 				text += kept;
 			} else {
-				text += "not held. Add is free.<br>";
+				text += "never played. Add is free.<br>";
 			}
 		} else {
 			text += "Select a class, then press Add Class or Remove Class.<br>";
@@ -167,12 +167,12 @@ namespace {
 				COLORREF color = kWhite;
 				if (held) {
 					sprintf_s(level, "%d", NMS_GetClassLevel(class_id));
-					status = "Held";
+					status = "Active";
 					color = kGreen;
 				} else if (NMS_GetClassLevel(class_id) > 0) {
 					// The server sends the row level for a dropped class too; it was held once.
 					sprintf_s(level, "%d", NMS_GetClassLevel(class_id));
-					status = "Shelved";
+					status = "Current";
 					color = kGold;
 				}
 
