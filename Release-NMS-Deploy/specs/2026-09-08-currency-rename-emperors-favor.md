@@ -70,7 +70,7 @@ white-or-better kill is worth more than `2500/N` platinum:
 Full sink table, read-verified: 2 (`Purveyor_of_Glamour.pl:123`); 5 (AA reset
 `Vision_of_Ayonae.pl:12`, set unlock and slot unlock `ruletypes.h:1219,1222`, map attunement
 `Tearel.pl:50`, single world buff `Apocrypha.pl:26,30`); 10 (class removal
-`NMS_multiclass_utils.pl:398`, name/race/deity/gender/pet-name change `151061.pl:41-45`, exp buff
+`NMS_multiclass_utils.pl:398`, a sink removed 2026-09-09 by the switching-gates change: removal is free; name/race/deity/gender/pet-name change `151061.pl:41-45`, exp buff
 `Apocrypha.pl:38`); 20/25/35 (world-buff bundles). Lifetime unlock ceiling is 3×5 + 12×5 = 75.
 
 ---

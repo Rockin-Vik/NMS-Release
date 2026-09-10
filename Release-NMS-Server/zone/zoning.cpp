@@ -1440,7 +1440,10 @@ bool Client::CanEnterZone(const std::string& zone_short_name, int16 instance_ver
 		return false;
 	}
 
-	if (!GetGM() && GetLevel() < z->min_level) {
+	// A hero (held or ever held more than one class) is level 1 whenever it starts a class and
+	// its level is its lowest class, so the zone minimum does not apply to it (rule 7). The rule
+	// test keeps a former hero on the stock rule if multiclassing is switched off at run time.
+	if (!GetGM() && !(RuleB(Custom, MulticlassingEnabled) && IsHero()) && GetLevel() < z->min_level) {
 		LogInfo(
 			"Character [{}] does not meet minimum level requirement ([{}] < [{}])!",
 			GetCleanName(),

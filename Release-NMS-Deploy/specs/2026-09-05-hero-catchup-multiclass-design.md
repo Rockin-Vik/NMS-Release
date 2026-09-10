@@ -228,11 +228,15 @@ Perl to update (D14, D17):
 - `bazaar/Vision_of_Ayonae.pl` — random picks (61-69) come from classes with reason 0; the fill loop (77) reads the rule and passes the trusted flag; EoM charge, lockout and free-use bucket (280-294) apply only after a true result.
 - `global/global_player.pl` — `EVENT_LEVEL_UP` (179-191): the max-level world announce keys on a per-character bucket so the fourth class reaching the cap does not announce twice. `CommonCharacterUpdate` re-runs `GrantClassesAA` on every ding (`NMS_multiclass_utils.pl:17`), so the catching-up class receives its ranks as it levels.
 - `NMS_popup_utils.pl` (48) — "up to three classes" becomes the cap.
+
+> Superseded 2026-09-09 by the switching-gates change (`2026-09-08-hero-switching-gates.md`): removal is free with no fee, lockout or free-use bucket, and the first-of-a-kind announcement is gone. See the hero paragraph of `CODEBASE.md`.
 - Lua modules: `client_ext.lua` only decodes the bitmask; grep the Lua tree for a cap literal before shipping and expect none.
 
 Perl helpers (thin wrappers): `plugin::GetClassLevel($client, $class_id)`, `plugin::GetRewardLevel($client)`, `plugin::IsCatchingUp($client)`, `plugin::CanAddClass($client, $class_id)`.
 
 Unique-combo world announce fires when popcount first reaches the cap on a successful add. Same bucket scheme, key `class-<bitmask>`.
+
+> Superseded 2026-09-09: the unique-combo announce and `CheckUniqueClass` are deleted (`2026-09-08-hero-switching-gates.md`, D5).
 
 `QUEST-API.md` §0.1 / §0.2 and `CODEBASE.md` §3.1 are updated in the same change that ships the C++ cap.
 
@@ -273,6 +277,8 @@ event `EVENT_HERO_REQUEST` (`$hero_op`, `$class_id`) so the tab, the guildmaster
 (`plugin::HeroRequest`, `RemoveClassFree`, `RemoveClassPaid`; the tab uses the free removal first, Ayonae offers
 both). The server fails closed in C++ before the event and dispatches to the global player script only. The tab
 does not know the cap or the catch-up rule: it sends every add and shows the server's refusal.
+
+> Superseded 2026-09-09 by the switching-gates change (`2026-09-08-hero-switching-gates.md`): `RemoveClassFree` / `RemoveClassPaid` are gone; one `RemoveClass`, always free, and the C++ gates are the policy. See the hero paragraph of `CODEBASE.md`.
 
 `CAuth` / `ServerAuthStats` stay required. No Hero UI on a stock client.
 

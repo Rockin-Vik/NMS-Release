@@ -14997,7 +14997,7 @@ uint32 Client::GetClassesBits() const
 	}
 }
 
-AddClassResult Client::CanAddExtraClass(int class_id, bool join_at_watermark) const
+AddClassResult Client::CanAddExtraClass(int class_id, [[maybe_unused]] bool join_at_watermark) const
 {
 	if (!RuleB(Custom, MulticlassingEnabled)) {
 		return AddClassResult::MulticlassingDisabled;
@@ -15036,14 +15036,14 @@ AddClassResult Client::CanAddExtraClass(int class_id, bool join_at_watermark) co
 		return AddClassResult::InCombat;
 	}
 
-	if (
-		RuleB(Custom, HeroCatchupEnabled) &&
-		!join_at_watermark &&
-		ZoneStore::Instance()->GetZoneMinimumLevel(zone->GetZoneID(), zone->GetInstanceVersion()) >
-			RuleI(Custom, NewClassStartLevel)
-	) {
-		return AddClassResult::ZoneTooHigh;
-	}
+	// No zone gate: a hero enters and stays in any zone regardless of its minimum level (rule 7,
+	// CanEnterZone), so refusing an add in a high zone no longer protects anything.
+	// AddClassResult::ZoneTooHigh is retired and kept so script-facing reason codes do not shift;
+	// join_at_watermark only ever fed that test and stays for signature stability.
+	static_assert(
+		static_cast<int>(AddClassResult::ZoneTooHigh) == 8 && static_cast<int>(AddClassResult::RowInsertFailed) == 9,
+		"AddClassResult values are read by Perl and Lua as integers; do not renumber"
+	);
 
 	return AddClassResult::Ok;
 }
@@ -15069,6 +15069,51 @@ const char* Client::AddClassResultMessage(AddClassResult result)
 const char* Client::CanAddExtraClassMessage(int class_id, bool join_at_watermark) const
 {
 	return AddClassResultMessage(CanAddExtraClass(class_id, join_at_watermark));
+}
+
+RemoveClassResult Client::CanRemoveExtraClass(int class_id) const
+{
+	if (!RuleB(Custom, MulticlassingEnabled)) {
+		return RemoveClassResult::MulticlassingDisabled;
+	}
+
+	if (class_id < Class::Warrior || class_id > Class::Berserker) {
+		return RemoveClassResult::InvalidClass;
+	}
+
+	if (!(GetClassesBits() & GetPlayerClassBit(class_id))) {
+		return RemoveClassResult::NotHeld;
+	}
+
+	if (!HasMultipleClasses()) {
+		return RemoveClassResult::LastClass;
+	}
+
+	// Same test as the add side: out of combat is the only situational gate on switching.
+	if (GetAggroCount() > 0 || GetFeigned() || IsDueling()) {
+		return RemoveClassResult::InCombat;
+	}
+
+	return RemoveClassResult::Ok;
+}
+
+const char* Client::RemoveClassResultMessage(RemoveClassResult result)
+{
+	switch (result) {
+	case RemoveClassResult::Ok: return "That class can be removed.";
+	case RemoveClassResult::MulticlassingDisabled: return "Multiclassing is disabled.";
+	case RemoveClassResult::InvalidClass: return "That class is invalid.";
+	case RemoveClassResult::NotHeld: return "You do not hold that class.";
+	case RemoveClassResult::LastClass: return "You cannot remove your last class.";
+	case RemoveClassResult::InCombat: return "You cannot remove a class while fighting, feigning, or dueling.";
+	}
+
+	return "That class could not be removed.";
+}
+
+const char* Client::CanRemoveExtraClassMessage(int class_id) const
+{
+	return RemoveClassResultMessage(CanRemoveExtraClass(class_id));
 }
 
 // Persist the class row first, then the bit and bucket, so no bit exists without progress.
@@ -15188,22 +15233,17 @@ bool Client::AddExtraClass(int class_id, bool join_at_watermark)
 }
 
 bool Client::RemoveExtraClass(int class_id) {
-    if (!(RuleB(Custom, MulticlassingEnabled) && class_id >= Class::Warrior && class_id <= Class::Berserker)) {
-        LogDebug("Invalid usage of RemoveExtraClass");
-        return false;
-    }
-
-    if (!(GetClassesBits() & GetPlayerClassBit(class_id))) {
-        LogDebug("Attempted to remove class_id [{}] from player [{}], but they don't have that class to remove", class_id, GetCleanName());
-        return false;
-    }
+	// One gate for every door (Hero tab, Ayonae, blind fate, the Perl and Lua exports): the
+	// reason is messaged here so a script caller needs no test of its own.
+	const auto reason = CanRemoveExtraClass(class_id);
+	if (reason != RemoveClassResult::Ok) {
+		LogDebug("RemoveExtraClass refused for [{}] class_id [{}]: {}", GetCleanName(), class_id, RemoveClassResultMessage(reason));
+		Message(Chat::Red, "%s", RemoveClassResultMessage(reason));
+		return false;
+	}
 
     // Calculate new class bitmask after removal
     auto new_classes = m_pp.classes & ~GetPlayerClassBit(class_id);
-	if (!new_classes) {
-		Message(Chat::Red, "You cannot remove your last class.");
-		return false;
-	}
 
     // Lambda to check if a spell is usable by any of the given classes
     auto is_spell_usable_by_classes = [this, new_classes](int spell_id) {

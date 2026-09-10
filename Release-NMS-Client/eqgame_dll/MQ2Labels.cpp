@@ -970,15 +970,23 @@ uint32_t NMS_GetClassesBitmask()
 	return itr == statEntries.end() ? 0u : static_cast<uint32_t>(itr->second);
 }
 
-int NMS_GetClassLevel(int class_id)
+int NMS_GetClassLevelRaw(int class_id)
 {
 	if (class_id < 1 || class_id > 16)
 		return 0;
 
 	auto itr = statEntries.find(static_cast<eStatEntry>(eStatClassLevel1 + class_id - 1));
-	if (itr != statEntries.end() && itr->second != 0)
-		return static_cast<int>(itr->second);
+	return itr != statEntries.end() ? static_cast<int>(itr->second) : 0;
+}
 
+int NMS_GetClassLevel(int class_id)
+{
+	const int raw = NMS_GetClassLevelRaw(class_id);
+	if (raw != 0)
+		return raw;
+
+	// A class in play whose stat has not arrived yet: the on-screen level is the best guess.
+	// Callers that ask about a class NOT in play must use NMS_GetClassLevelRaw.
 	if (pLocalPlayer && pLocalPlayer->Data.pSpawn)
 		return pLocalPlayer->Data.pSpawn->Level;
 

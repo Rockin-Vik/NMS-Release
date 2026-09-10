@@ -274,8 +274,19 @@ enum class AddClassResult : int {
 	AtCap,
 	RaceNotAllowed,
 	InCombat,
-	ZoneTooHigh,
+	ZoneTooHigh,   // retired 2026-09-09 (switching gates): never returned; kept so script reason codes do not shift
 	RowInsertFailed
+};
+
+// Why a removal is refused. Mirrors AddClassResult; InCombat is the only situational gate on
+// either side (hero rule 6: switching is free, instant, out of combat only).
+enum class RemoveClassResult : int {
+	Ok = 0,
+	MulticlassingDisabled,
+	InvalidClass,
+	NotHeld,
+	LastClass,
+	InCombat
 };
 
 class Client : public Mob
@@ -623,6 +634,9 @@ public:
 	static const char* AddClassResultMessage(AddClassResult result);
 	const char* CanAddExtraClassMessage(int class_id, bool join_at_watermark = false) const;
 	bool   AddExtraClass(int class_id, bool join_at_watermark = false);
+	RemoveClassResult CanRemoveExtraClass(int class_id) const;
+	static const char* RemoveClassResultMessage(RemoveClassResult result);
+	const char* CanRemoveExtraClassMessage(int class_id) const;
 	bool   RemoveExtraClass(int class_id);
 
 	// Per-class experience. The exp pool and every level cache are caches of the
@@ -635,6 +649,11 @@ public:
 	void   SetAllClassExp(uint64 exp);
 	void   LoadClassExp();
 	void   SaveClassExp();
+	// A hero holds, or has ever held, more than one class: character_class_exp keeps a dropped
+	// class's row, and LoadClassExp fills the map at zone entry before CanEnterZone runs. The
+	// zone minimum level does not apply to a hero (rule 7). Current bits are HasMultipleClasses,
+	// which also covers a hero whose rows failed to load this session.
+	bool   IsHero() const { return HasMultipleClasses() || m_class_exp.size() > 1; }
 private:
 	uint8  LevelFromExp(uint64 exp) const;
 	uint8  GetExpLevelCap() const;

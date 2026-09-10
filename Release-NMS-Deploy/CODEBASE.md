@@ -80,12 +80,13 @@ It is a **bitmask** (`uint32 classes`) squeezed into existing padding in `Player
 - The inventory window's Shrouds tab is the **Hero** tab (`EQUI_Inventory.xml` page
   `IW_AltCharProgPage` + `eqgame_dll/hero_tab.cpp`): it lists the sixteen classes with held
   levels and sends `OP_HeroRequest` (`0x140C`, add or remove). `Handle_OP_HeroRequest` fails
-  closed with `CanAddExtraClass` / `HasClass`, then fires the player event
+  closed with `CanAddExtraClass` / `CanRemoveExtraClass`, then fires the player event
   `EVENT_HERO_REQUEST` (global script only, `EventPlayerGlobal`); `global_player.pl` routes it
   to `plugin::HeroRequest`, which shares
-  the guildmaster add path and the Ayonae removal policy (`RemoveClassFree` /
-  `RemoveClassPaid` in `NMS_multiclass_utils.pl`; the tab uses the free removal first, Ayonae
-  lets the player choose). The cap and the join level are the server's: the tab sends every
+  the guildmaster add path and one `RemoveClass` (`NMS_multiclass_utils.pl`), always free; the
+  C++ gates (in combat on add and remove, last class, `MaxMulticlasses`) are the whole policy,
+  and a hero is exempt from the zone minimum level (`CanEnterZone`, `IsHero()`: held or ever
+  held more than one class). The cap and the join level are the server's: the tab sends every
   request and shows the server's refusal. No server-to-client opcode: the bulk stats packet
   redraws the tab.
 - Per-class experience is persisted in `character_class_exp`; with `HeroCatchupEnabled` off
