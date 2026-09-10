@@ -50,3 +50,7 @@ __pycache__/
 
 # Portable Perl that cmake/DependencyHelperMSVC.cmake downloads on first configure (CODEBASE.md gotcha 21)
 Release-NMS-Server/perl/
+
+# Windows Explorer / thumbnail-cache artifacts. Never content; Explorer recreates them on its own.
+desktop.ini
+Thumbs.db
