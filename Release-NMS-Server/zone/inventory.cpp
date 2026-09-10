@@ -3507,7 +3507,6 @@ uint32 Client::GetEquippedItemFromTextureSlot(uint8 material_slot) const
 int64_t Client::GetStatEntryValue(StatEntry label)
 {
 	pTimerType timer;
-	const uint32 classes_bits = GetClassesBits();
 
 	switch (label)
 	{
@@ -3967,38 +3966,41 @@ int64_t Client::GetStatEntryValue(StatEntry label)
 			}
 			return rune_number;
 		}
+		// The row level, held or not: a dropped class keeps its character_class_exp row and its
+		// level, and the Hero tab shows it as shelved. 0 means the class was never held. The
+		// held set is the class bitmask stat, not these.
 		case ClassLevel1:
-			return (classes_bits & GetPlayerClassBit(1)) ? GetClassLevel(1) : 0;
+			return GetClassLevel(1);
 		case ClassLevel2:
-			return (classes_bits & GetPlayerClassBit(2)) ? GetClassLevel(2) : 0;
+			return GetClassLevel(2);
 		case ClassLevel3:
-			return (classes_bits & GetPlayerClassBit(3)) ? GetClassLevel(3) : 0;
+			return GetClassLevel(3);
 		case ClassLevel4:
-			return (classes_bits & GetPlayerClassBit(4)) ? GetClassLevel(4) : 0;
+			return GetClassLevel(4);
 		case ClassLevel5:
-			return (classes_bits & GetPlayerClassBit(5)) ? GetClassLevel(5) : 0;
+			return GetClassLevel(5);
 		case ClassLevel6:
-			return (classes_bits & GetPlayerClassBit(6)) ? GetClassLevel(6) : 0;
+			return GetClassLevel(6);
 		case ClassLevel7:
-			return (classes_bits & GetPlayerClassBit(7)) ? GetClassLevel(7) : 0;
+			return GetClassLevel(7);
 		case ClassLevel8:
-			return (classes_bits & GetPlayerClassBit(8)) ? GetClassLevel(8) : 0;
+			return GetClassLevel(8);
 		case ClassLevel9:
-			return (classes_bits & GetPlayerClassBit(9)) ? GetClassLevel(9) : 0;
+			return GetClassLevel(9);
 		case ClassLevel10:
-			return (classes_bits & GetPlayerClassBit(10)) ? GetClassLevel(10) : 0;
+			return GetClassLevel(10);
 		case ClassLevel11:
-			return (classes_bits & GetPlayerClassBit(11)) ? GetClassLevel(11) : 0;
+			return GetClassLevel(11);
 		case ClassLevel12:
-			return (classes_bits & GetPlayerClassBit(12)) ? GetClassLevel(12) : 0;
+			return GetClassLevel(12);
 		case ClassLevel13:
-			return (classes_bits & GetPlayerClassBit(13)) ? GetClassLevel(13) : 0;
+			return GetClassLevel(13);
 		case ClassLevel14:
-			return (classes_bits & GetPlayerClassBit(14)) ? GetClassLevel(14) : 0;
+			return GetClassLevel(14);
 		case ClassLevel15:
-			return (classes_bits & GetPlayerClassBit(15)) ? GetClassLevel(15) : 0;
+			return GetClassLevel(15);
 		case ClassLevel16:
-			return (classes_bits & GetPlayerClassBit(16)) ? GetClassLevel(16) : 0;
+			return GetClassLevel(16);
 		default:
 			return 0;
 	}
